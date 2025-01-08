@@ -68,7 +68,7 @@ onto v1.31.0
       Kubernetes repo. This is not required, but probably a good idea.
    2. Update the `kcp-dev/apimachinery` dependency:
       ```
-      go get -u github.com/kcp-dev/apimachinery@main
+      go get -u github.com/kcp-dev/apimachinery/v2@main
       ```
    3. That should have updated the primary Kubernetes dependencies, but in case it didn't, you can do so manually:
       ```
