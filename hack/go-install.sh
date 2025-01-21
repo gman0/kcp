@@ -49,6 +49,9 @@ function clean {
 }
 trap clean EXIT
 
+# An executable already exists, exit early.
+[[ -f "${GOBIN}/${2}" && -x $(realpath "${GOBIN}/${2}") ]] && exit 0
+
 rm "${GOBIN}/${2}"* > /dev/null 2>&1 || true
 
 cd "${tmp_dir}"
