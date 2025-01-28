@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/admission/plugin/namespace/lifecycle"
+	mutatingadmissionpolicy "k8s.io/apiserver/pkg/admission/plugin/policy/mutating"
 	validatingadmissionpolicy "k8s.io/apiserver/pkg/admission/plugin/policy/validating"
 	"k8s.io/apiserver/pkg/admission/plugin/resourcequota"
 	mutatingwebhook "k8s.io/apiserver/pkg/admission/plugin/webhook/mutating"
@@ -175,6 +176,7 @@ var defaultOnKubePluginsInKube = sets.New[string](
 	mutatingwebhook.PluginName,              // MutatingAdmissionWebhook
 	validatingwebhook.PluginName,            // ValidatingAdmissionWebhook
 	validatingadmissionpolicy.PluginName,    // ValidatingAdmissionPolicy
+	mutatingadmissionpolicy.PluginName,      // MutatingAdmissionPolicy
 	resourcequota.PluginName,                // ResourceQuota
 	storageobjectinuseprotection.PluginName, // StorageObjectInUseProtection
 	podpriority.PluginName,                  // PodPriority
