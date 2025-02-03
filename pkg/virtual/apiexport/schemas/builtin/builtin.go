@@ -246,17 +246,6 @@ var BuiltInAPIs = []internalapis.InternalAPI{
 			Singular: "validatingadmissionpolicy",
 			Kind:     "ValidatingAdmissionPolicy",
 		},
-		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1alpha1"},
-		Instance:      &admissionregistrationv1alpha1.ValidatingAdmissionPolicy{},
-		ResourceScope: apiextensionsv1.ClusterScoped,
-		HasStatus:     true,
-	},
-	{
-		Names: apiextensionsv1.CustomResourceDefinitionNames{
-			Plural:   "validatingadmissionpolicies",
-			Singular: "validatingadmissionpolicy",
-			Kind:     "ValidatingAdmissionPolicy",
-		},
 		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1"},
 		Instance:      &admissionregistrationv1.ValidatingAdmissionPolicy{},
 		ResourceScope: apiextensionsv1.ClusterScoped,
@@ -268,38 +257,8 @@ var BuiltInAPIs = []internalapis.InternalAPI{
 			Singular: "validatingadmissionpolicybinding",
 			Kind:     "ValidatingAdmissionPolicyBinding",
 		},
-		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1alpha1"},
-		Instance:      &admissionregistrationv1alpha1.ValidatingAdmissionPolicyBinding{},
-		ResourceScope: apiextensionsv1.ClusterScoped,
-	},
-	{
-		Names: apiextensionsv1.CustomResourceDefinitionNames{
-			Plural:   "validatingadmissionpolicybindings",
-			Singular: "validatingadmissionpolicybinding",
-			Kind:     "ValidatingAdmissionPolicyBinding",
-		},
 		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1"},
 		Instance:      &admissionregistrationv1.ValidatingAdmissionPolicyBinding{},
-		ResourceScope: apiextensionsv1.ClusterScoped,
-	},
-	{
-		Names: apiextensionsv1.CustomResourceDefinitionNames{
-			Plural:   "mutatingadmissionpolicies",
-			Singular: "mutatingadmissionpolicy",
-			Kind:     "MutatingAdmissionPolicy",
-		},
-		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1alpha1"},
-		Instance:      &admissionregistrationv1alpha1.MutatingAdmissionPolicy{},
-		ResourceScope: apiextensionsv1.ClusterScoped,
-	},
-	{
-		Names: apiextensionsv1.CustomResourceDefinitionNames{
-			Plural:   "mutatingadmissionpolicybindings",
-			Singular: "mutatingadmissionpolicybinding",
-			Kind:     "MutatingAdmissionPolicyBinding",
-		},
-		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1alpha1"},
-		Instance:      &admissionregistrationv1alpha1.MutatingAdmissionPolicyBinding{},
 		ResourceScope: apiextensionsv1.ClusterScoped,
 	},
 	{
