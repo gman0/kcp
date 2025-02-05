@@ -21,6 +21,7 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	admissionregistrationv1alpha1 "k8s.io/api/admissionregistration/v1alpha1"
+	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -30,9 +31,11 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	genericfeatures "k8s.io/apiserver/pkg/features"
 	"k8s.io/kube-openapi/pkg/common"
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
+	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
 	generatedkcpopenapi "github.com/kcp-dev/kcp/pkg/openapi"
 	kcpscheme "github.com/kcp-dev/kcp/pkg/server/scheme"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/internalapis"
@@ -253,12 +256,33 @@ var BuiltInAPIs = []internalapis.InternalAPI{
 	},
 	{
 		Names: apiextensionsv1.CustomResourceDefinitionNames{
+			Plural:   "validatingadmissionpolicies",
+			Singular: "validatingadmissionpolicy",
+			Kind:     "ValidatingAdmissionPolicy",
+		},
+		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1beta1"},
+		Instance:      &admissionregistrationv1beta1.ValidatingAdmissionPolicy{},
+		ResourceScope: apiextensionsv1.ClusterScoped,
+		HasStatus:     true,
+	},
+	{
+		Names: apiextensionsv1.CustomResourceDefinitionNames{
 			Plural:   "validatingadmissionpolicybindings",
 			Singular: "validatingadmissionpolicybinding",
 			Kind:     "ValidatingAdmissionPolicyBinding",
 		},
 		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1"},
 		Instance:      &admissionregistrationv1.ValidatingAdmissionPolicyBinding{},
+		ResourceScope: apiextensionsv1.ClusterScoped,
+	},
+	{
+		Names: apiextensionsv1.CustomResourceDefinitionNames{
+			Plural:   "validatingadmissionpolicybindings",
+			Singular: "validatingadmissionpolicybinding",
+			Kind:     "ValidatingAdmissionPolicyBinding",
+		},
+		GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1beta1"},
+		Instance:      &admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding{},
 		ResourceScope: apiextensionsv1.ClusterScoped,
 	},
 	{
@@ -303,4 +327,32 @@ var BuiltInAPIs = []internalapis.InternalAPI{
 		Instance:      &authorizationv1.LocalSubjectAccessReview{},
 		ResourceScope: apiextensionsv1.NamespaceScoped,
 	},
+}
+
+func init() {
+	if kcpfeatures.DefaultFeatureGate.Enabled(genericfeatures.MutatingAdmissionPolicy) {
+		// MutatingAdmissionPolicy is alpha in v1.32.0 Kubernetes and under a feature gate.
+		BuiltInAPIs = append(BuiltInAPIs,
+			internalapis.InternalAPI{
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "mutatingadmissionpolicies",
+					Singular: "mutatingadmissionpolicy",
+					Kind:     "MutatingAdmissionPolicy",
+				},
+				GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1alpha1"},
+				Instance:      &admissionregistrationv1alpha1.MutatingAdmissionPolicy{},
+				ResourceScope: apiextensionsv1.ClusterScoped,
+			},
+			internalapis.InternalAPI{
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "mutatingadmissionpolicybindings",
+					Singular: "mutatingadmissionpolicybinding",
+					Kind:     "MutatingAdmissionPolicyBinding",
+				},
+				GroupVersion:  schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1alpha1"},
+				Instance:      &admissionregistrationv1alpha1.MutatingAdmissionPolicyBinding{},
+				ResourceScope: apiextensionsv1.ClusterScoped,
+			},
+		)
+	}
 }
