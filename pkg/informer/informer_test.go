@@ -27,8 +27,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	genericfeatures "k8s.io/apiserver/pkg/features"
 	"k8s.io/client-go/restmapper"
 
+	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
 	kcpscheme "github.com/kcp-dev/kcp/pkg/server/scheme"
 )
 
@@ -87,7 +89,11 @@ func TestBuiltInInformableTypes(t *testing.T) {
 		{Group: "core.kcp.io", Version: "v1alpha1", Kind: "Shard"}:                                          {},
 		{Group: "admissionregistration.k8s.io", Version: "v1beta1", Kind: "MutatingWebhookConfiguration"}:   {},
 		{Group: "admissionregistration.k8s.io", Version: "v1beta1", Kind: "ValidatingWebhookConfiguration"}: {},
+	}
 
+	if !kcpfeatures.DefaultFeatureGate.Enabled(genericfeatures.MutatingAdmissionPolicy) {
+		gvksToIgnore[schema.GroupVersionKind{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Kind: "MutatingAdmissionPolicy"}] = struct{}{}
+		gvksToIgnore[schema.GroupVersionKind{Group: "admissionregistration.k8s.io", Version: "v1alpha1", Kind: "MutatingAdmissionPolicyBinding"}] = struct{}{}
 	}
 
 	gvsToIgnore := map[schema.GroupVersion]struct{}{

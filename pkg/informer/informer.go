@@ -29,6 +29,7 @@ import (
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpdynamicinformer "github.com/kcp-dev/client-go/dynamic/dynamicinformer"
 	kcpinformers "github.com/kcp-dev/client-go/informers"
+	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	"k8s.io/apiextensions-apiserver/pkg/apihelpers"
@@ -894,6 +895,20 @@ var builtInInformableTypes map[schema.GroupVersionResource]GVRPartialMetadata = 
 	gvrFor("core.kcp.io", "v1alpha1", "logicalclusters"): withGVRPartialMetadata(
 		apiextensionsv1.ClusterScoped, "LogicalCluster", "logicalcluster",
 	),
+}
+
+func init() {
+	if kcpfeatures.DefaultFeatureGate.Enabled(genericfeatures.MutatingAdmissionPolicy) {
+		// MutatingAdmissionPolicy is alpha in v1.32.0 Kubernetes and under a feature gate.
+		builtInInformableTypes[gvrFor("admissionregistration.k8s.io", "v1alpha1", "mutatingadmissionpolicies")] =
+			withGVRPartialMetadata(
+				apiextensionsv1.ClusterScoped, "MutatingAdmissionPolicy", "mutatingadmissionpolicy",
+			)
+		builtInInformableTypes[gvrFor("admissionregistration.k8s.io", "v1alpha1", "mutatingadmissionpolicybindings")] =
+			withGVRPartialMetadata(
+				apiextensionsv1.ClusterScoped, "MutatingAdmissionPolicyBinding", "mutatingadmissionpolicybinding",
+			)
+	}
 }
 
 func (s *crdGVRSource) GVRs() map[schema.GroupVersionResource]GVRPartialMetadata {
