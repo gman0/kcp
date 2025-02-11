@@ -92,6 +92,7 @@ var AllOrderedPlugins = beforeWebhooks(kubeapiserveroptions.AllOrderedPlugins,
 	permissionclaims.PluginName,
 	pathannotation.PluginName,
 	kubequota.PluginName,
+	mutatingadmissionpolicy.PluginName,
 )
 
 func beforeWebhooks(recommended []string, plugins ...string) []string {
@@ -176,7 +177,6 @@ var defaultOnKubePluginsInKube = sets.New[string](
 	mutatingwebhook.PluginName,              // MutatingAdmissionWebhook
 	validatingwebhook.PluginName,            // ValidatingAdmissionWebhook
 	validatingadmissionpolicy.PluginName,    // ValidatingAdmissionPolicy
-	mutatingadmissionpolicy.PluginName,      // MutatingAdmissionPolicy
 	resourcequota.PluginName,                // ResourceQuota
 	storageobjectinuseprotection.PluginName, // StorageObjectInUseProtection
 	podpriority.PluginName,                  // PodPriority
@@ -188,6 +188,7 @@ var defaultOnKubePluginsInKube = sets.New[string](
 	certsubjectrestriction.PluginName,       // CertificateSubjectRestriction
 	defaultingressclass.PluginName,          // DefaultIngressClass
 	podsecurity.PluginName,                  // PodSecurity
+	mutatingadmissionpolicy.PluginName,      // MutatingAdmissionPolicy
 )
 
 // DefaultOffAdmissionPlugins get admission plugins off by default for kcp.
