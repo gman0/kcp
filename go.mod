@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kcp-dev/apimachinery/v2 v2.0.1-0.20250207161408-e1833e4a94f2
 	github.com/kcp-dev/client-go v0.0.0-20250210163812-5ae6774ab861
+	github.com/kcp-dev/kcp/sdk v0.0.0-00010101000000-000000000000
 	github.com/kcp-dev/logicalcluster/v3 v3.0.5
 	github.com/martinlindhe/base36 v1.1.1
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
