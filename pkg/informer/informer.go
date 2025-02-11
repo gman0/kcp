@@ -29,7 +29,6 @@ import (
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpdynamicinformer "github.com/kcp-dev/client-go/dynamic/dynamicinformer"
 	kcpinformers "github.com/kcp-dev/client-go/informers"
-	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	"k8s.io/apiextensions-apiserver/pkg/apihelpers"
@@ -51,6 +50,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/projection"
 )
