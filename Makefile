@@ -72,9 +72,9 @@ LOGCHECK_BIN := logcheck
 LOGCHECK := $(TOOLS_GOBIN_DIR)/$(LOGCHECK_BIN)-$(LOGCHECK_VER)
 export LOGCHECK # so hack scripts can use it
 
-CODE_GENERATOR_VER := v2.3.0
+CODE_GENERATOR_VER := XXX_CHANGE_THIS
 CODE_GENERATOR_BIN := code-generator
-CODE_GENERATOR := $(TOOLS_GOBIN_DIR)/$(CODE_GENERATOR_BIN)-$(CODE_GENERATOR_VER)
+CODE_GENERATOR := $(TOOLS_GOBIN_DIR)/$(CODE_GENERATOR_BIN)
 export CODE_GENERATOR # so hack scripts can use it
 
 KCP_APIGEN_BIN := apigen
@@ -348,6 +348,23 @@ test-run-sharded-server:
 	trap 'kill -TERM $$PID' TERM INT EXIT && \
 	while [ ! -f "$(WORK_DIR)/.kcp/ready-to-test" ]; do sleep 1; done && \
 	echo 'Server started' && \
+	echo "$$PID" > "$(WORK_DIR)/.kcp/ready-to-test" && \
+	wait $$PID
+
+
+# This is just easy target to run 2 shard test server locally until manually killed.
+# You can targer test to it by running:
+# go test ./test/e2e/apibinding/... --kcp-kubeconfig=$(pwd)/.kcp/admin.kubeconfig --shard-kubeconfigs=root=$(pwd)/.kcp-0/admin.kubeconfig -run=^TestAPIBindingEndpointSlicesSharded$
+test-run-server: WORK_DIR ?= .
+test-run-server: LOG_DIR ?= $(WORK_DIR)/.kcp
+test-run-server:
+	mkdir -p "$(LOG_DIR)" "$(WORK_DIR)/.kcp"
+	rm -f "$(WORK_DIR)/.kcp/ready-to-test"
+	UNSAFE_E2E_HACK_DISABLE_ETCD_FSYNC=true NO_GORUN=1 ./bin/test-server -v=10 --log-dir-path="$(LOG_DIR)" $(TEST_SERVER_ARGS) -- --feature-gates=$(TEST_FEATURE_GATES) 2>&1 & PID=$$!; echo "PID $$PID" && \
+	trap 'kill -TERM $$PID' TERM INT EXIT && \
+	while [ ! -f "$(WORK_DIR)/.kcp/ready-to-test" ]; do sleep 1; done && \
+	echo 'Server started' && \
+	echo "$$PID" > "$(WORK_DIR)/.kcp/ready-to-test" && \
 	wait $$PID
 
 .PHONY: test
