@@ -40,7 +40,7 @@ else
 INSTALL_GOBIN=$(shell go env GOBIN)
 endif
 
-CONTROLLER_GEN_VER := v0.16.1
+CONTROLLER_GEN_VER := v0.16.5
 CONTROLLER_GEN_BIN := controller-gen
 CONTROLLER_GEN := $(TOOLS_DIR)/$(CONTROLLER_GEN_BIN)-$(CONTROLLER_GEN_VER)
 export CONTROLLER_GEN # so hack scripts can use it
