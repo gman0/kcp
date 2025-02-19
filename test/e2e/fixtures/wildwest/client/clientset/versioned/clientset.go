@@ -19,9 +19,6 @@ limitations under the License.
 package versioned
 
 import (
-	"fmt"
-	"net/http"
-
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"

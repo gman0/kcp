@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1
 
+import (
+	v1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/meta/v1"
+)
+
 // LabelSelectorApplyConfiguration represents a declarative configuration of the LabelSelector type for use
 // with apply.
 type LabelSelectorApplyConfiguration struct {

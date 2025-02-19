@@ -20,6 +20,7 @@ package v1alpha1
 
 import (
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/core/v1alpha1"
 )
 
 // LogicalClusterSpecApplyConfiguration represents a declarative configuration of the LogicalClusterSpec type for use

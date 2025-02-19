@@ -23,6 +23,7 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/meta/v1"
+	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/tenancy/v1alpha1"
 )
 
 // WorkspaceTypeApplyConfiguration represents a declarative configuration of the WorkspaceType type for use

@@ -21,6 +21,7 @@ package v1alpha1
 import (
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	conditionsv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
+	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/apis/v1alpha1"
 )
 
 // APIBindingStatusApplyConfiguration represents a declarative configuration of the APIBindingStatus type for use

@@ -20,6 +20,8 @@ package v1alpha1
 
 import (
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
+	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/apis/v1alpha1"
 )
 
 // APIResourceSchemaSpecApplyConfiguration represents a declarative configuration of the APIResourceSchemaSpec type for use

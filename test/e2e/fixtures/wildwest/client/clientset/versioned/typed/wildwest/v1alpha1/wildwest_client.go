@@ -19,8 +19,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"net/http"
-
 	rest "k8s.io/client-go/rest"
 
 	v1alpha1 "github.com/kcp-dev/kcp/test/e2e/fixtures/wildwest/apis/wildwest/v1alpha1"

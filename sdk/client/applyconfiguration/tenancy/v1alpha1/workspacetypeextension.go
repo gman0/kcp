@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/tenancy/v1alpha1"
+)
+
 // WorkspaceTypeExtensionApplyConfiguration represents a declarative configuration of the WorkspaceTypeExtension type for use
 // with apply.
 type WorkspaceTypeExtensionApplyConfiguration struct {
