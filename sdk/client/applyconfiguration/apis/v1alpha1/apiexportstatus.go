@@ -20,7 +20,6 @@ package v1alpha1
 
 import (
 	v1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
-	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/apis/v1alpha1"
 )
 
 // APIExportStatusApplyConfiguration represents a declarative configuration of the APIExportStatus type for use

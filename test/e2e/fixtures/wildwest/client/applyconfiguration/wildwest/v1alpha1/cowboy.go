@@ -23,7 +23,6 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/kcp-dev/kcp/test/e2e/fixtures/wildwest/client/applyconfiguration/meta/v1"
-	v1alpha1 "github.com/kcp-dev/kcp/test/e2e/fixtures/wildwest/client/applyconfiguration/wildwest/v1alpha1"
 )
 
 // CowboyApplyConfiguration represents a declarative configuration of the Cowboy type for use

@@ -18,10 +18,6 @@ limitations under the License.
 
 package v1alpha1
 
-import (
-	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/tenancy/v1alpha1"
-)
-
 // WorkspaceSpecApplyConfiguration represents a declarative configuration of the WorkspaceSpec type for use
 // with apply.
 type WorkspaceSpecApplyConfiguration struct {

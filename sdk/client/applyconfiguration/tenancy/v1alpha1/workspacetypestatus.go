@@ -20,7 +20,6 @@ package v1alpha1
 
 import (
 	v1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
-	tenancyv1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/tenancy/v1alpha1"
 )
 
 // WorkspaceTypeStatusApplyConfiguration represents a declarative configuration of the WorkspaceTypeStatus type for use

@@ -20,8 +20,6 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	v1 "github.com/kcp-dev/kcp/test/e2e/fixtures/wildwest/client/applyconfiguration/meta/v1"
 )
 
 // DeleteOptionsApplyConfiguration represents a declarative configuration of the DeleteOptions type for use

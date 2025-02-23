@@ -18,10 +18,6 @@ limitations under the License.
 
 package v1alpha1
 
-import (
-	v1alpha1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/apis/v1alpha1"
-)
-
 // WebhookConversionApplyConfiguration represents a declarative configuration of the WebhookConversion type for use
 // with apply.
 type WebhookConversionApplyConfiguration struct {

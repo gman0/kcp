@@ -21,8 +21,6 @@ package v1
 import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
-
-	metav1 "github.com/kcp-dev/kcp/test/e2e/fixtures/wildwest/client/applyconfiguration/meta/v1"
 )
 
 // ObjectMetaApplyConfiguration represents a declarative configuration of the ObjectMeta type for use
