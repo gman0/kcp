@@ -13,7 +13,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/kcp-dev/apimachinery/v2 v2.0.1-0.20240817110845-a9eb9752bfeb
-	github.com/kcp-dev/client-go v0.0.0-20250219141203-f47090154678
+	github.com/kcp-dev/client-go v0.0.0-20250221220004-0f10027b3c06
 	github.com/kcp-dev/kcp/sdk v0.0.0-00010101000000-000000000000
 	github.com/kcp-dev/logicalcluster/v3 v3.0.5
 	github.com/martinlindhe/base36 v1.1.1
@@ -37,7 +37,7 @@ require (
 	k8s.io/code-generator v0.31.6
 	k8s.io/component-base v0.31.6
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/kube-openapi v0.0.0-20241212222426-2c72e554b1e7
+	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340
 	k8s.io/kubernetes v0.31.6
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
 	sigs.k8s.io/structured-merge-diff/v4 v4.5.0
@@ -155,7 +155,7 @@ require (
 	k8s.io/component-helpers v0.0.0 // indirect
 	k8s.io/controller-manager v0.0.0 // indirect
 	k8s.io/dynamic-resource-allocation v0.0.0 // indirect
-	k8s.io/gengo/v2 v2.0.0-20250207200755-1244d31929d7 // indirect
+	k8s.io/gengo/v2 v2.0.0-20240228010128-51d4e06bde70 // indirect
 	k8s.io/kms v0.0.0 // indirect
 	k8s.io/kube-aggregator v0.0.0 // indirect
 	k8s.io/kube-controller-manager v0.0.0 // indirect
@@ -203,5 +203,5 @@ replace (
 
 replace (
 	github.com/kcp-dev/apimachinery/v2 => github.com/gman0/kcp-apimachinery/v2 v2.0.0-20250219125338-ff016394a901
-	github.com/kcp-dev/client-go => github.com/gman0/kcp-client-go v0.0.0-20250219141203-f47090154678
+	github.com/kcp-dev/client-go => github.com/gman0/kcp-client-go v0.0.0-20250221220004-0f10027b3c06
 )
