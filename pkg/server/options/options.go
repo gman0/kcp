@@ -319,13 +319,10 @@ func (o *Options) Complete(ctx context.Context, rootDir string) (*CompletedOptio
 		o.GenericControlPlane.ServiceAccountSigningKeyFile = o.Controllers.SAController.ServiceAccountKeyFile
 	}
 
-	genericControlPlaneFss := cliflag.NamedFlagSets{}
-	completedGenericOptions, err := o.GenericControlPlane.Complete(ctx, genericControlPlaneFss, nil, nil)
+	completedGenericOptions, err := o.GenericControlPlane.Complete(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	o.GenericControlPlane.AddFlags(&genericControlPlaneFss)
 
 	if o.Extra.ExperimentalBindFreePort {
 		// Override Required here. It influences o.GenericControlPlane.Validate to pass without a set port,
