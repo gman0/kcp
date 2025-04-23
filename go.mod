@@ -12,7 +12,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/kcp-dev/apimachinery/v2 v2.0.1-0.20250417112016-c9dbad5dea88
-	github.com/kcp-dev/client-go v0.0.0-20250418091538-395a6a497c3c
+	github.com/kcp-dev/client-go v0.0.0-20250423130416-1e739ee35823
 	github.com/kcp-dev/embeddedetcd v0.0.0-00010101000000-000000000000
 	github.com/kcp-dev/kcp/sdk v0.0.0-00010101000000-000000000000
 	github.com/kcp-dev/logicalcluster/v3 v3.0.5
@@ -151,18 +151,18 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/cloud-provider v0.0.0 // indirect
-	k8s.io/cluster-bootstrap v0.31.6 // indirect
-	k8s.io/component-helpers v0.31.6 // indirect
-	k8s.io/controller-manager v0.31.6 // indirect
-	k8s.io/dynamic-resource-allocation v0.31.6 // indirect
+	k8s.io/cluster-bootstrap v0.32.3 // indirect
+	k8s.io/component-helpers v0.32.3 // indirect
+	k8s.io/controller-manager v0.32.3 // indirect
+	k8s.io/dynamic-resource-allocation v0.32.3 // indirect
 	k8s.io/externaljwt v0.0.0 // indirect
 	k8s.io/gengo/v2 v2.0.0-20240911193312-2b36238f13e9 // indirect
 	k8s.io/kms v0.32.3 // indirect
-	k8s.io/kube-aggregator v0.31.6 // indirect
-	k8s.io/kube-controller-manager v0.31.6 // indirect
-	k8s.io/kubelet v0.31.6 // indirect
-	k8s.io/mount-utils v0.31.6 // indirect
-	k8s.io/pod-security-admission v0.31.6 // indirect
+	k8s.io/kube-aggregator v0.32.3 // indirect
+	k8s.io/kube-controller-manager v0.32.3 // indirect
+	k8s.io/kubelet v0.32.3 // indirect
+	k8s.io/mount-utils v0.32.3 // indirect
+	k8s.io/pod-security-admission v0.32.3 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.1 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 )
@@ -242,6 +242,7 @@ replace (
 replace (
 	// XXX
 
+	github.com/kcp-dev/apimachinery/v2 => ../kcp-apimachinery
 	github.com/kcp-dev/client-go => ../kcp-client-go
 	github.com/kcp-dev/embeddedetcd => ../kcp-embeddedetcd
 )
