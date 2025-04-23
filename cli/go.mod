@@ -83,3 +83,10 @@ require (
 )
 
 replace github.com/kcp-dev/kcp/sdk => ../sdk
+
+replace (
+	github.com/kcp-dev/apimachinery/v2 => ../../kcp-apimachinery
+	// XXX
+
+	github.com/kcp-dev/client-go => ../../kcp-client-go
+)
