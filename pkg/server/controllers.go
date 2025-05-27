@@ -1710,6 +1710,7 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 	}
 
 	cachedResourceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResources()
+	cachedResourceEndpointSliceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices()
 	c, err := cachedresources.NewController(
 		s.Options.Extra.ShardName,
 		kcpClusterClient,
@@ -1722,6 +1723,7 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 		s.DiscoveringDynamicSharedInformerFactory,
 		s.CacheKcpSharedInformerFactory,
 		cachedResourceInformer,
+		cachedResourceEndpointSliceInformer,
 	)
 	if err != nil {
 		return err
@@ -1730,7 +1732,7 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 		Name: cachedresources.ControllerName,
 		Wait: func(ctx context.Context, s *Server) error {
 			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
-				return cachedResourceInformer.Informer().HasSynced(), nil
+				return cachedResourceInformer.Informer().HasSynced() && cachedResourceEndpointSliceInformer.Informer().HasSynced(), nil
 			})
 		},
 		Runner: func(ctx context.Context) {
