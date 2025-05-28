@@ -71,6 +71,7 @@ import (
 	apisreplicateclusterrole "github.com/kcp-dev/kcp/pkg/reconciler/apis/replicateclusterrole"
 	apisreplicateclusterrolebinding "github.com/kcp-dev/kcp/pkg/reconciler/apis/replicateclusterrolebinding"
 	apisreplicatelogicalcluster "github.com/kcp-dev/kcp/pkg/reconciler/apis/replicatelogicalcluster"
+	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresourceendpointslice"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/labelclusterrolebindings"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/labelclusterroles"
@@ -1733,6 +1734,44 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 		Wait: func(ctx context.Context, s *Server) error {
 			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
 				return cachedResourceInformer.Informer().HasSynced() && cachedResourceEndpointSliceInformer.Informer().HasSynced(), nil
+			})
+		},
+		Runner: func(ctx context.Context) {
+			c.Start(ctx, 2)
+		},
+	})
+}
+
+func (s *Server) installCachedResourceEndpointSliceController(ctx context.Context, config *rest.Config) error {
+	if !kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) {
+		return nil
+	}
+
+	config = rest.CopyConfig(config)
+	config = rest.AddUserAgent(config, logicalclusterdeletion.ControllerName)
+	kcpClusterClient, err := kcpclientset.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+	cachedResourceEndpointSliceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices()
+	cachedResourceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResources()
+
+	c, err := cachedresourceendpointslice.NewController(
+		s.Options.Extra.ShardName,
+		cachedResourceEndpointSliceInformer,
+		cachedResourceInformer,
+		s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+		kcpClusterClient,
+	)
+	if err != nil {
+		return err
+	}
+	return s.registerController(&controllerWrapper{
+		Name: cachedresourceendpointslice.ControllerName,
+		Wait: func(ctx context.Context, s *Server) error {
+			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
+				return cachedResourceEndpointSliceInformer.Informer().HasSynced(), nil
+
 			})
 		},
 		Runner: func(ctx context.Context) {
