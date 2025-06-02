@@ -18,21 +18,22 @@ package builder
 
 import (
 	"context"
-	"text/template/parse"
-	// "encoding/json"
+	"encoding/json"
 	"fmt"
-	"net/http"
+	// "net/http"
+	// "text/template/parse"
 
 	// "net/http/httputil"
-	goerrors "errors"
-	"net/url"
-	"path"
+	// goerrors "errors"
+	// "net/url"
+	// "path"
 	"strings"
 
 	// authenticationv1 "k8s.io/api/authentication/v1"
-	// apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
+	"github.com/kcp-dev/kcp/pkg/authorization"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -40,33 +41,33 @@ import (
 
 	// "k8s.io/client-go/tools/cache"
 	// "k8s.io/kubernetes/pkg/registry/rbac/validation"
-	// "k8s.io/client-go/transport"
-	"k8s.io/klog/v2"
-	// "k8s.io/utils/ptr"
+	//"k8s.io/client-go/transport"
+	// "k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	// rootphase0 "github.com/kcp-dev/kcp/config/root-phase0"
+	rootphase0 "github.com/kcp-dev/kcp/config/root-phase0"
 	// "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
-	"github.com/kcp-dev/kcp/pkg/authorization/delegated"
-	"github.com/kcp-dev/kcp/pkg/reconciler/topology/partitionset"
-	"github.com/kcp-dev/kcp/pkg/server/requestinfo"
+	// "github.com/kcp-dev/kcp/pkg/authorization/delegated"
+	authdelegated "github.com/kcp-dev/kcp/pkg/authorization/delegated"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualworkspacesdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apiserver"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
+	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 
-	// "github.com/kcp-dev/kcp/pkg/virtual/framework/handler"
+	//"github.com/kcp-dev/kcp/pkg/virtual/framework/handler"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
+	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
-	"github.com/kcp-dev/kcp/sdk/apis/tenancy/initialization"
-	tenancyv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/tenancy/v1alpha1"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
+	// cachev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/cache/v1alpha1"
 )
 
 func BuildVirtualWorkspace(
@@ -80,76 +81,101 @@ func BuildVirtualWorkspace(
 		rootPathPrefix += "/"
 	}
 
-	readyCh := make(chan struct{})
+	cachedResourceSch := apisv1alpha1.APIResourceSchema{}
+	if err := rootphase0.Unmarshal("apiresourceschema-cachedresources.cache.kcp.io.yaml", &cachedResourceSch); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal logicalclusters resource: %w", err)
+	}
+	bs, err := json.Marshal(&apiextensionsv1.JSONSchemaProps{
+		Type:                   "object",
+		XPreserveUnknownFields: ptr.To(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range cachedResourceSch.Spec.Versions {
+		v := &cachedResourceSch.Spec.Versions[i]
+		v.Schema.Raw = bs // wipe schemas. We don't want validation here.
+	}
 
-	boundOrClaimedWorkspaceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
-		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, ctx context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
+	scopedCachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
+		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
 			cluster, apiDomain, prefixToStrip, ok := digestUrl(urlPath, rootPathPrefix)
+			fmt.Printf("\n\n\nXXXX digestUrl(%q, %q) -> cluster=%q,apiDomain=%q,prefixToStrip=%s,ok=%v\n\n\n", urlPath, rootPathPrefix, cluster.Name.String(), apiDomain, prefixToStrip, ok)
 			if !ok {
-				return false, "", ctx
+				return false, "", requestContext
 			}
 
-			completedContext = genericapirequest.WithCluster(ctx, cluster)
+			/*if !cluster.Wildcard {
+				// this virtual workspace requires that a wildcard be provided
+				return false, "", requestContext
+			}*/
+
+			completedContext = genericapirequest.WithCluster(requestContext, cluster)
 			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
 			return true, prefixToStrip, completedContext
 		}),
-
+		Authorizer: newAuth(kubeClusterClient),
 		ReadyChecker: framework.ReadyFunc(func() error {
-			select {
-			case <-readyCh:
-				return nil
-			default:
-				return goerrors.New("apiexport virtual workspace controllers are not started")
-			}
+			return nil
 		}),
-
 		BootstrapAPISetManagement: func(mainConfig genericapiserver.CompletedConfig) (apidefinition.APIDefinitionSetGetter, error) {
-			defer close(readyCh)
-
 			return &singleResourceAPIDefinitionSetProvider{
 				config:               mainConfig,
 				dynamicClusterClient: dynamicClusterClient,
 				exposeSubresources:   false,
-				resource:             &apisv1alpha1.APIResourceSchema{},
-				storageProvider:      delegatingLogicalClusterReadOnlyRestStorage,
+				resource:             &cachedResourceSch,
+				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc) (apiserver.RestProviderFunc, error) {
+					return forwardingregistry.ProvideReadOnlyRestStorage(ctx, dynamicClusterClientFunc, nil, nil)
+				},
 			}, nil
 		},
-		Authorizer: &authAny{},
 	}
 
 	return []rootapiserver.NamedVirtualWorkspace{
-		{Name: replication.VirtualWorkspaceName, VirtualWorkspace: boundOrClaimedWorkspaceContent},
+		{Name: replication.VirtualWorkspaceName, VirtualWorkspace: scopedCachedResourceContent},
 	}, nil
 }
 
-var resolver = requestinfo.NewFactory()
-
-type authAny struct{}
-
-func (_ *authAny) Authorize(ctx context.Context, a authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
-	fmt.Printf("\n\n\nXXX replication VW: authAny XXX\n\n\n")
-	return authorizer.DecisionAllow, "HEHE", nil
+type myAuth struct {
+	kubeClusterClient kcpkubernetesclientset.ClusterInterface
 }
 
-/*func newAuthorizer(kubeClusterClient, deepSARClient kcpkubernetesclientset.ClusterInterface, cachedKcpInformers, kcpInformers kcpinformers.SharedInformerFactory) authorizer.Authorizer {
-	maximalPermissionAuth := virtualapiexportauth.NewMaximalPermissionAuthorizer(deepSARClient, cachedKcpInformers.Apis().V1alpha2().APIExports())
-	maximalPermissionAuth = authorization.NewDecorator("virtual.apiexport.maxpermissionpolicy.authorization.kcp.io", maximalPermissionAuth).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
+func newAuth(kubeClusterClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
+	return authorization.NewDecorator("virtual.cachedresource.cache.authorization.kcp.io", &myAuth{
+		kubeClusterClient: kubeClusterClient,
+	}).AddAuditLogging().AddAnonymization()
+}
 
-	apiExportsContentAuth := virtualapiexportauth.NewAPIExportsContentAuthorizer(maximalPermissionAuth, kubeClusterClient)
-	apiExportsContentAuth = authorization.NewDecorator("virtual.apiexport.content.authorization.kcp.io", apiExportsContentAuth).AddAuditLogging().AddAnonymization()
-
-	boundApiAuth := virtualapiexportauth.NewBoundAPIAuthorizer(apiExportsContentAuth, kcpInformers.Apis().V1alpha2().APIBindings(), cachedKcpInformers.Apis().V1alpha2().APIExports(), kubeClusterClient)
-	boundApiAuth = authorization.NewDecorator("virtual.apiexport.boundapi.authorization.kcp.io", boundApiAuth).AddAuditLogging().AddAnonymization()
-
-	return boundApiAuth
-}*/
-
-func isLogicalClusterRequest(path string) bool {
-	info, err := resolver.NewRequestInfo(&http.Request{URL: &url.URL{Path: path}})
+func (a *myAuth) Authorize(ctx context.Context, attr authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
+	apiDomainKey := dynamiccontext.APIDomainKeyFrom(ctx)
+	clusterPath, _, err := splitDomainKey(apiDomainKey)
 	if err != nil {
-		return false
+		return authorizer.DecisionNoOpinion, "", fmt.Errorf("invalid API domain key: %v", err)
 	}
-	return info.IsResourceRequest && info.APIGroup == corev1alpha1.SchemeGroupVersion.Group && info.Resource == "logicalclusters"
+
+	return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %q, workspace: %q RBAC decision: %v",
+		"??", clusterPath, reason), nil
+
+	SARAttributes := authorizer.AttributesRecord{
+		APIGroup:   apisv1alpha1.SchemeGroupVersion.Group,
+		APIVersion: apisv1alpha1.SchemeGroupVersion.Version,
+		User:       attr.GetUser(),
+		Verb:       attr.GetVerb(),
+		// Name:            cachedResourceName,
+		Resource:        "cachedresources",
+		ResourceRequest: false,
+		//Subresource:     "content",
+	}
+
+	authz, err := authdelegated.NewDelegatedAuthorizer(logicalcluster.Name(clusterPath.String()), a.kubeClusterClient, authdelegated.Options{})
+	dec, reason, err := authz.Authorize(ctx, SARAttributes)
+	if err != nil {
+		return authorizer.DecisionNoOpinion, "",
+			fmt.Errorf("error authorizing RBAC in CachedResource %q, workspace %q: %w", "??", clusterPath, err)
+	}
+
+	return dec, fmt.Sprintf("CachedResource: %q, workspace: %q RBAC decision: %v",
+		"??", clusterPath, reason), nil
 }
 
 func digestUrl(urlPath, rootPathPrefix string) (
@@ -158,62 +184,80 @@ func digestUrl(urlPath, rootPathPrefix string) (
 	logicalPath string,
 	accepted bool,
 ) {
-	fmt.Printf("\n\n\nXXX replication VW: url=%s XXX\n\n\n", urlPath)
-
 	if !strings.HasPrefix(urlPath, rootPathPrefix) {
-		return genericapirequest.Cluster{}, dynamiccontext.APIDomainKey(""), "", false
+		return genericapirequest.Cluster{}, "", "", false
 	}
-	withoutRootPathPrefix := strings.TrimPrefix(urlPath, rootPathPrefix)
 
 	// Incoming requests to this virtual workspace will look like:
-	//  /services/replication/<Cluster path or wildcard>:<APIExport>/<CachedResource>
-	//                        ^
-	//                        |
-	//                        +----------------------+
-	//                                               |
-	// Where the withoutRootPathPrefix starts here:  +
-	// Now, we parse out the logical cluster.
-	parts := strings.SplitN(withoutRootPathPrefix, "/", 2)
-	if len(parts) != 2 {
-		return genericapirequest.Cluster{}, dynamiccontext.APIDomainKey(""), "", false
+	//  /services/apiexport/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
+	//                     └────────────────────────┐
+	// Where the withoutRootPathPrefix starts here: ┘
+	withoutRootPathPrefix := strings.TrimPrefix(urlPath, rootPathPrefix)
+
+	parts := strings.SplitN(withoutRootPathPrefix, "/", 3)
+	if len(parts) < 3 {
+		return genericapirequest.Cluster{}, "", "", false
 	}
 
-	logicalclusterPath, apiExportName := logicalcluster.NewPath(parts[0]).Split()
-	if logicalclusterPath.Empty() || apiExportName == "" {
-		return genericapirequest.Cluster{}, dynamiccontext.APIDomainKey(""), "", false
+	cachedResourceClusterName, cachedResourceName := parts[0], parts[1]
+	if cachedResourceClusterName == "" {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+	if cachedResourceName == "" {
+		return genericapirequest.Cluster{}, "", "", false
 	}
 
 	realPath := "/"
-	if parts[1] != "" {
+	if len(parts) > 2 {
+		realPath += parts[2]
+	}
+
+	//  /services/apiexport/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
+	//                     ┌────────────────────────────┘
+	// We are now here: ───┘
+	// Now, we parse out the logical cluster.
+	if !strings.HasPrefix(realPath, "/clusters/") {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+
+	withoutClustersPrefix := strings.TrimPrefix(realPath, "/clusters/")
+	parts = strings.SplitN(withoutClustersPrefix, "/", 2)
+	path := logicalcluster.NewPath(parts[0])
+	realPath = "/"
+	if len(parts) > 1 {
 		realPath += parts[1]
 	}
 
-	withoutClusterAndExportPrefix := parts[1]
-	if strings.Contains(withoutClusterAndExportPrefix, "/") {
-		// Unexpected tail on the path.
-		return genericapirequest.Cluster{}, dynamiccontext.APIDomainKey(""), "", false
-	}
-
-	cachedResourceName := withoutClusterAndExportPrefix
 	cluster = genericapirequest.Cluster{}
-	if logicalclusterPath == logicalcluster.Wildcard {
+	if path == logicalcluster.Wildcard {
 		cluster.Wildcard = true
 	} else {
 		var ok bool
-		cluster.Name, ok = logicalclusterPath.Name()
+		cluster.Name, ok = path.Name()
 		if !ok {
 			return genericapirequest.Cluster{}, "", "", false
 		}
 	}
 
-	key = buildDomainKey(logicalclusterPath, apiExportName, cachedResourceName)
-	return cluster, key, strings.TrimSuffix(urlPath, realPath), true
+	key = dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s", cachedResourceClusterName, cachedResourceName))
+	return cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
 }
 
-// URLFor returns the absolute path for the specified initializer.
-func URLFor(initializerName corev1alpha1.LogicalClusterInitializer) string {
-	// TODO(ncdc): make /services hard-coded everywhere instead of configurable.
-	return path.Join("/services", replication.VirtualWorkspaceName, string(initializerName))
+func buildDomainKey(clusterPath logicalcluster.Path, apiExportName string) dynamiccontext.APIDomainKey {
+	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s:%s", clusterPath.String(), apiExportName))
+}
+
+func splitDomainKey(key dynamiccontext.APIDomainKey) (clusterPath logicalcluster.Path, apiExportName string, err error) {
+	fullPath, ok := logicalcluster.NewValidatedPath(string(key))
+	if !ok {
+		return logicalcluster.None, "", fmt.Errorf("invalid cluster path %q in APIDomainKey for replication VW", string(key))
+	}
+	clusterPath, apiExportName = fullPath.Split()
+	if clusterPath.Empty() || apiExportName == "" {
+		return logicalcluster.None, "", fmt.Errorf("invalid APIExport reference %q in APIDomainKey %q for replication VW", apiExportName, string(key))
+	}
+
+	return
 }
 
 type singleResourceAPIDefinitionSetProvider struct {
@@ -221,40 +265,15 @@ type singleResourceAPIDefinitionSetProvider struct {
 	dynamicClusterClient kcpdynamic.ClusterInterface
 	resource             *apisv1alpha1.APIResourceSchema
 	exposeSubresources   bool
-	storageProvider      func(ctx context.Context, clusterClient kcpdynamic.ClusterInterface, initializer corev1alpha1.LogicalClusterInitializer) (apiserver.RestProviderFunc, error)
-}
-
-func buildDomainKey(clusterPath logicalcluster.Path, apiExportName, cachedResourceName string) dynamiccontext.APIDomainKey {
-	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s:%s/%s", clusterPath.String(), apiExportName, cachedResourceName))
-}
-
-func splitDomainKey(key dynamiccontext.APIDomainKey) (clusterPath logicalcluster.Path, apiExportName, cachedResourceName string, err error) {
-	parts := strings.Split(string(key), "/")
-	if len(parts) == 2 {
-		return logicalcluster.None, "", "", fmt.Errorf("%q is invalid APIDomainKey for replication VW", string(key))
-	}
-
-	clusterPath, apiExportName = logicalcluster.NewPath(parts[0]).Split()
-	if clusterPath.Empty() || apiExportName == "" {
-		return logicalcluster.None, "", "", fmt.Errorf("invalid APIExport reference %q in APIDomainKey %q for replication VW", parts[0], string(key))
-	}
-
-	if parts[1] == "" {
-		return logicalcluster.None, "", "", fmt.Errorf("empty CachedResource name in APIDomainKey %q for replication VW", string(key))
-	}
-
-	cachedResourceName = parts[1]
-
-	return
+	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc) (apiserver.RestProviderFunc, error)
 }
 
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
-	clusterPath, apiExportName, cachedResourceName, err := splitDomainKey(key)
-	if err != nil {
-		return nil, false, err
+	clientFactory := func(ctx context.Context) (kcpdynamic.ClusterInterface, error) {
+		return a.dynamicClusterClient, nil
 	}
 
-	restProvider, err := a.storageProvider(ctx, a.dynamicClusterClient, corev1alpha1.LogicalClusterInitializer(key))
+	restProvider, err := a.storageProvider(ctx, clientFactory)
 	if err != nil {
 		return nil, false, err
 	}
@@ -271,9 +290,9 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 
 	apis = apidefinition.APIDefinitionSet{
 		schema.GroupVersionResource{
-			Group:    corev1alpha1.SchemeGroupVersion.Group,
-			Version:  corev1alpha1.SchemeGroupVersion.Version,
-			Resource: "logicalclusters",
+			Group:    cachev1alpha1.SchemeGroupVersion.Group,
+			Version:  cachev1alpha1.SchemeGroupVersion.Version,
+			Resource: "objectresources",
 		}: apiDefinition,
 	}
 
@@ -281,28 +300,3 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 }
 
 var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProvider{}
-
-func authorizerWithCache(ctx context.Context, cache delegated.Cache, attr authorizer.Attributes) (authorizer.Decision, string, error) {
-	clusterName, name, err := initialization.TypeFrom(corev1alpha1.LogicalClusterInitializer(dynamiccontext.APIDomainKeyFrom(ctx)))
-	if err != nil {
-		klog.FromContext(ctx).V(2).Info(err.Error())
-		return authorizer.DecisionNoOpinion, "unable to determine initializer", fmt.Errorf("access not permitted")
-	}
-
-	authz, err := cache.Get(clusterName)
-	if err != nil {
-		return authorizer.DecisionNoOpinion, "error", err
-	}
-
-	SARAttributes := authorizer.AttributesRecord{
-		APIGroup:        tenancyv1alpha1.SchemeGroupVersion.Group,
-		APIVersion:      tenancyv1alpha1.SchemeGroupVersion.Version,
-		User:            attr.GetUser(),
-		Verb:            "initialize",
-		Name:            name,
-		Resource:        "workspacetypes",
-		ResourceRequest: true,
-	}
-
-	return authz.Authorize(ctx, SARAttributes)
-}
