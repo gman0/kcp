@@ -68,5 +68,11 @@ func (o *Replication) NewReplication(
 		return nil, err
 	}
 
-	return builder.BuildVirtualWorkspace(config, path.Join(rootPathPrefix, replication.VirtualWorkspaceName), dynamicClusterClient, kubeClusterClient, wildcardKcpInformers)
+	return builder.BuildVirtualWorkspace(
+		config,
+		path.Join(rootPathPrefix, replication.VirtualWorkspaceName),
+		dynamicClusterClient,
+		kubeClusterClient,
+		wildcardKcpInformers,
+	)
 }
