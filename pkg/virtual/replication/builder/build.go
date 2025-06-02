@@ -148,13 +148,13 @@ func newAuth(kubeClusterClient kcpkubernetesclientset.ClusterInterface) authoriz
 
 func (a *myAuth) Authorize(ctx context.Context, attr authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
 	apiDomainKey := dynamiccontext.APIDomainKeyFrom(ctx)
-	clusterPath, _, err := splitDomainKey(apiDomainKey)
+	clusterName, cachedResource, err := splitDomainKey(apiDomainKey)
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("invalid API domain key: %v", err)
 	}
 
 	return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %q, workspace: %q RBAC decision: %v",
-		"??", clusterPath, reason), nil
+		cachedResource, clusterName, reason), nil
 
 	SARAttributes := authorizer.AttributesRecord{
 		APIGroup:   apisv1alpha1.SchemeGroupVersion.Group,
@@ -167,15 +167,15 @@ func (a *myAuth) Authorize(ctx context.Context, attr authorizer.Attributes) (aut
 		//Subresource:     "content",
 	}
 
-	authz, err := authdelegated.NewDelegatedAuthorizer(logicalcluster.Name(clusterPath.String()), a.kubeClusterClient, authdelegated.Options{})
+	authz, err := authdelegated.NewDelegatedAuthorizer(clusterName, a.kubeClusterClient, authdelegated.Options{})
 	dec, reason, err := authz.Authorize(ctx, SARAttributes)
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "",
-			fmt.Errorf("error authorizing RBAC in CachedResource %q, workspace %q: %w", "??", clusterPath, err)
+			fmt.Errorf("error authorizing RBAC in CachedResource %q, workspace %q: %w", cachedResource, clusterName, err)
 	}
 
 	return dec, fmt.Sprintf("CachedResource: %q, workspace: %q RBAC decision: %v",
-		"??", clusterPath, reason), nil
+		cachedResource, clusterName, reason), nil
 }
 
 func digestUrl(urlPath, rootPathPrefix string) (
@@ -199,7 +199,7 @@ func digestUrl(urlPath, rootPathPrefix string) (
 		return genericapirequest.Cluster{}, "", "", false
 	}
 
-	cachedResourceClusterName, cachedResourceName := parts[0], parts[1]
+	cachedResourceClusterName, cachedResourceName := logicalcluster.Name(parts[0]), parts[1]
 	if cachedResourceClusterName == "" {
 		return genericapirequest.Cluster{}, "", "", false
 	}
@@ -239,24 +239,21 @@ func digestUrl(urlPath, rootPathPrefix string) (
 		}
 	}
 
-	key = dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s", cachedResourceClusterName, cachedResourceName))
+	key = buildDomainKey(cachedResourceClusterName, cachedResourceName)
 	return cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
 }
 
-func buildDomainKey(clusterPath logicalcluster.Path, apiExportName string) dynamiccontext.APIDomainKey {
-	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s:%s", clusterPath.String(), apiExportName))
+func buildDomainKey(clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
+	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s", clusterName, cachedResource))
 }
 
-func splitDomainKey(key dynamiccontext.APIDomainKey) (clusterPath logicalcluster.Path, apiExportName string, err error) {
-	fullPath, ok := logicalcluster.NewValidatedPath(string(key))
-	if !ok {
-		return logicalcluster.None, "", fmt.Errorf("invalid cluster path %q in APIDomainKey for replication VW", string(key))
-	}
-	clusterPath, apiExportName = fullPath.Split()
-	if clusterPath.Empty() || apiExportName == "" {
-		return logicalcluster.None, "", fmt.Errorf("invalid APIExport reference %q in APIDomainKey %q for replication VW", apiExportName, string(key))
+func splitDomainKey(key dynamiccontext.APIDomainKey) (cachedResourceCluster logicalcluster.Name, cachedResourceName string, err error) {
+	parts := strings.Split(string(key), "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
 	}
 
+	cachedResourceCluster, cachedResourceName = logicalcluster.Name(parts[0]), parts[1]
 	return
 }
 
