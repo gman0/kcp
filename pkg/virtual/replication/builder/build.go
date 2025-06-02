@@ -289,7 +289,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		schema.GroupVersionResource{
 			Group:    cachev1alpha1.SchemeGroupVersion.Group,
 			Version:  cachev1alpha1.SchemeGroupVersion.Version,
-			Resource: "objectresources",
+			Resource: "cachedresources",
 		}: apiDefinition,
 	}
 
