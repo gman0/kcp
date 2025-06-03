@@ -40,11 +40,11 @@ import (
 	"github.com/kcp-dev/kcp/pkg/authorization"
 	"github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	virtualapiexportauth "github.com/kcp-dev/kcp/pkg/virtual/apiexport/authorizer"
-	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/controllers/apireconciler"
 	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
+	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apireconciler"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apiserver"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
@@ -154,7 +154,9 @@ func BuildVirtualWorkspace(
 				return impersonatedClient, nil
 			}
 
+			controllerName := "kcp-virtual-apiexport-api-reconciler"
 			apiReconciler, err := apireconciler.NewAPIReconciler(
+				controllerName,
 				kcpClusterClient,
 				cachedKcpInformers.Apis().V1alpha1().APIResourceSchemas(),
 				cachedKcpInformers.Apis().V1alpha2().APIExports(),
@@ -192,12 +194,13 @@ func BuildVirtualWorkspace(
 						restProvider,
 					)
 				},
+				nil,
 			)
 			if err != nil {
 				return nil, err
 			}
 
-			if err := mainConfig.AddPostStartHook(apireconciler.ControllerName, func(hookContext genericapiserver.PostStartHookContext) error {
+			if err := mainConfig.AddPostStartHook(controllerName, func(hookContext genericapiserver.PostStartHookContext) error {
 				defer close(readyCh)
 
 				for name, informer := range map[string]cache.SharedIndexInformer{
