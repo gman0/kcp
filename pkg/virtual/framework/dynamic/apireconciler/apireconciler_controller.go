@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The KCP Authors.
+Copyright 2025 The KCP Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -49,22 +50,22 @@ import (
 	apisv1alpha2listers "github.com/kcp-dev/kcp/sdk/client/listers/apis/v1alpha2"
 )
 
-const (
-	ControllerName = "kcp-virtual-apiexport-api-reconciler"
-)
-
 type CreateAPIDefinitionFunc func(apiResourceSchema *apisv1alpha1.APIResourceSchema, version string, identityHash string, additionalLabelRequirements labels.Requirements) (apidefinition.APIDefinition, error)
 
 // NewAPIReconciler returns a new controller which reconciles APIResourceImport resources
 // and delegates the corresponding SyncTargetAPI management to the given SyncTargetAPIManager.
 func NewAPIReconciler(
+	controllerName string,
 	kcpClusterClient kcpclientset.ClusterInterface,
 	apiResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
 	apiExportInformer apisv1alpha2informers.APIExportClusterInformer,
 	createAPIDefinition CreateAPIDefinitionFunc,
 	createAPIBindingAPIDefinition func(ctx context.Context, apibindingVersion string, clusterName logicalcluster.Name, apiExportName string) (apidefinition.APIDefinition, error),
+	filterAPIDefinitionSet func(gvr schema.GroupVersionResource) bool,
 ) (*APIReconciler, error) {
 	c := &APIReconciler{
+		controllerName: controllerName,
+
 		kcpClusterClient: kcpClusterClient,
 
 		apiResourceSchemaLister:  apiResourceSchemaInformer.Lister(),
@@ -79,7 +80,7 @@ func NewAPIReconciler(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{
-				Name: ControllerName,
+				Name: controllerName,
 			},
 		),
 
@@ -97,7 +98,7 @@ func NewAPIReconciler(
 		},
 	)
 
-	logger := logging.WithReconciler(klog.Background(), ControllerName)
+	logger := logging.WithReconciler(klog.Background(), controllerName)
 
 	_, _ = apiExportInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -126,6 +127,8 @@ func NewAPIReconciler(
 // APIReconciler is a controller watching APIExports and APIResourceSchemas, and updates the
 // API definitions driving the virtual workspace.
 type APIReconciler struct {
+	controllerName string
+
 	kcpClusterClient kcpclientset.ClusterInterface
 
 	apiResourceSchemaLister  apisv1alpha1listers.APIResourceSchemaClusterLister
@@ -140,8 +143,9 @@ type APIReconciler struct {
 	createAPIDefinition           CreateAPIDefinitionFunc
 	createAPIBindingAPIDefinition func(ctx context.Context, apibindingVersion string, clusterName logicalcluster.Name, apiExportName string) (apidefinition.APIDefinition, error)
 
-	mutex   sync.RWMutex // protects the map, not the values!
-	apiSets map[dynamiccontext.APIDomainKey]apidefinition.APIDefinitionSet
+	filterAPISet func(gvr schema.GroupVersionResource) bool
+	mutex        sync.RWMutex // protects the map, not the values!
+	apiSets      map[dynamiccontext.APIDomainKey]apidefinition.APIDefinitionSet
 }
 
 func (c *APIReconciler) enqueueAPIResourceSchema(apiResourceSchema *apisv1alpha1.APIResourceSchema, logger logr.Logger) {
@@ -213,7 +217,7 @@ func (c *APIReconciler) Start(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 
-	logger := logging.WithReconciler(klog.FromContext(ctx), ControllerName)
+	logger := logging.WithReconciler(klog.FromContext(ctx), c.controllerName)
 	ctx = klog.NewContext(ctx, logger)
 	logger.Info("starting controller")
 	defer logger.Info("shutting down controller")
@@ -255,7 +259,7 @@ func (c *APIReconciler) processNextWorkItem(ctx context.Context) bool {
 	defer c.queue.Done(key)
 
 	if err := c.process(ctx, key); err != nil {
-		utilruntime.HandleError(fmt.Errorf("%s: failed to sync %q, err: %w", ControllerName, key, err))
+		utilruntime.HandleError(fmt.Errorf("%s: failed to sync %q, err: %w", c.controllerName, key, err))
 		c.queue.AddRateLimited(key)
 		return true
 	}
@@ -293,5 +297,13 @@ func (c *APIReconciler) GetAPIDefinitionSet(_ context.Context, key dynamiccontex
 	defer c.mutex.RUnlock()
 
 	apiSet, ok := c.apiSets[key]
+	if c.filterAPISet != nil {
+		for k, _ := range apiSet {
+			if !c.filterAPISet(k) {
+				delete(apiSet, k)
+			}
+		}
+	}
+
 	return apiSet, ok, nil
 }
