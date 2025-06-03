@@ -192,3 +192,11 @@ func (in *CachedResource) SetConditions(c conditionsv1alpha1.Conditions) {
 func (in *CachedResource) GetConditions() conditionsv1alpha1.Conditions {
 	return in.Status.Conditions
 }
+
+func (in GroupVersionResource) GetGroup() string {
+	return in.Group
+}
+
+func (in GroupVersionResource) GetResource() string {
+	return in.Resource
+}
