@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	kcpkubernetesinformers "github.com/kcp-dev/client-go/informers"
+	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 
 	virtualcommandoptions "github.com/kcp-dev/kcp/cmd/virtual-workspaces/options"
 	kcpserveroptions "github.com/kcp-dev/kcp/pkg/server/options"
@@ -57,6 +58,7 @@ func newVirtualConfig(
 	config *rest.Config,
 	kubeSharedInformerFactory kcpkubernetesinformers.SharedInformerFactory,
 	kcpSharedInformerFactory, cacheKcpSharedInformerFactory kcpinformers.SharedInformerFactory,
+	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
 	shardExternalURL func() string,
 ) (*VirtualConfig, error) {
 	scheme := runtime.NewScheme()
@@ -92,6 +94,7 @@ func newVirtualConfig(
 		kubeSharedInformerFactory,
 		kcpSharedInformerFactory,
 		cacheKcpSharedInformerFactory,
+		kcpCacheClusterClient, // <-- ...
 	)
 	if err != nil {
 		return nil, err

@@ -25,6 +25,7 @@ import (
 
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
+	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
@@ -57,6 +58,7 @@ func (o *Replication) NewReplication(
 	rootPathPrefix string,
 	config *rest.Config,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
+	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
 ) (workspaces []rootapiserver.NamedVirtualWorkspace, err error) {
 	config = rest.AddUserAgent(rest.CopyConfig(config), "replication-virtual-workspace")
 	kubeClusterClient, err := kcpkubernetesclientset.NewForConfig(config)
@@ -74,5 +76,6 @@ func (o *Replication) NewReplication(
 		dynamicClusterClient,
 		kubeClusterClient,
 		wildcardKcpInformers,
+		kcpCacheClusterClient, // <-- ...
 	)
 }
