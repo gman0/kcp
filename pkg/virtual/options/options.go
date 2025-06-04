@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	kcpkubernetesinformers "github.com/kcp-dev/client-go/informers"
+	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 
 	apiexportoptions "github.com/kcp-dev/kcp/pkg/virtual/apiexport/options"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
@@ -65,6 +66,7 @@ func (o *Options) NewVirtualWorkspaces(
 	shardExternalURL func() string,
 	wildcardKubeInformers kcpkubernetesinformers.SharedInformerFactory,
 	wildcardKcpInformers, cachedKcpInformers kcpinformers.SharedInformerFactory,
+	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
 ) ([]rootapiserver.NamedVirtualWorkspace, error) {
 	apiexports, err := o.APIExport.NewVirtualWorkspaces(rootPathPrefix, config, cachedKcpInformers, wildcardKcpInformers)
 	if err != nil {
@@ -76,7 +78,12 @@ func (o *Options) NewVirtualWorkspaces(
 		return nil, err
 	}
 
-	replications, err := replicationoptions.New().NewReplication(rootPathPrefix, config, wildcardKcpInformers)
+	replications, err := replicationoptions.New().NewReplication(
+		rootPathPrefix,
+		config,
+		wildcardKcpInformers,
+		kcpCacheClusterClient, // <-- ...
+	)
 	if err != nil {
 		return nil, err
 	}

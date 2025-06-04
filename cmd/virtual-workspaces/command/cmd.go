@@ -179,7 +179,12 @@ func Run(ctx context.Context, o *options.Options) error {
 		return o.ShardExternalURL
 	}
 
-	rootAPIServerConfig.Extra.VirtualWorkspaces, err = o.CoreVirtualWorkspaces.NewVirtualWorkspaces(identityConfig, o.RootPathPrefix, sharedExternalURLGetter, wildcardKubeInformers, wildcardKcpInformers, cacheKcpInformers)
+	kcpCacheClusterClient, err := kcpclientset.NewForConfig(cacheConfig)
+	if err != nil {
+		return err
+	}
+
+	rootAPIServerConfig.Extra.VirtualWorkspaces, err = o.CoreVirtualWorkspaces.NewVirtualWorkspaces(identityConfig, o.RootPathPrefix, sharedExternalURLGetter, wildcardKubeInformers, wildcardKcpInformers, cacheKcpInformers, kcpCacheClusterClient)
 	if err != nil {
 		return err
 	}
