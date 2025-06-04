@@ -614,6 +614,7 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 			c.KubeSharedInformerFactory,
 			c.KcpSharedInformerFactory,
 			c.CacheKcpSharedInformerFactory,
+			c.KcpCacheClusterClient,
 			c.ShardExternalURL,
 		)
 		if err != nil {
