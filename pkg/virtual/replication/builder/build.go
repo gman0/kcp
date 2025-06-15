@@ -31,6 +31,7 @@ import (
 
 	// authenticationv1 "k8s.io/api/authentication/v1"
 	// apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	// "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"github.com/kcp-dev/kcp/pkg/authorization"
@@ -66,11 +67,13 @@ import (
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 
 	// cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	// corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
+
 	// cachev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/cache/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	// XXX
+	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	kubecorev1 "k8s.io/api/core/v1"
 )
@@ -78,6 +81,7 @@ import (
 func BuildVirtualWorkspace(
 	cfg *rest.Config,
 	rootPathPrefix string,
+	kcpClusterClient kcpclientset.ClusterInterface,
 	dynamicClusterClient kcpdynamic.ClusterInterface,
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
@@ -115,6 +119,8 @@ func BuildVirtualWorkspace(
 			}
 			return &singleResourceAPIDefinitionSetProvider{
 				KcpCacheClusterClient: kcpCacheClusterClient,
+				wildcardKcpInformers:  wildcardKcpInformers,
+				kcpClusterClient:      kcpClusterClient,
 
 				config:               mainConfig,
 				dynamicClusterClient: dynamicClusterClient,
@@ -278,11 +284,101 @@ type singleResourceAPIDefinitionSetProvider struct {
 	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc) (apiserver.RestProviderFunc, error)
 
 	KcpCacheClusterClient kcpclientset.ClusterInterface // <-- ...
+	wildcardKcpInformers  kcpinformers.SharedInformerFactory
+	kcpClusterClient      kcpclientset.ClusterInterface
+}
+
+func getResourceBindingsAnnJSON(lc *corev1alpha1.LogicalCluster) string {
+	const jsonEmptyObj = "{}"
+
+	if lc == nil {
+		return jsonEmptyObj
+	}
+
+	ann := lc.Annotations[apibinding.ResourceBindingsAnnotationKey]
+	if ann == "" {
+		ann = jsonEmptyObj
+	}
+
+	return ann
+}
+
+func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
+	ctx context.Context,
+	clusterName logicalcluster.Name,
+	gvr schema.GroupVersionResource,
+) (*apisv1alpha1.APIResourceSchema, error) {
+	if gvr.Group == "" {
+		// Assume built-in types.
+		return builtin.GetBuiltInAPISchema(apisv1alpha1.GroupResource{Group: "", Resource: gvr.Resource})
+	}
+
+	lc, err := a.kcpClusterClient.CoreV1alpha1().LogicalClusters().Cluster(clusterName.Path()).Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	resBindingsAnnStr := getResourceBindingsAnnJSON(lc)
+	resBindingsAnn, err := apibinding.UnmarshalResourceBindingsAnnotation(resBindingsAnnStr)
+
+	bindingName := ""
+	for gr, v := range resBindingsAnn {
+		if v.CRD {
+			continue
+		}
+		if gr == gvr.GroupResource().String() {
+			bindingName = v.Name
+		}
+	}
+
+	if bindingName == "" {
+		return nil, fmt.Errorf("no binding for %s found in %s", gvr.GroupResource().String(), clusterName)
+	}
+
+	apiBinding, err := a.kcpClusterClient.ApisV1alpha2().APIBindings().Cluster(clusterName.Path()).Get(ctx, bindingName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get APIBinding %s in %s", bindingName, clusterName)
+	}
+
+	apiExport, err := a.kcpClusterClient.ApisV1alpha2().APIExports().Cluster(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)).
+		Get(ctx, apiBinding.Spec.Reference.Export.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get APIExport %s|%s referenced by APIBinding %s|%s",
+			apiBinding.Spec.Reference.Export.Path, apiBinding.Spec.Reference.Export.Name,
+			bindingName, clusterName,
+		)
+	}
+
+	schName := ""
+	for _, exportResource := range apiExport.Spec.Resources {
+		if exportResource.Group == gvr.Group && exportResource.Name == gvr.Resource {
+			schName = exportResource.Schema
+		}
+	}
+
+	return a.kcpClusterClient.ApisV1alpha1().APIResourceSchemas().Cluster(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)).
+		Get(ctx, schName, metav1.GetOptions{})
 }
 
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
+	clusterName, cachedResourceName, err := splitDomainKey(key)
+	if err != nil {
+		return nil, false, err
+	}
 
-	cachedobjs, err := a.KcpCacheClusterClient.CacheV1alpha1().Cluster(logicalcluster.NewPath("root")).CachedObjects().List(ctx, metav1.ListOptions{})
+	cachedResource, err := a.kcpClusterClient.CacheV1alpha1().CachedResources().Cluster(clusterName.Path()).
+		Get(ctx, cachedResourceName, metav1.GetOptions{})
+	if err != nil {
+		return nil, false, err
+	}
+
+	sch, err := a.getAPIResourceSchema(
+		ctx, clusterName, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("XXX failed to get APIResourceSchema for CachedResource %s: %v", cachedResourceName, err)
+	}
+
+	cachedobjs, err := a.KcpCacheClusterClient.CacheV1alpha1().Cluster(clusterName.Path()).CachedObjects().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to list CachedObjs: %v", err)
 	}
@@ -303,8 +399,8 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 
 	apiDefinition, err := apiserver.CreateServingInfoFor(
 		a.config,
-		a.resource,
-		"v1",
+		sch,
+		cachedResource.Spec.Version,
 		restProvider,
 	)
 	if err != nil {
@@ -313,9 +409,9 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 
 	apis = apidefinition.APIDefinitionSet{
 		schema.GroupVersionResource{
-			Group:    "",
-			Version:  "v1",
-			Resource: "configmaps",
+			Group:    cachedResource.Spec.Group,
+			Version:  cachedResource.Spec.Version,
+			Resource: cachedResource.Spec.Resource,
 		}: apiDefinition,
 	}
 
