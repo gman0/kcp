@@ -69,10 +69,15 @@ func (o *Replication) NewReplication(
 	if err != nil {
 		return nil, err
 	}
+	kcpClusterClient, err := kcpclientset.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
 
 	return builder.BuildVirtualWorkspace(
 		config,
 		path.Join(rootPathPrefix, replication.VirtualWorkspaceName),
+		kcpClusterClient,
 		dynamicClusterClient,
 		kubeClusterClient,
 		wildcardKcpInformers,
