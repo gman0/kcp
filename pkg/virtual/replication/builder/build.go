@@ -19,6 +19,8 @@ package builder
 import (
 	"context"
 	// "encoding/json"
+
+	// "encoding/json"
 	"fmt"
 	// "net/http"
 	// "text/template/parse"
@@ -32,10 +34,13 @@ import (
 	// authenticationv1 "k8s.io/api/authentication/v1"
 	// apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	// "k8s.io/apimachinery/pkg/api/meta"
+	// "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"github.com/kcp-dev/kcp/pkg/authorization"
+	// metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -66,7 +71,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 
-	// cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
+	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 
@@ -75,7 +80,7 @@ import (
 	// XXX
 	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
-	kubecorev1 "k8s.io/api/core/v1"
+	// kubecorev1 "k8s.io/api/core/v1"
 )
 
 func BuildVirtualWorkspace(
@@ -113,10 +118,6 @@ func BuildVirtualWorkspace(
 			return nil
 		}),
 		BootstrapAPISetManagement: func(mainConfig genericapiserver.CompletedConfig) (apidefinition.APIDefinitionSetGetter, error) {
-			configMapAPIResourceSchema, err := builtin.GetBuiltInAPISchema(apisv1alpha1.GroupResource{Group: "", Resource: "configmaps"})
-			if err != nil {
-				return nil, err
-			}
 			return &singleResourceAPIDefinitionSetProvider{
 				KcpCacheClusterClient: kcpCacheClusterClient,
 				wildcardKcpInformers:  wildcardKcpInformers,
@@ -125,12 +126,11 @@ func BuildVirtualWorkspace(
 				config:               mainConfig,
 				dynamicClusterClient: dynamicClusterClient,
 				exposeSubresources:   false,
-				resource:             configMapAPIResourceSchema,
-				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc) (apiserver.RestProviderFunc, error) {
+				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource) (apiserver.RestProviderFunc, error) {
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnpacking(),
+						withUnpacking(cachedResource, kcpCacheClusterClient),
 						nil,
 					)
 				},
@@ -143,14 +143,40 @@ func BuildVirtualWorkspace(
 	}, nil
 }
 
-func withUnpacking() forwardingregistry.StorageWrapper {
+func withUnpacking(cachedResource *cachev1alpha1.CachedResource, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
+	buildCachedObjName := func(gvr schema.GroupVersionResource, resName string) string {
+		if gvr.Group == "" {
+			gvr.Group = "core"
+		}
+		return fmt.Sprintf("%s.%s.%s.%s", gvr.Version, gvr.Resource, gvr.Group, resName)
+	}
+
 	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
 		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-			return &kubecorev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "wowowo",
-				},
-			}, nil
+			cachedObjs, err := kcpCacheClusterClient.CacheV1alpha1().Cluster(logicalcluster.From(cachedResource).Path()).CachedObjects().
+				List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("error getting %s|%s: %v", logicalcluster.From(cachedResource).Path(), buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name), err)
+			}
+			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name)
+			var cachedObj *cachev1alpha1.CachedObject
+			for i := range cachedObjs.Items {
+				if cachedObjs.Items[i].Name == cachedObjName {
+					cachedObj = &cachedObjs.Items[i]
+					break
+				}
+			}
+			if cachedObj == nil {
+				return nil, fmt.Errorf("CachedObj %s not found", cachedObjName)
+			}
+
+			// Decode inner object
+			inner := &unstructured.Unstructured{}
+			if err := inner.UnmarshalJSON(cachedObj.Spec.Raw.Raw); err != nil {
+				return nil, fmt.Errorf("failed to decode inner object: %w", err)
+			}
+
+			return inner, nil
 		}
 	})
 }
@@ -281,7 +307,7 @@ type singleResourceAPIDefinitionSetProvider struct {
 	dynamicClusterClient kcpdynamic.ClusterInterface
 	resource             *apisv1alpha1.APIResourceSchema
 	exposeSubresources   bool
-	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc) (apiserver.RestProviderFunc, error)
+	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource) (apiserver.RestProviderFunc, error)
 
 	KcpCacheClusterClient kcpclientset.ClusterInterface // <-- ...
 	wildcardKcpInformers  kcpinformers.SharedInformerFactory
@@ -374,6 +400,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 	sch, err := a.getAPIResourceSchema(
 		ctx, clusterName, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
 	)
+
 	if err != nil {
 		return nil, false, fmt.Errorf("XXX failed to get APIResourceSchema for CachedResource %s: %v", cachedResourceName, err)
 	}
@@ -385,6 +412,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 	names := make([]string, len(cachedobjs.Items))
 	for i := range cachedobjs.Items {
 		names[i] = cachedobjs.Items[i].Name
+		fmt.Printf("\n\n\n ;;; CachedObj:%#v ; Raw:%s ;;;\n\n\n", cachedobjs.Items[i], cachedobjs.Items[i].Spec.Raw.Raw)
 	}
 	fmt.Printf("\n\n\n ^^^ CachedObjs:%v ^^^\n\n\n", names)
 
@@ -392,7 +420,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		return a.dynamicClusterClient, nil
 	}
 
-	restProvider, err := a.storageProvider(ctx, clientFactory)
+	restProvider, err := a.storageProvider(ctx, clientFactory, cachedResource)
 	if err != nil {
 		return nil, false, err
 	}
