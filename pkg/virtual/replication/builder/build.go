@@ -38,10 +38,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"github.com/kcp-dev/kcp/pkg/authorization"
-	// metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -91,6 +89,7 @@ func BuildVirtualWorkspace(
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
 	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
+
 ) ([]rootapiserver.NamedVirtualWorkspace, error) {
 	if !strings.HasSuffix(rootPathPrefix, "/") {
 		rootPathPrefix += "/"
@@ -126,11 +125,11 @@ func BuildVirtualWorkspace(
 				config:               mainConfig,
 				dynamicClusterClient: dynamicClusterClient,
 				exposeSubresources:   false,
-				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource) (apiserver.RestProviderFunc, error) {
+				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, namespaced bool) (apiserver.RestProviderFunc, error) {
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnpacking(cachedResource, kcpCacheClusterClient),
+						withUnwrapping(ctx, cachedResource, namespaced, kcpCacheClusterClient),
 						nil,
 					)
 				},
@@ -141,44 +140,6 @@ func BuildVirtualWorkspace(
 	return []rootapiserver.NamedVirtualWorkspace{
 		{Name: replication.VirtualWorkspaceName, VirtualWorkspace: scopedCachedResourceContent},
 	}, nil
-}
-
-func withUnpacking(cachedResource *cachev1alpha1.CachedResource, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
-	buildCachedObjName := func(gvr schema.GroupVersionResource, resName string) string {
-		if gvr.Group == "" {
-			gvr.Group = "core"
-		}
-		return fmt.Sprintf("%s.%s.%s.%s", gvr.Version, gvr.Resource, gvr.Group, resName)
-	}
-
-	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
-		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-			cachedObjs, err := kcpCacheClusterClient.CacheV1alpha1().Cluster(logicalcluster.From(cachedResource).Path()).CachedObjects().
-				List(ctx, metav1.ListOptions{})
-			if err != nil {
-				return nil, fmt.Errorf("error getting %s|%s: %v", logicalcluster.From(cachedResource).Path(), buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name), err)
-			}
-			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name)
-			var cachedObj *cachev1alpha1.CachedObject
-			for i := range cachedObjs.Items {
-				if cachedObjs.Items[i].Name == cachedObjName {
-					cachedObj = &cachedObjs.Items[i]
-					break
-				}
-			}
-			if cachedObj == nil {
-				return nil, fmt.Errorf("CachedObj %s not found", cachedObjName)
-			}
-
-			// Decode inner object
-			inner := &unstructured.Unstructured{}
-			if err := inner.UnmarshalJSON(cachedObj.Spec.Raw.Raw); err != nil {
-				return nil, fmt.Errorf("failed to decode inner object: %w", err)
-			}
-
-			return inner, nil
-		}
-	})
 }
 
 type myAuth struct {
@@ -307,7 +268,7 @@ type singleResourceAPIDefinitionSetProvider struct {
 	dynamicClusterClient kcpdynamic.ClusterInterface
 	resource             *apisv1alpha1.APIResourceSchema
 	exposeSubresources   bool
-	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource) (apiserver.RestProviderFunc, error)
+	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, namespaced bool) (apiserver.RestProviderFunc, error)
 
 	KcpCacheClusterClient kcpclientset.ClusterInterface // <-- ...
 	wildcardKcpInformers  kcpinformers.SharedInformerFactory
@@ -420,7 +381,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		return a.dynamicClusterClient, nil
 	}
 
-	restProvider, err := a.storageProvider(ctx, clientFactory, cachedResource)
+	restProvider, err := a.storageProvider(ctx, clientFactory, cachedResource, sch.Spec.Scope == apiextensionsv1.NamespaceScoped)
 	if err != nil {
 		return nil, false, err
 	}
