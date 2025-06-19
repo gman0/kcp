@@ -38,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"github.com/kcp-dev/kcp/pkg/authorization"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -125,11 +124,11 @@ func BuildVirtualWorkspace(
 				config:               mainConfig,
 				dynamicClusterClient: dynamicClusterClient,
 				exposeSubresources:   false,
-				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, namespaced bool) (apiserver.RestProviderFunc, error) {
+				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema) (apiserver.RestProviderFunc, error) {
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnwrapping(ctx, cachedResource, namespaced, kcpCacheClusterClient),
+						withUnwrapping(ctx, cachedResource, sch, kcpCacheClusterClient),
 						nil,
 					)
 				},
@@ -268,7 +267,7 @@ type singleResourceAPIDefinitionSetProvider struct {
 	dynamicClusterClient kcpdynamic.ClusterInterface
 	resource             *apisv1alpha1.APIResourceSchema
 	exposeSubresources   bool
-	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, namespaced bool) (apiserver.RestProviderFunc, error)
+	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema) (apiserver.RestProviderFunc, error)
 
 	KcpCacheClusterClient kcpclientset.ClusterInterface // <-- ...
 	wildcardKcpInformers  kcpinformers.SharedInformerFactory
@@ -381,7 +380,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		return a.dynamicClusterClient, nil
 	}
 
-	restProvider, err := a.storageProvider(ctx, clientFactory, cachedResource, sch.Spec.Scope == apiextensionsv1.NamespaceScoped)
+	restProvider, err := a.storageProvider(ctx, clientFactory, cachedResource, sch)
 	if err != nil {
 		return nil, false, err
 	}
