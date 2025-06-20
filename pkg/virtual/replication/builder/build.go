@@ -21,12 +21,12 @@ import (
 	// "encoding/json"
 
 	// "encoding/json"
+	"errors"
 	"fmt"
 	// "net/http"
 	// "text/template/parse"
 
 	// "net/http/httputil"
-	// goerrors "errors"
 	// "net/url"
 	// "path"
 	"strings"
@@ -35,7 +35,10 @@ import (
 	// apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	// "k8s.io/apimachinery/pkg/api/meta"
 	// "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"github.com/kcp-dev/kcp/pkg/authorization"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,11 +46,12 @@ import (
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 
 	// "k8s.io/client-go/tools/cache"
 	// "k8s.io/kubernetes/pkg/registry/rbac/validation"
 	//"k8s.io/client-go/transport"
-	// "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
 
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
@@ -75,10 +79,62 @@ import (
 	// cachev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/cache/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	// XXX
+	"time"
+
 	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	// kubecorev1 "k8s.io/api/core/v1"
 )
+
+// cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
+// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
+
+func dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient kcpclientset.ClusterInterface) context.CancelFunc {
+	const resyncPeriod = 10 * time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cacheKcpSharedInformerFactory := kcpinformers.NewSharedInformerFactoryWithOptions(
+		kcpCacheClusterClient,
+		resyncPeriod,
+	)
+
+	go cacheKcpSharedInformerFactory.Cache().V1alpha1().CachedObjects().Informer().Run(ctx.Done())
+	cacheKcpSharedInformerFactory.Start(ctx.Done())
+	synced := cacheKcpSharedInformerFactory.WaitForCacheSync(ctx.Done())
+
+	syncedStrMap := make(map[string]bool)
+	for k, v := range synced {
+		syncedStrMap[k.String()] = v
+	}
+	fmt.Printf("\n\n\n>>><<< syncedStrMap=%#v <<<\n\n\n", syncedStrMap)
+
+	listCacheObjs := func(cluster logicalcluster.Name) []string {
+		cacheObjs, err := cacheKcpSharedInformerFactory.Cache().V1alpha1().CachedObjects().Lister().List(labels.Everything())
+		if err != nil {
+			return []string{fmt.Sprintf("!!! err=%v !!!", err)}
+		}
+		names := make([]string, len(cacheObjs))
+		for i := range cacheObjs {
+			names[i] = cacheObjs[i].Name
+		}
+		return names
+	}
+
+	cacheKcpSharedInformerFactory.Cache().V1alpha1().CachedObjects().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			fmt.Printf("\n\n\n>>><<< ADDED %s ; %v <<<\n\n\n", obj.(runtime.Object), listCacheObjs(logicalcluster.From(obj.(logicalcluster.Object))))
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			fmt.Printf("\n\n\n>>><<< UPDATED %s ; %v <<<\n\n\n", newObj.(runtime.Object), listCacheObjs(logicalcluster.From(newObj.(logicalcluster.Object))))
+		},
+		DeleteFunc: func(obj interface{}) {
+			fmt.Printf("\n\n\n>>><<< DELETED %s ; %v <<<\n\n\n", obj.(runtime.Object), listCacheObjs(logicalcluster.From(obj.(logicalcluster.Object))))
+		},
+	})
+
+	return cancel
+}
 
 func BuildVirtualWorkspace(
 	cfg *rest.Config,
@@ -88,11 +144,15 @@ func BuildVirtualWorkspace(
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
 	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
-
+	cacheKcpInformers kcpinformers.SharedInformerFactory,
 ) ([]rootapiserver.NamedVirtualWorkspace, error) {
 	if !strings.HasSuffix(rootPathPrefix, "/") {
 		rootPathPrefix += "/"
 	}
+
+	fmt.Printf("\n\n\n=== 1 cachedObj has synced: %v ===\n\n\n", cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().HasSynced())
+
+	readyCh := make(chan struct{})
 
 	scopedCachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
@@ -113,9 +173,33 @@ func BuildVirtualWorkspace(
 		}),
 		Authorizer: newAuth(kubeClusterClient),
 		ReadyChecker: framework.ReadyFunc(func() error {
-			return nil
+			select {
+			case <-readyCh:
+				return nil
+			default:
+				return errors.New("replication virtual workspace controllers are not started")
+			}
 		}),
 		BootstrapAPISetManagement: func(mainConfig genericapiserver.CompletedConfig) (apidefinition.APIDefinitionSetGetter, error) {
+			//go dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient)
+
+			if err := mainConfig.AddPostStartHook(replication.VirtualWorkspaceName, func(hookContext genericapiserver.PostStartHookContext) error {
+				defer close(readyCh)
+
+				for name, informer := range map[string]cache.SharedIndexInformer{
+					"cachedresources": cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
+				} {
+					if !cache.WaitForNamedCacheSync(name, hookContext.Done(), informer.HasSynced) {
+						klog.Background().Error(nil, "informer not synced")
+						return nil
+					}
+				}
+
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+
 			return &singleResourceAPIDefinitionSetProvider{
 				KcpCacheClusterClient: kcpCacheClusterClient,
 				wildcardKcpInformers:  wildcardKcpInformers,
@@ -128,7 +212,7 @@ func BuildVirtualWorkspace(
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnwrapping(ctx, cachedResource, sch, kcpCacheClusterClient),
+						withUnwrapping(ctx, cachedResource, sch, cacheKcpInformers),
 						nil,
 					)
 				},

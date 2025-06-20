@@ -32,15 +32,14 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 
-	"github.com/kcp-dev/logicalcluster/v3"
+	// "github.com/kcp-dev/logicalcluster/v3"
 
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 
-	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
+	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
+	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
 func unwrapCachedObject(obj *cachev1alpha1.CachedObject) (*unstructured.Unstructured, error) {
@@ -51,7 +50,7 @@ func unwrapCachedObject(obj *cachev1alpha1.CachedObject) (*unstructured.Unstruct
 	return inner, nil
 }
 
-func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
+func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema, cacheKcpInformers kcpinformers.SharedInformerFactory) forwardingregistry.StorageWrapper {
 	namespaceScoped := sch.Spec.Scope == apiextensionsv1.NamespaceScoped
 	buildCachedObjName := func(gvr schema.GroupVersionResource, resName string) string {
 		if gvr.Group == "" {
@@ -61,22 +60,22 @@ func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.Cac
 	}
 	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
 		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-			ctxWithCluster := context.WithValue(cacheclient.WithShardInContext(ctx, shard.New("root")), logicalcluster.AnnotationKey, logicalcluster.From(cachedResource))
-			cachedObj, err := kcpCacheClusterClient.Cluster(logicalcluster.From(cachedResource).Path()).CacheV1alpha1().CachedObjects().
-				Get(ctxWithCluster, buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name), metav1.GetOptions{})
+			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name)
+			cachedObj, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster("root").Lister().Get(cachedObjName)
+			fmt.Printf("\n\n\n=== 2 cachedObj has synced: %v ===\n\n\n", cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().HasSynced())
 			if err != nil {
 				return nil, err
 			}
 
 			return unwrapCachedObject(cachedObj)
 		}
-		storage.WatcherFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
+		/*storage.WatcherFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
 			if err := checkCrossNamespaceAndWildcard(ctx, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), namespaceScoped); err != nil {
 				return nil, err
 			}
 			// TODO: Watch only resources with correct GVR labels
-			var v1ListOptions metav1.ListOptions
-			if err := metainternalversion.Convert_internalversion_ListOptions_To_v1_ListOptions(options, &v1ListOptions, nil); err != nil {
+			var origV1ListOptions metav1.ListOptions
+			if err := metainternalversion.Convert_internalversion_ListOptions_To_v1_ListOptions(options, &origV1ListOptions, nil); err != nil {
 				return nil, err
 			}
 
@@ -90,26 +89,38 @@ func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.Cac
 				}
 			}()
 
+
+
 			cachedObjWatch, err := kcpCacheClusterClient.Cluster(logicalcluster.From(cachedResource).Path()).CacheV1alpha1().CachedObjects().
-				Watch(watchCtx, v1ListOptions)
+				Watch(watchCtx, origV1ListOptions)
 			if err != nil {
 				return nil, err
 			}
 
 			return newUnwrappingWatch(cachedObjWatch), nil
-		}
+		}*/
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
 			if err := checkCrossNamespaceAndWildcard(ctx, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), namespaceScoped); err != nil {
 				return nil, err
 			}
 			// TODO: Watch only resources with correct GVR labels
-			var v1ListOptions metav1.ListOptions
-			if err := metainternalversion.Convert_internalversion_ListOptions_To_v1_ListOptions(options, &v1ListOptions, nil); err != nil {
+			var origV1ListOptions metav1.ListOptions
+			if err := metainternalversion.Convert_internalversion_ListOptions_To_v1_ListOptions(options, &origV1ListOptions, nil); err != nil {
 				return nil, err
 			}
 
-			cachedObjList, err := kcpCacheClusterClient.Cluster(logicalcluster.From(cachedResource).Path()).CacheV1alpha1().CachedObjects().
-				List(ctx, v1ListOptions)
+			cachedObjs, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer().
+				ByIndex(
+					replication.ByGVRAndShardAndLogicalClusterAndNamespaceAndName,
+					replication.GVRAndShardAndLogicalClusterAndNamespaceKey(
+						schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
+						"root",
+						"root",
+						"",
+						"",
+					),
+				)
+
 			if err != nil {
 				return nil, err
 			}
@@ -123,7 +134,7 @@ func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.Cac
 				innerListGVK.Kind = sch.Spec.Names.Kind + "List"
 			}
 
-			return newUnwrappingList(innerListGVK, cachedObjList)
+			return newUnwrappingList(innerListGVK, cachedObjs)
 		}
 	})
 }
@@ -213,12 +224,12 @@ func (w *unwrappingWatch) ResultChan() <-chan watch.Event {
 	return w.resultChan
 }
 
-func newUnwrappingList(innerListGVK schema.GroupVersionKind, cachedObjList *cachev1alpha1.CachedObjectList) (*unstructured.UnstructuredList, error) {
+func newUnwrappingList(innerListGVK schema.GroupVersionKind, cachedObjs []interface{}) (*unstructured.UnstructuredList, error) {
 	result := &unstructured.UnstructuredList{}
 	result.SetGroupVersionKind(innerListGVK)
 
-	for i := range cachedObjList.Items {
-		obj, err := unwrapCachedObject(&cachedObjList.Items[i])
+	for i := range cachedObjs {
+		obj, err := unwrapCachedObject(cachedObjs[i].(*cachev1alpha1.CachedObject))
 		if err != nil {
 			return nil, fmt.Errorf("failed to unwrap item: %w", err)
 		}
