@@ -59,6 +59,7 @@ func (o *Replication) NewReplication(
 	config *rest.Config,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
 	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
+	cacheKcpInformers kcpinformers.SharedInformerFactory,
 ) (workspaces []rootapiserver.NamedVirtualWorkspace, err error) {
 	config = rest.AddUserAgent(rest.CopyConfig(config), "replication-virtual-workspace")
 	kubeClusterClient, err := kcpkubernetesclientset.NewForConfig(config)
@@ -82,5 +83,6 @@ func (o *Replication) NewReplication(
 		kubeClusterClient,
 		wildcardKcpInformers,
 		kcpCacheClusterClient, // <-- ...
+		cacheKcpInformers,
 	)
 }
