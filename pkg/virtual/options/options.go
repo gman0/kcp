@@ -83,6 +83,7 @@ func (o *Options) NewVirtualWorkspaces(
 		config,
 		wildcardKcpInformers,
 		kcpCacheClusterClient, // <-- ...
+		cachedKcpInformers,
 	)
 	if err != nil {
 		return nil, err
