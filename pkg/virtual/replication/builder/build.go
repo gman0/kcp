@@ -181,8 +181,6 @@ func BuildVirtualWorkspace(
 			}
 		}),
 		BootstrapAPISetManagement: func(mainConfig genericapiserver.CompletedConfig) (apidefinition.APIDefinitionSetGetter, error) {
-			//go dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient)
-
 			if err := mainConfig.AddPostStartHook(replication.VirtualWorkspaceName, func(hookContext genericapiserver.PostStartHookContext) error {
 				defer close(readyCh)
 
@@ -212,7 +210,7 @@ func BuildVirtualWorkspace(
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnwrapping(ctx, cachedResource, sch, cacheKcpInformers),
+						withUnwrapping(cachedResource, sch, kcpCacheClusterClient),
 						nil,
 					)
 				},
@@ -444,7 +442,6 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 	sch, err := a.getAPIResourceSchema(
 		ctx, clusterName, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
 	)
-
 	if err != nil {
 		return nil, false, fmt.Errorf("XXX failed to get APIResourceSchema for CachedResource %s: %v", cachedResourceName, err)
 	}
@@ -456,7 +453,6 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 	names := make([]string, len(cachedobjs.Items))
 	for i := range cachedobjs.Items {
 		names[i] = cachedobjs.Items[i].Name
-		fmt.Printf("\n\n\n ;;; CachedObj:%#v ; Raw:%s ;;;\n\n\n", cachedobjs.Items[i], cachedobjs.Items[i].Spec.Raw.Raw)
 	}
 	fmt.Printf("\n\n\n ^^^ CachedObjs:%v ^^^\n\n\n", names)
 
