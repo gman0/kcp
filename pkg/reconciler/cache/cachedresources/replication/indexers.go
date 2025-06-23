@@ -29,6 +29,8 @@ import (
 const (
 	// ByGVRAndShardAndLogicalClusterAndNamespaceAndName is the name for the index that indexes by an object's gvr, shard and logical cluster, namespace and name.
 	ByGVRAndShardAndLogicalClusterAndNamespaceAndName = "kcp-byGVRAndShardAndLogicalClusterAndNamespaceAndName"
+
+	ByGVRAndShardAndLogicalCluster = "kcp-byGVRAndShardAndLogicalCluster"
 )
 
 // IndexByShardAndLogicalClusterAndNamespace is an index function that indexes by an object's shard and logical cluster, namespace and name.
@@ -80,4 +82,44 @@ func GVRAndShardAndLogicalClusterAndNamespaceKey(gvr schema.GroupVersionResource
 		return name
 	}
 	return fmt.Sprintf("%s%s", key, name)
+}
+
+// IndexByGVRAndShardAndLogicalCluster is an index function that indexes by an object's inner GVR and shard and logical cluster.
+func IndexByGVRAndShardAndLogicalCluster(obj interface{}) ([]string, error) {
+	a, err := meta.Accessor(obj)
+	if err != nil {
+		return nil, err
+	}
+	annotations := a.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	labels := a.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    labels[LabelKeyObjectGroup],
+		Version:  labels[LabelKeyObjectVersion],
+		Resource: labels[LabelKeyObjectResource],
+	}
+
+	shardName := annotations[genericapirequest.ShardAnnotationKey]
+
+	key := GVRAndShardAndLogicalCluster(gvr, shardName, logicalcluster.From(a))
+	return []string{key}, nil
+}
+
+func GVRAndShardAndLogicalCluster(gvr schema.GroupVersionResource, shard string, cluster logicalcluster.Name) string {
+	var key string
+	key += gvr.Version + "." + gvr.Resource + "." + gvr.Group + "|"
+	if len(shard) > 0 {
+		key += shard + "|"
+	}
+	if !cluster.Empty() {
+		key += cluster.String()
+	}
+	return key
 }

@@ -39,9 +39,11 @@ import (
 
 	kcpkubernetesinformers "github.com/kcp-dev/client-go/informers"
 	kcpkubernetesclient "github.com/kcp-dev/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 
 	"github.com/kcp-dev/kcp/cmd/virtual-workspaces/options"
 	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
+	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	"github.com/kcp-dev/kcp/pkg/server/bootstrap"
 	virtualrootapiserver "github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
@@ -148,6 +150,14 @@ func Run(ctx context.Context, o *options.Options) error {
 		//nolint:errcheck,gosec
 		go http.ListenAndServe(o.ProfilerAddress, nil)
 	}
+
+	_ = cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer()
+
+	cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer().AddIndexers(
+		cache.Indexers{
+			replication.ByGVRAndShardAndLogicalCluster: replication.IndexByGVRAndShardAndLogicalCluster,
+		},
+	)
 
 	// create apiserver
 	scheme := runtime.NewScheme()
