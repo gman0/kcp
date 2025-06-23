@@ -100,7 +100,13 @@ func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.Cac
 			return newUnwrappingWatch(cachedObjWatch), nil
 		}*/
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
-			if err := checkCrossNamespaceAndWildcard(ctx, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), namespaceScoped); err != nil {
+			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
+
+			if innerGVR.Group == "" {
+				innerGVR.Group = "core"
+			}
+
+			if err := checkCrossNamespaceAndWildcard(ctx, innerGVR, namespaceScoped); err != nil {
 				return nil, err
 			}
 			// TODO: Watch only resources with correct GVR labels
@@ -111,13 +117,11 @@ func withUnwrapping(parentCtx context.Context, cachedResource *cachev1alpha1.Cac
 
 			cachedObjs, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer().
 				ByIndex(
-					replication.ByGVRAndShardAndLogicalClusterAndNamespaceAndName,
-					replication.GVRAndShardAndLogicalClusterAndNamespaceKey(
-						schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
+					replication.ByGVRAndShardAndLogicalCluster,
+					replication.GVRAndShardAndLogicalCluster(
+						innerGVR,
 						"root",
 						"root",
-						"",
-						"",
 					),
 				)
 
