@@ -141,6 +141,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			}
 
 			var listOpts metav1.ListOptions
+			listOpts.TypeMeta = metav1.TypeMeta{}
 			if err := metainternalversion.Convert_internalversion_ListOptions_To_v1_ListOptions(options, &listOpts, nil); err != nil {
 				return nil, err
 			}
@@ -243,8 +244,6 @@ func newUnwrappingWatch(cachedObjWatch watch.Interface, innerObjGR schema.GroupR
 		defer w.Stop()
 
 		for event := range cachedObjWatch.ResultChan() {
-			fmt.Println("<> watch event", event.Type)
-
 			cachedObj, ok := event.Object.(*cachev1alpha1.CachedObject)
 			if !ok {
 				w.resultChan <- watch.Event{
@@ -300,8 +299,8 @@ func (w *unwrappingWatch) ResultChan() <-chan watch.Event {
 }
 
 func newUnwrappingList(innerListGVK schema.GroupVersionKind, innerObjGR schema.GroupResource, cachedObjList *cachev1alpha1.CachedObjectList, innerListOpts *metainternalversion.ListOptions, namespaced bool) (*unstructured.UnstructuredList, error) {
-	result := &unstructured.UnstructuredList{}
-	result.SetGroupVersionKind(innerListGVK)
+	innerList := &unstructured.UnstructuredList{}
+	innerList.SetGroupVersionKind(innerListGVK)
 
 	label := labels.Everything()
 	if innerListOpts != nil && innerListOpts.LabelSelector != nil {
@@ -334,8 +333,11 @@ func newUnwrappingList(innerListGVK schema.GroupVersionKind, innerObjGR schema.G
 			continue
 		}
 
-		result.Items = append(result.Items, *innerObj)
+		innerObj.SetResourceVersion(item.GetResourceVersion())
+		innerList.Items = append(innerList.Items, *innerObj)
 	}
 
-	return result, nil
+	innerList.SetResourceVersion(cachedObjList.GetResourceVersion())
+
+	return innerList, nil
 }
