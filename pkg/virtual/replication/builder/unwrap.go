@@ -57,18 +57,23 @@ func unwrapCachedObject(obj *cachev1alpha1.CachedObject) (*unstructured.Unstruct
 
 func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
 	namespaced := sch.Spec.Scope == apiextensionsv1.NamespaceScoped
-	buildCachedObjName := func(gvr schema.GroupVersionResource, resName string) string {
+	buildCachedObjName := func(gvr schema.GroupVersionResource, ns, resName string) string {
 		if gvr.Group == "" {
 			gvr.Group = "core"
 		}
-		return fmt.Sprintf("%s.%s.%s.%s", gvr.Version, gvr.Resource, gvr.Group, resName)
+		cachedObjName := fmt.Sprintf("%s.%s.%s.%s", gvr.Version, gvr.Resource, gvr.Group, resName)
+		if namespaced {
+			cachedObjName += "." + ns
+		}
+
+		return cachedObjName
 	}
 
 	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
 		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
 			ctx = context.WithValue(cacheclient.WithShardInContext(ctx, shard.New("root")), logicalcluster.AnnotationKey, logicalcluster.From(cachedResource))
 
-			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), name)
+			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), genericapirequest.NamespaceValue(ctx), name)
 			cachedObj, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(logicalcluster.From(cachedResource).Path()).
 				Get(ctx, cachedObjName, *options)
 			if err != nil {
