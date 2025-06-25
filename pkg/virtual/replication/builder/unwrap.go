@@ -38,8 +38,8 @@ import (
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
+	// cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
+	// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
@@ -71,8 +71,6 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 
 	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
 		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-			ctx = context.WithValue(cacheclient.WithShardInContext(ctx, shard.New("root")), logicalcluster.AnnotationKey, logicalcluster.From(cachedResource))
-
 			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), genericapirequest.NamespaceValue(ctx), name)
 			cachedObj, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(logicalcluster.From(cachedResource).Path()).
 				Get(ctx, cachedObjName, *options)
@@ -82,8 +80,6 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			return unwrapCachedObject(cachedObj)
 		}
 		storage.WatcherFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
-			ctx = context.WithValue(cacheclient.WithShardInContext(ctx, shard.New("root")), logicalcluster.AnnotationKey, logicalcluster.From(cachedResource))
-
 			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
@@ -134,8 +130,6 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			return newUnwrappingWatch(cachedObjWatch, innerGVR.GroupResource(), options, namespaced), nil
 		}
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
-			ctx = context.WithValue(cacheclient.WithShardInContext(ctx, shard.New("root")), logicalcluster.AnnotationKey, logicalcluster.From(cachedResource))
-
 			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"

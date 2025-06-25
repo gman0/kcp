@@ -60,6 +60,8 @@ import (
 	// "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	// "github.com/kcp-dev/kcp/pkg/authorization/delegated"
 	authdelegated "github.com/kcp-dev/kcp/pkg/authorization/delegated"
+	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
+	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualworkspacesdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
@@ -87,7 +89,6 @@ import (
 )
 
 // cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
 
 func dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient kcpclientset.ClusterInterface) context.CancelFunc {
 	const resyncPeriod = 10 * time.Hour
@@ -156,7 +157,7 @@ func BuildVirtualWorkspace(
 
 	scopedCachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
-			cluster, apiDomain, prefixToStrip, ok := digestUrl(urlPath, rootPathPrefix)
+			shardName, cluster, apiDomain, prefixToStrip, ok := digestUrl(urlPath, rootPathPrefix)
 			fmt.Printf("\n\n\nXXXX digestUrl(%q, %q) -> cluster=%q,apiDomain=%q,prefixToStrip=%s,ok=%v\n\n\n", urlPath, rootPathPrefix, cluster.Name.String(), apiDomain, prefixToStrip, ok)
 			if !ok {
 				return false, "", requestContext
@@ -168,6 +169,8 @@ func BuildVirtualWorkspace(
 			}*/
 
 			completedContext = genericapirequest.WithCluster(requestContext, cluster)
+			completedContext = genericapirequest.WithShard(completedContext, shardName)
+			completedContext = cacheclient.WithShardInContext(completedContext, shard.Name(shardName))
 			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
 			return true, prefixToStrip, completedContext
 		}),
@@ -235,7 +238,7 @@ func newAuth(kubeClusterClient kcpkubernetesclientset.ClusterInterface) authoriz
 
 func (a *myAuth) Authorize(ctx context.Context, attr authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
 	apiDomainKey := dynamiccontext.APIDomainKeyFrom(ctx)
-	clusterName, cachedResource, err := splitDomainKey(apiDomainKey)
+	_, clusterName, cachedResource, err := splitDomainKey(apiDomainKey)
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("invalid API domain key: %v", err)
 	}
@@ -266,45 +269,49 @@ func (a *myAuth) Authorize(ctx context.Context, attr authorizer.Attributes) (aut
 }
 
 func digestUrl(urlPath, rootPathPrefix string) (
+	shardName genericapirequest.Shard,
 	cluster genericapirequest.Cluster,
 	key dynamiccontext.APIDomainKey,
 	logicalPath string,
 	accepted bool,
 ) {
 	if !strings.HasPrefix(urlPath, rootPathPrefix) {
-		return genericapirequest.Cluster{}, "", "", false
+		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
 	}
 
 	// Incoming requests to this virtual workspace will look like:
-	//  /services/apiexport/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
+	//  /services/apiexport/shard-1/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
 	//                     └────────────────────────┐
 	// Where the withoutRootPathPrefix starts here: ┘
 	withoutRootPathPrefix := strings.TrimPrefix(urlPath, rootPathPrefix)
 
-	parts := strings.SplitN(withoutRootPathPrefix, "/", 3)
-	if len(parts) < 3 {
-		return genericapirequest.Cluster{}, "", "", false
+	parts := strings.SplitN(withoutRootPathPrefix, "/", 4)
+	if len(parts) < 4 {
+		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
 	}
 
-	cachedResourceClusterName, cachedResourceName := logicalcluster.Name(parts[0]), parts[1]
+	shardName, cachedResourceClusterName, cachedResourceName := genericapirequest.Shard(parts[0]), logicalcluster.Name(parts[1]), parts[2]
+	if shardName == "" {
+		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
+	}
 	if cachedResourceClusterName == "" {
-		return genericapirequest.Cluster{}, "", "", false
+		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
 	}
 	if cachedResourceName == "" {
-		return genericapirequest.Cluster{}, "", "", false
+		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
 	}
 
 	realPath := "/"
-	if len(parts) > 2 {
-		realPath += parts[2]
+	if len(parts) > 3 {
+		realPath += parts[3]
 	}
 
-	//  /services/apiexport/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
-	//                     ┌────────────────────────────┘
+	//  /services/apiexport/shard-1/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
+	//                     ┌────────────────────────────────────┘
 	// We are now here: ───┘
 	// Now, we parse out the logical cluster.
 	if !strings.HasPrefix(realPath, "/clusters/") {
-		return genericapirequest.Cluster{}, "", "", false
+		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
 	}
 
 	withoutClustersPrefix := strings.TrimPrefix(realPath, "/clusters/")
@@ -322,25 +329,25 @@ func digestUrl(urlPath, rootPathPrefix string) (
 		var ok bool
 		cluster.Name, ok = path.Name()
 		if !ok {
-			return genericapirequest.Cluster{}, "", "", false
+			return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
 		}
 	}
 
-	key = buildDomainKey(cachedResourceClusterName, cachedResourceName)
-	return cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
+	key = buildDomainKey(shardName, cachedResourceClusterName, cachedResourceName)
+	return shardName, cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
 }
 
-func buildDomainKey(clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
-	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s", clusterName, cachedResource))
+func buildDomainKey(shardName genericapirequest.Shard, clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
+	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s/%s", shardName, clusterName, cachedResource))
 }
 
-func splitDomainKey(key dynamiccontext.APIDomainKey) (cachedResourceCluster logicalcluster.Name, cachedResourceName string, err error) {
+func splitDomainKey(key dynamiccontext.APIDomainKey) (shardName genericapirequest.Shard, cachedResourceCluster logicalcluster.Name, cachedResourceName string, err error) {
 	parts := strings.Split(string(key), "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
+	if len(parts) != 3 {
+		return "", "", "", fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
 	}
 
-	cachedResourceCluster, cachedResourceName = logicalcluster.Name(parts[0]), parts[1]
+	shardName, cachedResourceCluster, cachedResourceName = genericapirequest.Shard(parts[0]), logicalcluster.Name(parts[1]), parts[2]
 	return
 }
 
@@ -428,7 +435,7 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 }
 
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
-	clusterName, cachedResourceName, err := splitDomainKey(key)
+	_, clusterName, cachedResourceName, err := splitDomainKey(key)
 	if err != nil {
 		return nil, false, err
 	}

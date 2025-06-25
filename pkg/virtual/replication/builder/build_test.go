@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	// "k8s.io/apiserver/pkg/authorization/authorizer"
-	"k8s.io/apiserver/pkg/endpoints/request"
 	//"k8s.io/client-go/rest"
 
 	// kcpdynamic "github.com/kcp-dev/client-go/dynamic"
@@ -31,6 +30,7 @@ import (
 
 	// "github.com/kcp-dev/kcp/pkg/virtual/framework"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
+	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	// kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
@@ -39,35 +39,40 @@ func TestDigestUrl(t *testing.T) {
 	testCases := []struct {
 		urlPath             string
 		expectedAccept      bool
-		expectedCluster     request.Cluster
+		expectedShard       genericapirequest.Shard
+		expectedCluster     genericapirequest.Cluster
 		expectedKey         context.APIDomainKey
 		expectedLogicalPath string
 	}{
 		{
-			urlPath:             "/services/replication/my-cluster/my-cached-resource/clusters/other-cluster/apis",
+			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/other-cluster/apis",
 			expectedAccept:      true,
-			expectedCluster:     request.Cluster{Name: "other-cluster", Wildcard: false, PartialMetadataRequest: false},
-			expectedKey:         "my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/my-cluster/my-cached-resource/clusters/other-cluster",
+			expectedShard:       "shard-1",
+			expectedCluster:     genericapirequest.Cluster{Name: "other-cluster", Wildcard: false, PartialMetadataRequest: false},
+			expectedKey:         "shard-1/my-cluster/my-cached-resource",
+			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/other-cluster",
 		},
 		{
-			urlPath:             "/services/replication/my-cluster/my-cached-resource/clusters/*/apis",
+			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*/apis",
 			expectedAccept:      true,
-			expectedCluster:     request.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
-			expectedKey:         "my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/my-cluster/my-cached-resource/clusters/*",
+			expectedShard:       "shard-1",
+			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
+			expectedKey:         "shard-1/my-cluster/my-cached-resource",
+			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
 		},
 		{
-			urlPath:             "/services/replication/my-cluster/my-cached-resource/clusters/*",
+			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
 			expectedAccept:      true,
-			expectedCluster:     request.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
-			expectedKey:         "my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/my-cluster/my-cached-resource/clusters/*",
+			expectedShard:       "shard-1",
+			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
+			expectedKey:         "shard-1/my-cluster/my-cached-resource",
+			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
 		},
 		{
-			urlPath:             "/services/replication/my-cluster/my-cached-resource/clusters",
+			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters",
 			expectedAccept:      false,
-			expectedCluster:     request.Cluster{Name: "", Wildcard: false, PartialMetadataRequest: false},
+			expectedShard:       "",
+			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: false, PartialMetadataRequest: false},
 			expectedKey:         "",
 			expectedLogicalPath: "",
 		},
@@ -75,8 +80,9 @@ func TestDigestUrl(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.urlPath, func(t *testing.T) {
-			cluster, key, logicalPath, accepted := digestUrl(tc.urlPath, rootPathPrefix)
+			shardName, cluster, key, logicalPath, accepted := digestUrl(tc.urlPath, rootPathPrefix)
 			require.Equal(t, tc.expectedAccept, accepted, "Accepted should match expected value")
+			require.Equal(t, tc.expectedShard, shardName, "Shard name should match expected value")
 			require.Equal(t, tc.expectedCluster, cluster, "Cluster should match expected value")
 			require.Equal(t, tc.expectedKey, key, "Key should match expected value")
 			require.Equal(t, tc.expectedLogicalPath, logicalPath, "LogicalPath should match expected value")
