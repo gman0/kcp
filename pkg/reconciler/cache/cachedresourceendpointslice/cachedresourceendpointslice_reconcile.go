@@ -110,6 +110,7 @@ func (r *endpointsReconciler) reconcile(ctx context.Context, endpoints *cachev1a
 		addr.Path,
 		virtualworkspacesoptions.DefaultRootPathPrefix,
 		"replication",
+		shard.Name,
 		logicalcluster.From(cachedResource).String(),
 		cachedResource.Name,
 	)
