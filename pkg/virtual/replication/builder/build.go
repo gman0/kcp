@@ -144,7 +144,6 @@ func BuildVirtualWorkspace(
 	kcpClusterClient kcpclientset.ClusterInterface,
 	dynamicClusterClient kcpdynamic.ClusterInterface,
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
-	deepSARClient kcpkubernetesclientset.ClusterInterface,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
 	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
 	cacheKcpInformers kcpinformers.SharedInformerFactory,
@@ -176,7 +175,7 @@ func BuildVirtualWorkspace(
 			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
 			return true, prefixToStrip, completedContext
 		}),
-		Authorizer: newAuth(deepSARClient),
+		Authorizer: newAuth(kubeClusterClient),
 		ReadyChecker: framework.ReadyFunc(func() error {
 			select {
 			case <-readyCh:
