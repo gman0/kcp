@@ -22,6 +22,7 @@ import (
 
 	"fmt"
 
+	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -36,11 +37,12 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 	storageerrors "k8s.io/apiserver/pkg/storage/errors"
 
-	"github.com/kcp-dev/logicalcluster/v3"
+	// "github.com/kcp-dev/logicalcluster/v3"
 
 	// cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
+	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
@@ -71,15 +73,26 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 
 	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
 		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+			parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
+			if err != nil {
+				return nil, fmt.Errorf("invalid API domain key: %v", err)
+			}
+
 			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), genericapirequest.NamespaceValue(ctx), name)
-			cachedObj, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(logicalcluster.From(cachedResource).Path()).
+			cachedObj, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster.Path()).
 				Get(ctx, cachedObjName, *options)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, cachedResource.Spec.GroupVersionResource, name, err)
 			}
+			// TODO: add selectors
 			return unwrapCachedObject(cachedObj)
 		}
 		storage.WatcherFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
+			parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
+			if err != nil {
+				return nil, fmt.Errorf("invalid API domain key: %v", err)
+			}
+
 			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
@@ -99,13 +112,11 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 				replication.LabelKeyObjectVersion:  innerGVR.Version,
 				replication.LabelKeyObjectResource: innerGVR.Resource,
 			}
-			// TODO(gman0): uncomment and finish this once replication for CachedResources fully supports namespaces.
-			// if namespaced {
-			// 	// Namespace must already be present in the context, otherwise
-			// 	// checkCrossNamespaceAndWildcard would have failed earlier.
-			// 	requestNamespace, _ := genericapirequest.NamespaceFrom(ctxWithShardAndCluster)
-			// 	labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
-			// }
+			if namespaced {
+				if requestNamespace, hasNamespace := genericapirequest.NamespaceFrom(ctx); hasNamespace {
+					labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
+				}
+			}
 
 			listOpts.SetGroupVersionKind(cachedResource.GroupVersionKind())
 			listOpts.LabelSelector = labels.FormatLabels(labelMap)
@@ -121,7 +132,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 				}
 			}()
 
-			cachedObjWatch, err := kcpCacheClusterClient.Cluster(logicalcluster.From(cachedResource).Path()).CacheV1alpha1().CachedObjects().
+			cachedObjWatch, err := kcpCacheClusterClient.Cluster(parsedKey.CachedResourceCluster.Path()).CacheV1alpha1().CachedObjects().
 				Watch(watchCtx, listOpts)
 			if err != nil {
 				return nil, err
@@ -130,6 +141,11 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			return newUnwrappingWatch(cachedObjWatch, innerGVR.GroupResource(), options, namespaced), nil
 		}
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
+			parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
+			if err != nil {
+				return nil, fmt.Errorf("invalid API domain key: %v", err)
+			}
+
 			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
@@ -162,7 +178,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			listOpts.LabelSelector = labels.FormatLabels(labelMap)
 			listOpts.FieldSelector = ""
 
-			cachedObjs, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(logicalcluster.From(cachedResource).Path()).
+			cachedObjs, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster.Path()).
 				List(ctx, listOpts)
 			if err != nil {
 				return nil, err
