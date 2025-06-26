@@ -27,6 +27,7 @@ import (
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 
+	"github.com/kcp-dev/kcp/pkg/authorization"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication/builder"
@@ -66,6 +67,10 @@ func (o *Replication) NewReplication(
 	if err != nil {
 		return nil, err
 	}
+	deepSARClient, err := kcpkubernetesclientset.NewForConfig(authorization.WithDeepSARConfig(rest.CopyConfig(config)))
+	if err != nil {
+		return nil, err
+	}
 	dynamicClusterClient, err := kcpdynamic.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -81,6 +86,7 @@ func (o *Replication) NewReplication(
 		kcpClusterClient,
 		dynamicClusterClient,
 		kubeClusterClient,
+		deepSARClient,
 		wildcardKcpInformers,
 		kcpCacheClusterClient, // <-- ...
 		cacheKcpInformers,
