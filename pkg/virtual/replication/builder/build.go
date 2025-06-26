@@ -68,6 +68,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apiserver"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
+	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
 
 	//"github.com/kcp-dev/kcp/pkg/virtual/framework/handler"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
@@ -333,8 +334,8 @@ func digestUrl(urlPath, rootPathPrefix string) (
 		}
 	}
 
-	key = buildDomainKey(shardName, cachedResourceClusterName, cachedResourceName)
-	return shardName, cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
+	key = apidomainkey.New(shardName, cachedResourceClusterName, cachedResourceName)
+	return shardName, cluster, key, strings.TrimSuffix(urlPath, realPath), true
 }
 
 func buildDomainKey(shardName genericapirequest.Shard, clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
@@ -435,7 +436,7 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 }
 
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
-	_, clusterName, cachedResourceName, err := splitDomainKey(key)
+	_, clusterName, cachedResourceName, err := apidomainkey.Parse(key)
 	if err != nil {
 		return nil, false, err
 	}
