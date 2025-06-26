@@ -30,12 +30,21 @@ func New(shardName genericapirequest.Shard, clusterName logicalcluster.Name, cac
 	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s/%s", shardName, clusterName, cachedResource))
 }
 
-func Parse(key dynamiccontext.APIDomainKey) (shardName genericapirequest.Shard, cachedResourceCluster logicalcluster.Name, cachedResourceName string, err error) {
+type Key struct {
+	ShardName             genericapirequest.Shard
+	CachedResourceCluster logicalcluster.Name
+	CachedResourceName    string
+}
+
+func Parse(key dynamiccontext.APIDomainKey) (*Key, error) {
 	parts := strings.Split(string(key), "/")
 	if len(parts) != 3 {
-		return "", "", "", fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
+		return nil, fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
 	}
 
-	shardName, cachedResourceCluster, cachedResourceName = genericapirequest.Shard(parts[0]), logicalcluster.Name(parts[1]), parts[2]
-	return
+	return &Key{
+		ShardName:             genericapirequest.Shard(parts[0]),
+		CachedResourceCluster: logicalcluster.Name(parts[1]),
+		CachedResourceName:    parts[2],
+	}, nil
 }

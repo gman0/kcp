@@ -49,7 +49,7 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error getting valid cluster from context: %w", err)
 	}
 
-	_, cachedResourceCluster, cachedResourceName, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
+	parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "",
 			fmt.Errorf("invalid API domain key")
@@ -59,15 +59,15 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 
 	dec, reason, err := authz.Authorize(ctx, attr)
 	if err != nil {
-		return authorizer.DecisionNoOpinion, "",
-			fmt.Errorf("error authorizing RBAC in workspace %q for CachedResource %s|%s: %w", targetCluster.Name, cachedResourceCluster.String(), cachedResourceName, err)
+		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error authorizing RBAC in workspace %q for CachedResource %s|%s: %w",
+			targetCluster.Name, parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, err)
 	}
 
 	if dec == authorizer.DecisionAllow {
 		return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
-			cachedResourceCluster.String(), cachedResourceName, targetCluster.Name, reason), nil
+			parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
 	}
 
 	return authorizer.DecisionDeny, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
-		cachedResourceCluster.String(), cachedResourceName, targetCluster.Name, reason), nil
+		parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
 }
