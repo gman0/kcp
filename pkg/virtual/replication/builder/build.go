@@ -388,25 +388,25 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 }
 
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
-	_, clusterName, cachedResourceName, err := apidomainkey.Parse(key)
+	parsedKey, err := apidomainkey.Parse(key)
 	if err != nil {
 		return nil, false, err
 	}
 
-	cachedResource, err := a.kcpClusterClient.CacheV1alpha1().CachedResources().Cluster(clusterName.Path()).
-		Get(ctx, cachedResourceName, metav1.GetOptions{})
+	cachedResource, err := a.kcpClusterClient.CacheV1alpha1().CachedResources().Cluster(parsedKey.CachedResourceCluster.Path()).
+		Get(ctx, parsedKey.CachedResourceName, metav1.GetOptions{})
 	if err != nil {
 		return nil, false, err
 	}
 
 	sch, err := a.getAPIResourceSchema(
-		ctx, clusterName, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
+		ctx, parsedKey.CachedResourceCluster, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
 	)
 	if err != nil {
-		return nil, false, fmt.Errorf("XXX failed to get APIResourceSchema for CachedResource %s: %v", cachedResourceName, err)
+		return nil, false, fmt.Errorf("XXX failed to get APIResourceSchema for CachedResource %s: %v", parsedKey.CachedResourceName, err)
 	}
 
-	cachedobjs, err := a.KcpCacheClusterClient.CacheV1alpha1().Cluster(clusterName.Path()).CachedObjects().List(ctx, metav1.ListOptions{})
+	cachedobjs, err := a.KcpCacheClusterClient.CacheV1alpha1().Cluster(parsedKey.CachedResourceCluster.Path()).CachedObjects().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to list CachedObjs: %v", err)
 	}
