@@ -59,7 +59,6 @@ import (
 
 	// "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	// "github.com/kcp-dev/kcp/pkg/authorization/delegated"
-	authdelegated "github.com/kcp-dev/kcp/pkg/authorization/delegated"
 	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
@@ -73,6 +72,7 @@ import (
 	//"github.com/kcp-dev/kcp/pkg/virtual/framework/handler"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
+	replicationauthorizer "github.com/kcp-dev/kcp/pkg/virtual/replication/authorizer"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
@@ -144,6 +144,7 @@ func BuildVirtualWorkspace(
 	kcpClusterClient kcpclientset.ClusterInterface,
 	dynamicClusterClient kcpdynamic.ClusterInterface,
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
+	deepSARClient kcpkubernetesclientset.ClusterInterface,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
 	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
 	cacheKcpInformers kcpinformers.SharedInformerFactory,
@@ -175,7 +176,7 @@ func BuildVirtualWorkspace(
 			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
 			return true, prefixToStrip, completedContext
 		}),
-		Authorizer: newAuth(kubeClusterClient),
+		Authorizer: newAuth(deepSARClient),
 		ReadyChecker: framework.ReadyFunc(func() error {
 			select {
 			case <-readyCh:
@@ -225,48 +226,6 @@ func BuildVirtualWorkspace(
 	return []rootapiserver.NamedVirtualWorkspace{
 		{Name: replication.VirtualWorkspaceName, VirtualWorkspace: scopedCachedResourceContent},
 	}, nil
-}
-
-type myAuth struct {
-	kubeClusterClient kcpkubernetesclientset.ClusterInterface
-}
-
-func newAuth(kubeClusterClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
-	return authorization.NewDecorator("virtual.cachedresource.cache.authorization.kcp.io", &myAuth{
-		kubeClusterClient: kubeClusterClient,
-	}).AddAuditLogging().AddAnonymization()
-}
-
-func (a *myAuth) Authorize(ctx context.Context, attr authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
-	apiDomainKey := dynamiccontext.APIDomainKeyFrom(ctx)
-	_, clusterName, cachedResource, err := splitDomainKey(apiDomainKey)
-	if err != nil {
-		return authorizer.DecisionNoOpinion, "", fmt.Errorf("invalid API domain key: %v", err)
-	}
-
-	return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %q, workspace: %q RBAC decision: %v",
-		cachedResource, clusterName, reason), nil
-
-	SARAttributes := authorizer.AttributesRecord{
-		APIGroup:   apisv1alpha1.SchemeGroupVersion.Group,
-		APIVersion: apisv1alpha1.SchemeGroupVersion.Version,
-		User:       attr.GetUser(),
-		Verb:       attr.GetVerb(),
-		// Name:            cachedResourceName,
-		Resource:        "cachedresources",
-		ResourceRequest: false,
-		//Subresource:     "content",
-	}
-
-	authz, err := authdelegated.NewDelegatedAuthorizer(clusterName, a.kubeClusterClient, authdelegated.Options{})
-	dec, reason, err := authz.Authorize(ctx, SARAttributes)
-	if err != nil {
-		return authorizer.DecisionNoOpinion, "",
-			fmt.Errorf("error authorizing RBAC in CachedResource %q, workspace %q: %w", cachedResource, clusterName, err)
-	}
-
-	return dec, fmt.Sprintf("CachedResource: %q, workspace: %q RBAC decision: %v",
-		cachedResource, clusterName, reason), nil
 }
 
 func digestUrl(urlPath, rootPathPrefix string) (
@@ -338,18 +297,11 @@ func digestUrl(urlPath, rootPathPrefix string) (
 	return shardName, cluster, key, strings.TrimSuffix(urlPath, realPath), true
 }
 
-func buildDomainKey(shardName genericapirequest.Shard, clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
-	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s/%s", shardName, clusterName, cachedResource))
-}
+func newAuth(deepSARClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
+	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(deepSARClient)
+	wrappedResourceAuthorizer = authorization.NewDecorator("virtual.replication.wrappedresource.authorization.kcp.io", wrappedResourceAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
 
-func splitDomainKey(key dynamiccontext.APIDomainKey) (shardName genericapirequest.Shard, cachedResourceCluster logicalcluster.Name, cachedResourceName string, err error) {
-	parts := strings.Split(string(key), "/")
-	if len(parts) != 3 {
-		return "", "", "", fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
-	}
-
-	shardName, cachedResourceCluster, cachedResourceName = genericapirequest.Shard(parts[0]), logicalcluster.Name(parts[1]), parts[2]
-	return
+	return wrappedResourceAuthorizer
 }
 
 type singleResourceAPIDefinitionSetProvider struct {
