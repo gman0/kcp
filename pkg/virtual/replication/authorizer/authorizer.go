@@ -19,6 +19,7 @@ package authorizer
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 
@@ -34,6 +35,8 @@ import (
 type wrappedResourceAuthorizer struct {
 	newDeepSARAuthorizer func(clusterName logicalcluster.Name) (authorizer.Authorizer, error)
 }
+
+var readOnlyVerbs = []string{"get", "list", "watch"}
 
 func NewWrappedResourceAuthorizer(deepSARClient kcpkubeclientset.ClusterInterface) authorizer.Authorizer {
 	return &wrappedResourceAuthorizer{
@@ -53,6 +56,10 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "",
 			fmt.Errorf("invalid API domain key")
+	}
+
+	if !slices.Contains(readOnlyVerbs, attr.GetVerb()) {
+		return authorizer.DecisionDeny, "write access to CachedResource is not allowed from virtual workspace", nil
 	}
 
 	authz, err := a.newDeepSARAuthorizer(targetCluster.Name)
