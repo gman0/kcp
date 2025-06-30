@@ -57,7 +57,13 @@ func unwrapCachedObject(obj *cachev1alpha1.CachedObject) (*unstructured.Unstruct
 	return inner, nil
 }
 
-func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
+func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
+	wrappedGVR := schema.GroupVersionResource{
+		Group:    sch.Spec.Group,
+		Version:  version,
+		Resource: sch.Spec.Names.Plural,
+	}
+
 	namespaced := sch.Spec.Scope == apiextensionsv1.NamespaceScoped
 	buildCachedObjName := func(gvr schema.GroupVersionResource, ns, resName string) string {
 		if gvr.Group == "" {
@@ -78,11 +84,11 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
 
-			cachedObjName := buildCachedObjName(schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource), genericapirequest.NamespaceValue(ctx), name)
+			cachedObjName := buildCachedObjName(schema.GroupVersionResource(wrappedGVR), genericapirequest.NamespaceValue(ctx), name)
 			cachedObj, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster.Path()).
 				Get(ctx, cachedObjName, *options)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, cachedResource.Spec.GroupVersionResource, name, err)
+				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, wrappedGVR, name, err)
 			}
 			// TODO: add selectors
 			return unwrapCachedObject(cachedObj)
@@ -93,7 +99,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
 
-			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
+			innerGVR := schema.GroupVersionResource(wrappedGVR)
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
 			}
@@ -118,7 +124,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 				}
 			}
 
-			listOpts.SetGroupVersionKind(cachedResource.GroupVersionKind())
+			listOpts.SetGroupVersionKind(cachev1alpha1.SchemeGroupVersion.WithKind("CachedResource"))
 			listOpts.LabelSelector = labels.FormatLabels(labelMap)
 			listOpts.FieldSelector = ""
 
@@ -146,7 +152,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
 
-			innerGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
+			innerGVR := schema.GroupVersionResource(wrappedGVR)
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
 			}
@@ -174,7 +180,7 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			// 	labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
 			// }
 
-			listOpts.SetGroupVersionKind(cachedResource.GroupVersionKind())
+			listOpts.SetGroupVersionKind(cachev1alpha1.SchemeGroupVersion.WithKind("CachedResource"))
 			listOpts.LabelSelector = labels.FormatLabels(labelMap)
 			listOpts.FieldSelector = ""
 
@@ -185,8 +191,8 @@ func withUnwrapping(cachedResource *cachev1alpha1.CachedResource, sch *apisv1alp
 			}
 
 			innerListGVK := schema.GroupVersionKind{
-				Group:   cachedResource.Spec.Group,
-				Version: cachedResource.Spec.Version,
+				Group:   wrappedGVR.Group,
+				Version: wrappedGVR.Version,
 				Kind:    sch.Spec.Names.ListKind,
 			}
 			if innerListGVK.Kind == "" {

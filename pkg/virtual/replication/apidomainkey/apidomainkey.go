@@ -23,28 +23,25 @@ import (
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 )
 
-func New(shardName genericapirequest.Shard, clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
-	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s/%s", shardName, clusterName, cachedResource))
+func New(clusterName logicalcluster.Name, cachedResource string) dynamiccontext.APIDomainKey {
+	return dynamiccontext.APIDomainKey(fmt.Sprintf("%s/%s", clusterName, cachedResource))
 }
 
 type Key struct {
-	ShardName             genericapirequest.Shard
 	CachedResourceCluster logicalcluster.Name
 	CachedResourceName    string
 }
 
 func Parse(key dynamiccontext.APIDomainKey) (*Key, error) {
 	parts := strings.Split(string(key), "/")
-	if len(parts) != 3 {
+	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid APIDomainKey %q for replication VW", string(key))
 	}
 
 	return &Key{
-		ShardName:             genericapirequest.Shard(parts[0]),
-		CachedResourceCluster: logicalcluster.Name(parts[1]),
-		CachedResourceName:    parts[2],
+		CachedResourceCluster: logicalcluster.Name(parts[0]),
+		CachedResourceName:    parts[1],
 	}, nil
 }
