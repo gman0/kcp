@@ -18,9 +18,11 @@ package cachedresourceendpointslice
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"path"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
 
@@ -28,8 +30,11 @@ import (
 
 	virtualworkspacesoptions "github.com/kcp-dev/kcp/cmd/virtual-workspaces/options"
 	"github.com/kcp-dev/kcp/pkg/logging"
+	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
+	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 )
 
 type reconcileStatus int
@@ -44,9 +49,12 @@ type reconciler interface {
 	reconcile(ctx context.Context, endpoints *cachev1alpha1.CachedResourceEndpointSlice) (reconcileStatus, error)
 }
 
+// kcpClusterClient.Cluster(clusterName.Path()).CoreV1alpha1().LogicalClusters().Get(ctx, "cluster", metav1.GetOptions{})
 func (c *controller) reconcile(ctx context.Context, endpoints *cachev1alpha1.CachedResourceEndpointSlice) (bool, error) {
 	reconcilers := []reconciler{
 		&endpointsReconciler{
+			getLogicalCluster: c.getLogicalCluster,
+			getAPIBinding:     c.getAPIBinding,
 			getCachedResource: c.getCachedResource,
 			getMyShard:        c.getMyShard,
 		},
@@ -75,11 +83,69 @@ func (c *controller) reconcile(ctx context.Context, endpoints *cachev1alpha1.Cac
 }
 
 type endpointsReconciler struct {
+	getLogicalCluster func(clusterName logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
+	getAPIBinding     func(clusterName logicalcluster.Name, bindingName string) (*apisv1alpha2.APIBinding, error)
 	getCachedResource func(clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResource, error)
 	getMyShard        func() (*corev1alpha1.Shard, error)
 }
 
 type conditionsReconciler struct {
+}
+
+func getResourceBindingsAnnJSON(lc *corev1alpha1.LogicalCluster) string {
+	const jsonEmptyObj = "{}"
+
+	if lc == nil {
+		return jsonEmptyObj
+	}
+
+	ann := lc.Annotations[apibinding.ResourceBindingsAnnotationKey]
+	if ann == "" {
+		ann = jsonEmptyObj
+	}
+
+	return ann
+}
+
+func (r *endpointsReconciler) getSourceAPIExportReferenceFor(
+	ctx context.Context,
+	kcpClusterClient kcpclientset.ClusterInterface,
+	clusterName logicalcluster.Name,
+	gvr schema.GroupVersionResource,
+) (*apisv1alpha2.ExportBindingReference, error) {
+	if gvr.Group == "" {
+		// Assume built-in types.
+		return nil, nil
+	}
+
+	lc, err := r.getLogicalCluster(clusterName)
+	if err != nil {
+		return nil, err
+	}
+
+	resBindingsAnnStr := getResourceBindingsAnnJSON(lc)
+	resBindingsAnn, err := apibinding.UnmarshalResourceBindingsAnnotation(resBindingsAnnStr)
+
+	bindingName := ""
+	for gr, v := range resBindingsAnn {
+		if v.CRD {
+			continue
+		}
+		if gr == gvr.GroupResource().String() {
+			bindingName = v.Name
+		}
+	}
+
+	if bindingName == "" {
+		return nil, fmt.Errorf("no binding for %s found in %s", gvr.GroupResource().String(), clusterName)
+	}
+
+	apiBinding, err := r.getAPIBinding(clusterName, bindingName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get APIBinding %s in %s", bindingName, clusterName)
+	}
+
+	return apiBinding.Spec.Reference.Export, nil
 }
 
 func (r *endpointsReconciler) reconcile(ctx context.Context, endpoints *cachev1alpha1.CachedResourceEndpointSlice) (reconcileStatus, error) {
@@ -110,7 +176,6 @@ func (r *endpointsReconciler) reconcile(ctx context.Context, endpoints *cachev1a
 		addr.Path,
 		virtualworkspacesoptions.DefaultRootPathPrefix,
 		"replication",
-		shard.Name,
 		logicalcluster.From(cachedResource).String(),
 		cachedResource.Name,
 	)

@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
 	// "k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -40,13 +41,15 @@ import (
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	"github.com/kcp-dev/kcp/pkg/reconciler/committer"
+
 	// apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
-	// apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
+	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	"github.com/kcp-dev/kcp/sdk/apis/core"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	cachev1alpha1client "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/typed/cache/v1alpha1"
+
 	// apisv1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha1"
 	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
 	cachev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/cache/v1alpha1"
@@ -63,6 +66,8 @@ func NewController(
 	cachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer,
 	cachedResourceClusterInformer cachev1alpha1informers.CachedResourceClusterInformer,
 	globalShardClusterInformer corev1alpha1informers.ShardClusterInformer,
+	lcClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
+	apiBindingClusterInformer apisv1alpha2informers.APIBindingClusterInformer,
 	kcpClusterClient kcpclientset.ClusterInterface,
 ) (*controller, error) {
 	c := &controller{
@@ -83,6 +88,12 @@ func NewController(
 		},
 		getMyShard: func() (*corev1alpha1.Shard, error) {
 			return globalShardClusterInformer.Cluster(core.RootCluster).Lister().Get(shardName)
+		},
+		getLogicalCluster: func(clusterName logicalcluster.Name) (*corev1alpha1.LogicalCluster, error) {
+			return lcClusterInformer.Cluster(clusterName).Lister().Get("cluster")
+		},
+		getAPIBinding: func(clusterName logicalcluster.Name, bindingName string) (*apisv1alpha2.APIBinding, error) {
+			return apiBindingClusterInformer.Cluster(clusterName).Lister().Get(bindingName)
 		},
 		cachedResourceEndpointSliceClusterInformer: cachedResourceEndpointSliceClusterInformer,
 		commit: committer.NewCommitter[*CachedResourceEndpointSlice, Patcher, *CachedResourceEndpointSliceSpec, *CachedResourceEndpointSliceStatus](kcpClusterClient.CacheV1alpha1().CachedResourceEndpointSlices()),
@@ -121,6 +132,8 @@ type controller struct {
 	getCachedResourceEndpointSlice   func(clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error)
 	getCachedResource                func(clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResource, error)
 	getMyShard                       func() (*corev1alpha1.Shard, error)
+	getLogicalCluster                func(clusterName logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
+	getAPIBinding                    func(clusterName logicalcluster.Name, bindingName string) (*apisv1alpha2.APIBinding, error)
 
 	cachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer
 	commit                                     CommitFunc

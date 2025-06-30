@@ -28,9 +28,10 @@ import (
 	// kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	// kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
 
+	"github.com/kcp-dev/logicalcluster/v3"
+
 	// "github.com/kcp-dev/kcp/pkg/virtual/framework"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	// kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
@@ -39,52 +40,39 @@ func TestDigestUrl(t *testing.T) {
 	testCases := []struct {
 		urlPath             string
 		expectedAccept      bool
-		expectedShard       genericapirequest.Shard
-		expectedCluster     genericapirequest.Cluster
+		expectedCluster     logicalcluster.Name
 		expectedKey         context.APIDomainKey
 		expectedLogicalPath string
 	}{
 		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/other-cluster/apis",
+			urlPath:             "/services/replication/my-cluster/my-cachedresource/clusters/my-cluster/apis",
 			expectedAccept:      true,
-			expectedShard:       "shard-1",
-			expectedCluster:     genericapirequest.Cluster{Name: "other-cluster", Wildcard: false, PartialMetadataRequest: false},
-			expectedKey:         "shard-1/my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/other-cluster",
+			expectedKey:         "my-cluster/my-cachedresource",
+			expectedCluster:     logicalcluster.Name("my-cluster"),
+			expectedLogicalPath: "/services/replication/my-cluster/my-cachedresource/clusters/my-cluster",
 		},
 		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*/apis",
+			urlPath:             "/services/replication/my-cluster/my-cachedresource/clusters/my-cluster",
 			expectedAccept:      true,
-			expectedShard:       "shard-1",
-			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
-			expectedKey:         "shard-1/my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
+			expectedKey:         "my-cluster/my-cachedresource",
+			expectedCluster:     logicalcluster.Name("my-cluster"),
+			expectedLogicalPath: "/services/replication/my-cluster/my-cachedresource/clusters/my-cluster",
 		},
 		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
-			expectedAccept:      true,
-			expectedShard:       "shard-1",
-			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
-			expectedKey:         "shard-1/my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
-		},
-		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters",
+			urlPath:             "/services/replication/my-cluster/my-cachedresource/clusters/other-cluster",
 			expectedAccept:      false,
-			expectedShard:       "",
-			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: false, PartialMetadataRequest: false},
 			expectedKey:         "",
+			expectedCluster:     logicalcluster.Name(""),
 			expectedLogicalPath: "",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.urlPath, func(t *testing.T) {
-			shardName, cluster, key, logicalPath, accepted := digestUrl(tc.urlPath, rootPathPrefix)
+			clusterName, key, logicalPath, accepted := digestURL(tc.urlPath, rootPathPrefix)
 			require.Equal(t, tc.expectedAccept, accepted, "Accepted should match expected value")
-			require.Equal(t, tc.expectedShard, shardName, "Shard name should match expected value")
-			require.Equal(t, tc.expectedCluster, cluster, "Cluster should match expected value")
 			require.Equal(t, tc.expectedKey, key, "Key should match expected value")
+			require.Equal(t, tc.expectedCluster, clusterName, "cluster name should match expected value")
 			require.Equal(t, tc.expectedLogicalPath, logicalPath, "LogicalPath should match expected value")
 		})
 	}
