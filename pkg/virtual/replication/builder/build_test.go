@@ -39,39 +39,63 @@ func TestDigestUrl(t *testing.T) {
 	testCases := []struct {
 		urlPath             string
 		expectedAccept      bool
-		expectedShard       genericapirequest.Shard
 		expectedCluster     genericapirequest.Cluster
 		expectedKey         context.APIDomainKey
 		expectedLogicalPath string
 	}{
+		//		{
+		//			urlPath:             "/services/replication/my-cluster/my-apiexport/clusters/other-cluster/apis",
+		//			expectedAccept:      true,
+		//			expectedCluster:     genericapirequest.Cluster{Name: "other-cluster", Wildcard: false, PartialMetadataRequest: false},
+		//			expectedKey:         "my-cluster/my-apiexport",
+		//			expectedLogicalPath: "/services/replication/my-cluster/my-apiexport/clusters/other-cluster",
+		//		},
+		//		{
+		//			urlPath:             "/services/replication/my-cluster/my-apiexport/clusters/*/apis",
+		//			expectedAccept:      true,
+		//			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
+		//			expectedKey:         "my-cluster/my-apiexport",
+		//			expectedLogicalPath: "/services/replication/my-cluster/my-apiexport/clusters/*",
+		//		},
+		//		{
+		//			urlPath:             "/services/replication/my-cluster/my-apiexport/clusters/*",
+		//			expectedAccept:      true,
+		//			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
+		//			expectedKey:         "my-cluster/my-apiexport",
+		//			expectedLogicalPath: "/services/replication/my-cluster/my-apiexport/clusters/*",
+		//		},
 		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/other-cluster/apis",
-			expectedAccept:      true,
-			expectedShard:       "shard-1",
-			expectedCluster:     genericapirequest.Cluster{Name: "other-cluster", Wildcard: false, PartialMetadataRequest: false},
-			expectedKey:         "shard-1/my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/other-cluster",
-		},
-		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*/apis",
-			expectedAccept:      true,
-			expectedShard:       "shard-1",
-			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
-			expectedKey:         "shard-1/my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
-		},
-		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
-			expectedAccept:      true,
-			expectedShard:       "shard-1",
-			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
-			expectedKey:         "shard-1/my-cluster/my-cached-resource",
-			expectedLogicalPath: "/services/replication/shard-1/my-cluster/my-cached-resource/clusters/*",
-		},
-		{
-			urlPath:             "/services/replication/shard-1/my-cluster/my-cached-resource/clusters",
+			urlPath:             "/services/replication/my-cluster/my-apiexport/clusters/",
 			expectedAccept:      false,
-			expectedShard:       "",
+			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: false, PartialMetadataRequest: false},
+			expectedKey:         "",
+			expectedLogicalPath: "",
+		},
+
+		{
+			urlPath:             "/services/replication/clusters/other-cluster/apis",
+			expectedAccept:      true,
+			expectedCluster:     genericapirequest.Cluster{Name: "other-cluster", Wildcard: false, PartialMetadataRequest: false},
+			expectedKey:         "/core",
+			expectedLogicalPath: "/services/replication/clusters/other-cluster",
+		},
+		{
+			urlPath:             "/services/replication/clusters/*/apis",
+			expectedAccept:      true,
+			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
+			expectedKey:         "/core",
+			expectedLogicalPath: "/services/replication/clusters/*",
+		},
+		{
+			urlPath:             "/services/replication/clusters/*",
+			expectedAccept:      true,
+			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: true, PartialMetadataRequest: false},
+			expectedKey:         "/core",
+			expectedLogicalPath: "/services/replication/clusters/*",
+		},
+		{
+			urlPath:             "/services/replication/clusters/",
+			expectedAccept:      false,
 			expectedCluster:     genericapirequest.Cluster{Name: "", Wildcard: false, PartialMetadataRequest: false},
 			expectedKey:         "",
 			expectedLogicalPath: "",
@@ -80,9 +104,8 @@ func TestDigestUrl(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.urlPath, func(t *testing.T) {
-			shardName, cluster, key, logicalPath, accepted := digestUrl(tc.urlPath, rootPathPrefix)
+			cluster, key, logicalPath, accepted := digestAPIExportURL(tc.urlPath, rootPathPrefix)
 			require.Equal(t, tc.expectedAccept, accepted, "Accepted should match expected value")
-			require.Equal(t, tc.expectedShard, shardName, "Shard name should match expected value")
 			require.Equal(t, tc.expectedCluster, cluster, "Cluster should match expected value")
 			require.Equal(t, tc.expectedKey, key, "Key should match expected value")
 			require.Equal(t, tc.expectedLogicalPath, logicalPath, "LogicalPath should match expected value")

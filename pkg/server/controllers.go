@@ -1757,12 +1757,16 @@ func (s *Server) installCachedResourceEndpointSliceController(ctx context.Contex
 	}
 	cachedResourceEndpointSliceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices()
 	cachedResourceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResources()
+	lcClusterInformer := s.KcpSharedInformerFactory.Core().V1alpha1().LogicalClusters()
+	apiBindingClusterInfomer := s.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings()
 
 	c, err := cachedresourceendpointslice.NewController(
 		s.Options.Extra.ShardName,
 		cachedResourceEndpointSliceInformer,
 		cachedResourceInformer,
 		s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+		lcClusterInformer,
+		apiBindingClusterInfomer,
 		kcpClusterClient,
 	)
 	if err != nil {
@@ -1772,8 +1776,9 @@ func (s *Server) installCachedResourceEndpointSliceController(ctx context.Contex
 		Name: cachedresourceendpointslice.ControllerName,
 		Wait: func(ctx context.Context, s *Server) error {
 			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
-				return cachedResourceEndpointSliceInformer.Informer().HasSynced(), nil
-
+				return cachedResourceEndpointSliceInformer.Informer().HasSynced() &&
+					cachedResourceInformer.Informer().HasSynced() &&
+					lcClusterInformer.Informer().HasSynced(), nil
 			})
 		},
 		Runner: func(ctx context.Context) {

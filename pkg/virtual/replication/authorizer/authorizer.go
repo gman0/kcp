@@ -67,14 +67,14 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 	dec, reason, err := authz.Authorize(ctx, attr)
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error authorizing RBAC in workspace %q for CachedResource %s|%s: %w",
-			targetCluster.Name, parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, err)
+			targetCluster.Name, parsedKey.APIExportCluster.String(), parsedKey.APIExportName, err)
 	}
 
 	if dec == authorizer.DecisionAllow {
 		return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
-			parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
+			parsedKey.APIExportCluster.String(), parsedKey.APIExportName, targetCluster.Name, reason), nil
 	}
 
 	return authorizer.DecisionDeny, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
-		parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
+		parsedKey.APIExportCluster.String(), parsedKey.APIExportName, targetCluster.Name, reason), nil
 }

@@ -18,11 +18,10 @@ package builder
 
 import (
 	"context"
-	// "encoding/json"
-
-	// "encoding/json"
+	"encoding/json"
 	"errors"
 	"fmt"
+
 	// "net/http"
 	// "text/template/parse"
 
@@ -32,15 +31,16 @@ import (
 	"strings"
 
 	// authenticationv1 "k8s.io/api/authentication/v1"
-	// apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	// "k8s.io/apimachinery/pkg/api/meta"
-	// "k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
+	// "k8s.io/apimachinery/pkg/labels"
+	// "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 
 	// "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"github.com/kcp-dev/kcp/pkg/authorization"
+	// apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -59,8 +59,10 @@ import (
 
 	// "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	// "github.com/kcp-dev/kcp/pkg/authorization/delegated"
+	rootphase0 "github.com/kcp-dev/kcp/config/root-phase0"
 	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
+	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualworkspacesdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
@@ -76,22 +78,374 @@ import (
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	// corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 
 	// cachev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/cache/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	// XXX
-	"time"
-
-	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
-	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
+	// "time"
+	// "github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
+	// "github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	// kubecorev1 "k8s.io/api/core/v1"
 )
 
 // cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 
-func dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient kcpclientset.ClusterInterface) context.CancelFunc {
+func BuildVirtualWorkspace(
+	cfg *rest.Config,
+	rootPathPrefix string,
+	kcpClusterClient kcpclientset.ClusterInterface,
+	dynamicClusterClient kcpdynamic.ClusterInterface,
+	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
+	wildcardKcpInformers kcpinformers.SharedInformerFactory,
+	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
+	cacheKcpInformers kcpinformers.SharedInformerFactory,
+) ([]rootapiserver.NamedVirtualWorkspace, error) {
+	if !strings.HasSuffix(rootPathPrefix, "/") {
+		rootPathPrefix += "/"
+	}
+
+	fmt.Printf("\n\n\n=== 1 cachedObj has synced: %v ===\n\n\n", cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().HasSynced())
+
+	readyCh := make(chan struct{})
+
+	cachedResourceSchema := apisv1alpha1.APIResourceSchema{}
+	if err := rootphase0.Unmarshal("apiresourceschema-cachedresources.cache.kcp.io.yaml", &cachedResourceSchema); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal cachedresources resource: %w", err)
+	}
+	bs, err := json.Marshal(&apiextensionsv1.JSONSchemaProps{
+		Type:                   "object",
+		XPreserveUnknownFields: ptr.To(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range cachedResourceSchema.Spec.Versions {
+		v := &cachedResourceSchema.Spec.Versions[i]
+		v.Schema.Raw = bs // wipe schemas. We don't want validation here.
+	}
+
+	// builtinContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{}
+
+	apiExportContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
+		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
+			cluster, apiDomain, prefixToStrip, ok := digestAPIExportURL(urlPath, rootPathPrefix)
+			fmt.Printf("\n\n\nXXXX digestUrl(%q, %q) -> cluster=%q,apiDomain=%q,prefixToStrip=%s,ok=%v\n\n\n", urlPath, rootPathPrefix, cluster.Name.String(), apiDomain, prefixToStrip, ok)
+			if !ok {
+				return false, "", requestContext
+			}
+
+			/*if !cluster.Wildcard {
+				// this virtual workspace requires that a wildcard be provided
+				return false, "", requestContext
+			}*/
+
+			completedContext = genericapirequest.WithCluster(requestContext, cluster)
+			completedContext = genericapirequest.WithShard(completedContext, "root")
+			completedContext = cacheclient.WithShardInContext(completedContext, shard.Name("root"))
+			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
+			return true, prefixToStrip, completedContext
+		}),
+		Authorizer: newAuth(kubeClusterClient),
+		ReadyChecker: framework.ReadyFunc(func() error {
+			select {
+			case <-readyCh:
+				return nil
+			default:
+				return errors.New("replication virtual workspace controllers are not started")
+			}
+		}),
+		BootstrapAPISetManagement: func(mainConfig genericapiserver.CompletedConfig) (apidefinition.APIDefinitionSetGetter, error) {
+			if err := mainConfig.AddPostStartHook(replication.VirtualWorkspaceName, func(hookContext genericapiserver.PostStartHookContext) error {
+				defer close(readyCh)
+
+				for name, informer := range map[string]cache.SharedIndexInformer{
+					"cachedresources": cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
+				} {
+					if !cache.WaitForNamedCacheSync(name, hookContext.Done(), informer.HasSynced) {
+						klog.Background().Error(nil, "informer not synced")
+						return nil
+					}
+				}
+
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+
+			return &singleResourceAPIDefinitionSetProvider{
+				KcpCacheClusterClient: kcpCacheClusterClient,
+				wildcardKcpInformers:  wildcardKcpInformers,
+				kcpClusterClient:      kcpClusterClient,
+
+				config:                mainConfig,
+				dynamicClusterClient:  dynamicClusterClient,
+				exposeSubresources:    false,
+				cachedResourcesSchema: &cachedResourceSchema,
+				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, sch *apisv1alpha1.APIResourceSchema, version string) (apiserver.RestProviderFunc, error) {
+					return forwardingregistry.ProvideReadOnlyRestStorage(
+						ctx,
+						dynamicClusterClientFunc,
+						withUnwrapping(sch, version, kcpCacheClusterClient),
+						nil,
+					)
+				},
+			}, nil
+		},
+	}
+
+	return []rootapiserver.NamedVirtualWorkspace{
+		{Name: replication.VirtualWorkspaceName, VirtualWorkspace: apiExportContent},
+	}, nil
+}
+
+func digestAPIExportURL(urlPath, rootPathPrefix string) (
+	cluster genericapirequest.Cluster,
+	key dynamiccontext.APIDomainKey,
+	logicalPath string,
+	accepted bool,
+) {
+	if !strings.HasPrefix(urlPath, rootPathPrefix) {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+
+	// Incoming requests to this virtual workspace will look like:
+	//  /services/apiexport/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
+	//                     └────────────────────────┐
+	// Where the withoutRootPathPrefix starts here: ┘
+	withoutRootPathPrefix := strings.TrimPrefix(urlPath, rootPathPrefix)
+
+	parts := strings.SplitN(withoutRootPathPrefix, "/", 3)
+	if len(parts) < 3 {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+
+	apiExportClusterName, apiExportName := parts[0], parts[1]
+	if apiExportClusterName == "" {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+	if apiExportName == "" {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+
+	realPath := "/"
+	if len(parts) > 2 {
+		realPath += parts[2]
+	}
+
+	//  /services/apiexport/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
+	//                     ┌────────────────────────────┘
+	// We are now here: ───┘
+	// Now, we parse out the logical cluster.
+	if !strings.HasPrefix(realPath, "/clusters/") {
+		return genericapirequest.Cluster{}, "", "", false
+	}
+
+	withoutClustersPrefix := strings.TrimPrefix(realPath, "/clusters/")
+	parts = strings.SplitN(withoutClustersPrefix, "/", 2)
+	path := logicalcluster.NewPath(parts[0])
+	realPath = "/"
+	if len(parts) > 1 {
+		realPath += parts[1]
+	}
+
+	cluster = genericapirequest.Cluster{}
+	if path == logicalcluster.Wildcard {
+		cluster.Wildcard = true
+	} else {
+		var ok bool
+		cluster.Name, ok = path.Name()
+		if !ok {
+			return genericapirequest.Cluster{}, "", "", false
+		}
+	}
+
+	key = apidomainkey.New(cluster.Name, apiExportName)
+	return cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
+}
+
+func newAuth(deepSARClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
+	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(deepSARClient)
+	wrappedResourceAuthorizer = authorization.NewDecorator("virtual.replication.wrappedresource.authorization.kcp.io", wrappedResourceAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
+
+	return wrappedResourceAuthorizer
+}
+
+type singleResourceAPIDefinitionSetProvider struct {
+	config                genericapiserver.CompletedConfig
+	dynamicClusterClient  kcpdynamic.ClusterInterface
+	resource              *apisv1alpha1.APIResourceSchema
+	exposeSubresources    bool
+	cachedResourcesSchema *apisv1alpha1.APIResourceSchema
+	storageProvider       func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, sch *apisv1alpha1.APIResourceSchema, version string) (apiserver.RestProviderFunc, error)
+
+	KcpCacheClusterClient kcpclientset.ClusterInterface // <-- ...
+	wildcardKcpInformers  kcpinformers.SharedInformerFactory
+	kcpClusterClient      kcpclientset.ClusterInterface
+}
+
+func getAPIResourcheSchemasForAPIExport(
+	ctx context.Context,
+	apiExportCluster logicalcluster.Name,
+	apiExportName string,
+	kcpClusterClient kcpclientset.ClusterInterface,
+) ([]*apisv1alpha1.APIResourceSchema, error) {
+	requestCluster := genericapirequest.ClusterFrom(ctx)
+	if requestCluster == nil {
+		// This should never happen.
+		return nil, fmt.Errorf("cluster not set in context")
+	}
+
+	apiExport, err := kcpClusterClient.Cluster(apiExportCluster.Path()).ApisV1alpha2().APIExports().Get(ctx, apiExportName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get APIExport %s|%s: %v", apiExportCluster, apiExportName, err)
+	}
+
+	var schemas []*apisv1alpha1.APIResourceSchema
+	for _, resSch := range apiExport.Spec.Resources {
+		if resSch.Storage.CRD == nil {
+			// Skip non-APIResourceSchema resource schemas.
+			continue
+		}
+		sch, err := kcpClusterClient.Cluster(apiExportCluster.Path()).ApisV1alpha1().APIResourceSchemas().
+			Get(ctx, resSch.Schema, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		schemas = append(schemas, sch)
+	}
+
+	return schemas, nil
+}
+
+func getCachedResourcesForSchema(
+	ctx context.Context,
+	sch *apisv1alpha1.APIResourceSchema,
+	wildcardKcpInformers kcpinformers.SharedInformerFactory,
+) ([]*cachev1alpha1.CachedResource, error) {
+	var cachedResources []*cachev1alpha1.CachedResource
+
+	var version string
+	for i := range sch.Spec.Versions {
+		if sch.Spec.Versions[i].Served && sch.Spec.Versions[i].Storage {
+			version = sch.Spec.Versions[i].Name
+		}
+	}
+	if version == "" {
+		return nil, fmt.Errorf("XXX could not find appropriate schema version")
+	}
+
+	objs, err := wildcardKcpInformers.Cache().V1alpha1().CachedResources().Informer().GetIndexer().ByIndex(
+		cachedresourcesreplication.ByGVRAndShard,
+		cachedresourcesreplication.GVRAndShard(
+			schema.GroupVersionResource{},
+			"root",
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("XXX could not list CachedResources by index: %v", err)
+	}
+
+	for i := range objs {
+		cachedResources = append(cachedResources, objs[i].(*cachev1alpha1.CachedResource))
+	}
+
+	return cachedResources, nil
+}
+
+func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
+	targetCluster := genericapirequest.ClusterFrom(ctx)
+	parsedKey, err := apidomainkey.Parse(key)
+	if err != nil {
+		return nil, false, err
+	}
+
+	clientFactory := func(ctx context.Context) (kcpdynamic.ClusterInterface, error) {
+		return a.dynamicClusterClient, nil
+	}
+
+	schemas, err := getAPIResourcheSchemasForAPIExport(ctx, parsedKey.APIExportCluster, parsedKey.APIExportName,
+		a.kcpClusterClient)
+	if err != nil {
+		return nil, false, err
+	}
+
+	apis = make(apidefinition.APIDefinitionSet)
+
+	// Add APIs from the APIExport.
+
+	for _, sch := range schemas {
+		gr := schema.GroupResource{
+			Group:    sch.Spec.Group,
+			Resource: sch.Spec.Names.Plural,
+		}
+
+		for i := range sch.Spec.Versions {
+			if !sch.Spec.Versions[i].Served {
+				continue
+			}
+
+			gvr := gr.WithVersion(sch.Spec.Versions[i].Name)
+
+			restProvider, err := a.storageProvider(ctx, clientFactory, sch, gvr.Version)
+			if err != nil {
+				return nil, false, err
+			}
+
+			cachedContentAPIDefinition, err := apiserver.CreateServingInfoFor(
+				a.config,
+				sch,
+				gvr.Version,
+				restProvider,
+			)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to create serving info: %w", err)
+			}
+
+			apis[gvr] = cachedContentAPIDefinition
+		}
+	}
+
+	// Add CachedResource API.
+
+	cachedResourceRESTProvider, err := provideCachedResourceFilteredRestStorage(ctx, clientFactory, targetCluster.Name)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to create storage provider for CachedResources: %v", err)
+	}
+
+	cachedResourceAPIDefinition, err := apiserver.CreateServingInfoFor(
+		a.config,
+		a.cachedResourcesSchema,
+		cachev1alpha1.SchemeGroupVersion.Version,
+		cachedResourceRESTProvider,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to create serving info: %w", err)
+	}
+
+	apis[schema.GroupVersionResource{
+		Group:    cachev1alpha1.SchemeGroupVersion.Group,
+		Version:  cachev1alpha1.SchemeGroupVersion.Version,
+		Resource: "cachedresources",
+	}] = cachedResourceAPIDefinition
+
+	return apis, len(apis) > 0, nil
+}
+
+var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProvider{}
+
+/*cachedobjs, err := a.KcpCacheClusterClient.CacheV1alpha1().Cluster(parsedKey.APIExportCluster.Path()).CachedObjects().List(ctx, metav1.ListOptions{})
+if err != nil {
+	return nil, false, fmt.Errorf("failed to list CachedObjs: %v", err)
+}
+names := make([]string, len(cachedobjs.Items))
+for i := range cachedobjs.Items {
+	names[i] = cachedobjs.Items[i].Name
+}
+fmt.Printf("\n\n\n ^^^ CachedObjs:%v ^^^\n\n\n", names)*/
+
+/*func dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient kcpclientset.ClusterInterface) context.CancelFunc {
 	const resyncPeriod = 10 * time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -136,313 +490,4 @@ func dummyCacheKcpSharedInformerFactory(kcpCacheClusterClient kcpclientset.Clust
 	})
 
 	return cancel
-}
-
-func BuildVirtualWorkspace(
-	cfg *rest.Config,
-	rootPathPrefix string,
-	kcpClusterClient kcpclientset.ClusterInterface,
-	dynamicClusterClient kcpdynamic.ClusterInterface,
-	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
-	wildcardKcpInformers kcpinformers.SharedInformerFactory,
-	kcpCacheClusterClient kcpclientset.ClusterInterface, // <-- ...
-	cacheKcpInformers kcpinformers.SharedInformerFactory,
-) ([]rootapiserver.NamedVirtualWorkspace, error) {
-	if !strings.HasSuffix(rootPathPrefix, "/") {
-		rootPathPrefix += "/"
-	}
-
-	fmt.Printf("\n\n\n=== 1 cachedObj has synced: %v ===\n\n\n", cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().HasSynced())
-
-	readyCh := make(chan struct{})
-
-	scopedCachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
-		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
-			shardName, cluster, apiDomain, prefixToStrip, ok := digestUrl(urlPath, rootPathPrefix)
-			fmt.Printf("\n\n\nXXXX digestUrl(%q, %q) -> cluster=%q,apiDomain=%q,prefixToStrip=%s,ok=%v\n\n\n", urlPath, rootPathPrefix, cluster.Name.String(), apiDomain, prefixToStrip, ok)
-			if !ok {
-				return false, "", requestContext
-			}
-
-			/*if !cluster.Wildcard {
-				// this virtual workspace requires that a wildcard be provided
-				return false, "", requestContext
-			}*/
-
-			completedContext = genericapirequest.WithCluster(requestContext, cluster)
-			completedContext = genericapirequest.WithShard(completedContext, shardName)
-			completedContext = cacheclient.WithShardInContext(completedContext, shard.Name(shardName))
-			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
-			return true, prefixToStrip, completedContext
-		}),
-		Authorizer: newAuth(kubeClusterClient),
-		ReadyChecker: framework.ReadyFunc(func() error {
-			select {
-			case <-readyCh:
-				return nil
-			default:
-				return errors.New("replication virtual workspace controllers are not started")
-			}
-		}),
-		BootstrapAPISetManagement: func(mainConfig genericapiserver.CompletedConfig) (apidefinition.APIDefinitionSetGetter, error) {
-			if err := mainConfig.AddPostStartHook(replication.VirtualWorkspaceName, func(hookContext genericapiserver.PostStartHookContext) error {
-				defer close(readyCh)
-
-				for name, informer := range map[string]cache.SharedIndexInformer{
-					"cachedresources": cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
-				} {
-					if !cache.WaitForNamedCacheSync(name, hookContext.Done(), informer.HasSynced) {
-						klog.Background().Error(nil, "informer not synced")
-						return nil
-					}
-				}
-
-				return nil
-			}); err != nil {
-				return nil, err
-			}
-
-			return &singleResourceAPIDefinitionSetProvider{
-				KcpCacheClusterClient: kcpCacheClusterClient,
-				wildcardKcpInformers:  wildcardKcpInformers,
-				kcpClusterClient:      kcpClusterClient,
-
-				config:               mainConfig,
-				dynamicClusterClient: dynamicClusterClient,
-				exposeSubresources:   false,
-				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema) (apiserver.RestProviderFunc, error) {
-					return forwardingregistry.ProvideReadOnlyRestStorage(
-						ctx,
-						dynamicClusterClientFunc,
-						withUnwrapping(cachedResource, sch, kcpCacheClusterClient),
-						nil,
-					)
-				},
-			}, nil
-		},
-	}
-
-	return []rootapiserver.NamedVirtualWorkspace{
-		{Name: replication.VirtualWorkspaceName, VirtualWorkspace: scopedCachedResourceContent},
-	}, nil
-}
-
-func digestUrl(urlPath, rootPathPrefix string) (
-	shardName genericapirequest.Shard,
-	cluster genericapirequest.Cluster,
-	key dynamiccontext.APIDomainKey,
-	logicalPath string,
-	accepted bool,
-) {
-	if !strings.HasPrefix(urlPath, rootPathPrefix) {
-		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-	}
-
-	// Incoming requests to this virtual workspace will look like:
-	//  /services/apiexport/shard-1/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
-	//                     └────────────────────────┐
-	// Where the withoutRootPathPrefix starts here: ┘
-	withoutRootPathPrefix := strings.TrimPrefix(urlPath, rootPathPrefix)
-
-	parts := strings.SplitN(withoutRootPathPrefix, "/", 4)
-	if len(parts) < 4 {
-		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-	}
-
-	shardName, cachedResourceClusterName, cachedResourceName := genericapirequest.Shard(parts[0]), logicalcluster.Name(parts[1]), parts[2]
-	if shardName == "" {
-		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-	}
-	if cachedResourceClusterName == "" {
-		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-	}
-	if cachedResourceName == "" {
-		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-	}
-
-	realPath := "/"
-	if len(parts) > 3 {
-		realPath += parts[3]
-	}
-
-	//  /services/apiexport/shard-1/root:org:ws/<apiexport-name>/clusters/*/api/v1/configmaps
-	//                     ┌────────────────────────────────────┘
-	// We are now here: ───┘
-	// Now, we parse out the logical cluster.
-	if !strings.HasPrefix(realPath, "/clusters/") {
-		return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-	}
-
-	withoutClustersPrefix := strings.TrimPrefix(realPath, "/clusters/")
-	parts = strings.SplitN(withoutClustersPrefix, "/", 2)
-	path := logicalcluster.NewPath(parts[0])
-	realPath = "/"
-	if len(parts) > 1 {
-		realPath += parts[1]
-	}
-
-	cluster = genericapirequest.Cluster{}
-	if path == logicalcluster.Wildcard {
-		cluster.Wildcard = true
-	} else {
-		var ok bool
-		cluster.Name, ok = path.Name()
-		if !ok {
-			return genericapirequest.Shard(""), genericapirequest.Cluster{}, "", "", false
-		}
-	}
-
-	key = apidomainkey.New(shardName, cachedResourceClusterName, cachedResourceName)
-	return shardName, cluster, key, strings.TrimSuffix(urlPath, realPath), true
-}
-
-func newAuth(deepSARClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
-	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(deepSARClient)
-	wrappedResourceAuthorizer = authorization.NewDecorator("virtual.replication.wrappedresource.authorization.kcp.io", wrappedResourceAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
-
-	return wrappedResourceAuthorizer
-}
-
-type singleResourceAPIDefinitionSetProvider struct {
-	config               genericapiserver.CompletedConfig
-	dynamicClusterClient kcpdynamic.ClusterInterface
-	resource             *apisv1alpha1.APIResourceSchema
-	exposeSubresources   bool
-	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, cachedResource *cachev1alpha1.CachedResource, sch *apisv1alpha1.APIResourceSchema) (apiserver.RestProviderFunc, error)
-
-	KcpCacheClusterClient kcpclientset.ClusterInterface // <-- ...
-	wildcardKcpInformers  kcpinformers.SharedInformerFactory
-	kcpClusterClient      kcpclientset.ClusterInterface
-}
-
-func getResourceBindingsAnnJSON(lc *corev1alpha1.LogicalCluster) string {
-	const jsonEmptyObj = "{}"
-
-	if lc == nil {
-		return jsonEmptyObj
-	}
-
-	ann := lc.Annotations[apibinding.ResourceBindingsAnnotationKey]
-	if ann == "" {
-		ann = jsonEmptyObj
-	}
-
-	return ann
-}
-
-func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
-	ctx context.Context,
-	clusterName logicalcluster.Name,
-	gvr schema.GroupVersionResource,
-) (*apisv1alpha1.APIResourceSchema, error) {
-	if gvr.Group == "" {
-		// Assume built-in types.
-		return builtin.GetBuiltInAPISchema(apisv1alpha1.GroupResource{Group: "", Resource: gvr.Resource})
-	}
-
-	lc, err := a.kcpClusterClient.CoreV1alpha1().LogicalClusters().Cluster(clusterName.Path()).Get(ctx, "cluster", metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	resBindingsAnnStr := getResourceBindingsAnnJSON(lc)
-	resBindingsAnn, err := apibinding.UnmarshalResourceBindingsAnnotation(resBindingsAnnStr)
-
-	bindingName := ""
-	for gr, v := range resBindingsAnn {
-		if v.CRD {
-			continue
-		}
-		if gr == gvr.GroupResource().String() {
-			bindingName = v.Name
-		}
-	}
-
-	if bindingName == "" {
-		return nil, fmt.Errorf("no binding for %s found in %s", gvr.GroupResource().String(), clusterName)
-	}
-
-	apiBinding, err := a.kcpClusterClient.ApisV1alpha2().APIBindings().Cluster(clusterName.Path()).Get(ctx, bindingName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get APIBinding %s in %s", bindingName, clusterName)
-	}
-
-	apiExport, err := a.kcpClusterClient.ApisV1alpha2().APIExports().Cluster(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)).
-		Get(ctx, apiBinding.Spec.Reference.Export.Name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get APIExport %s|%s referenced by APIBinding %s|%s",
-			apiBinding.Spec.Reference.Export.Path, apiBinding.Spec.Reference.Export.Name,
-			bindingName, clusterName,
-		)
-	}
-
-	schName := ""
-	for _, exportResource := range apiExport.Spec.Resources {
-		if exportResource.Group == gvr.Group && exportResource.Name == gvr.Resource {
-			schName = exportResource.Schema
-		}
-	}
-
-	return a.kcpClusterClient.ApisV1alpha1().APIResourceSchemas().Cluster(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)).
-		Get(ctx, schName, metav1.GetOptions{})
-}
-
-func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
-	parsedKey, err := apidomainkey.Parse(key)
-	if err != nil {
-		return nil, false, err
-	}
-
-	cachedResource, err := a.kcpClusterClient.CacheV1alpha1().CachedResources().Cluster(parsedKey.CachedResourceCluster.Path()).
-		Get(ctx, parsedKey.CachedResourceName, metav1.GetOptions{})
-	if err != nil {
-		return nil, false, err
-	}
-
-	sch, err := a.getAPIResourceSchema(
-		ctx, parsedKey.CachedResourceCluster, schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource),
-	)
-	if err != nil {
-		return nil, false, fmt.Errorf("XXX failed to get APIResourceSchema for CachedResource %s: %v", parsedKey.CachedResourceName, err)
-	}
-
-	cachedobjs, err := a.KcpCacheClusterClient.CacheV1alpha1().Cluster(parsedKey.CachedResourceCluster.Path()).CachedObjects().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to list CachedObjs: %v", err)
-	}
-	names := make([]string, len(cachedobjs.Items))
-	for i := range cachedobjs.Items {
-		names[i] = cachedobjs.Items[i].Name
-	}
-	fmt.Printf("\n\n\n ^^^ CachedObjs:%v ^^^\n\n\n", names)
-
-	clientFactory := func(ctx context.Context) (kcpdynamic.ClusterInterface, error) {
-		return a.dynamicClusterClient, nil
-	}
-
-	restProvider, err := a.storageProvider(ctx, clientFactory, cachedResource, sch)
-	if err != nil {
-		return nil, false, err
-	}
-
-	apiDefinition, err := apiserver.CreateServingInfoFor(
-		a.config,
-		sch,
-		cachedResource.Spec.Version,
-		restProvider,
-	)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to create serving info: %w", err)
-	}
-
-	apis = apidefinition.APIDefinitionSet{
-		schema.GroupVersionResource{
-			Group:    cachedResource.Spec.Group,
-			Version:  cachedResource.Spec.Version,
-			Resource: cachedResource.Spec.Resource,
-		}: apiDefinition,
-	}
-
-	return apis, len(apis) > 0, nil
-}
-
-var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProvider{}
+}*/
