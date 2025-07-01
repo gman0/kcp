@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
@@ -29,9 +30,10 @@ import (
 	registry "github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 )
 
-func provideCachedResourceFilteredRestStorage(ctx context.Context, dynamicClusterClientFunc registry.DynamicClusterClientFunc, clusterName logicalcluster.Name) (apiserver.RestProviderFunc, error) {
+func provideCachedResourceFilteredRestStorage(ctx context.Context, dynamicClusterClientFunc registry.DynamicClusterClientFunc, clusterName logicalcluster.Name, gr schema.GroupResource) (apiserver.RestProviderFunc, error) {
 	labelSelector := map[string]string{
-		cachedresourcesreplication.LabelKeyObjectSchema: "",
+		cachedresourcesreplication.LabelKeyObjectGroup:    gr.Group,
+		cachedresourcesreplication.LabelKeyObjectResource: gr.Resource,
 	}
 
 	requirements, selectable := labels.SelectorFromSet(labelSelector).Requirements()
