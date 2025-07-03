@@ -61,7 +61,6 @@ import (
 	bootstrappolicy "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/network"
-	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	"github.com/kcp-dev/kcp/pkg/server/bootstrap"
 	kcpfilters "github.com/kcp-dev/kcp/pkg/server/filters"
 	"github.com/kcp-dev/kcp/pkg/server/openapiv3"
@@ -579,15 +578,6 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 
 	c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetIndexer().AddIndexers(cache.Indexers{byGroupResourceName: indexCRDByGroupResourceName}) //nolint:errcheck
 	c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().GetIndexer().AddIndexers(cache.Indexers{byIdentityGroupResource: indexAPIBindingByIdentityGroupResource})             //nolint:errcheck
-
-	// TODO: also add to cmd/virtual-workspace!
-	err = c.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedObjects().Informer().GetIndexer().AddIndexers(
-		cache.Indexers{
-			replication.ByGVRAndShardAndLogicalCluster: replication.IndexByGVRAndShardAndLogicalCluster,
-		},
-	)
-
-	fmt.Printf("\n\n\n=== add INFORMER err=%v ; informers=%#v ===\n\n\n", err, c.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedObjects().Informer().GetIndexer().GetIndexers())
 
 	c.ApiExtensions.ExtraConfig.ClusterAwareCRDLister = &apiBindingAwareCRDClusterLister{
 		kcpClusterClient:  c.KcpClusterClient,

@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
+	// "github.com/kcp-dev/logicalcluster/v3"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -36,17 +37,21 @@ import (
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/storage"
 	storageerrors "k8s.io/apiserver/pkg/storage/errors"
+	clientgocache "k8s.io/client-go/tools/cache"
 
 	// "github.com/kcp-dev/logicalcluster/v3"
 
 	// cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
+	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
+
+	//kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
+	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
 func unwrapCachedObject(obj *cachev1alpha1.CachedObject) (*unstructured.Unstructured, error) {
@@ -54,10 +59,11 @@ func unwrapCachedObject(obj *cachev1alpha1.CachedObject) (*unstructured.Unstruct
 	if err := inner.UnmarshalJSON(obj.Spec.Raw.Raw); err != nil {
 		return nil, fmt.Errorf("failed to decode inner object: %w", err)
 	}
+	inner.SetResourceVersion(obj.GetResourceVersion())
 	return inner, nil
 }
 
-func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCacheClusterClient kcpclientset.ClusterInterface) forwardingregistry.StorageWrapper {
+func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKcpInformers kcpinformers.SharedInformerFactory) forwardingregistry.StorageWrapper {
 	wrappedGVR := schema.GroupVersionResource{
 		Group:    sch.Spec.Group,
 		Version:  version,
@@ -83,10 +89,10 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCach
 			if err != nil {
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
+			fmt.Printf("<> repl vw parsed key %#v <>\n", parsedKey)
 
 			cachedObjName := buildCachedObjName(schema.GroupVersionResource(wrappedGVR), genericapirequest.NamespaceValue(ctx), name)
-			cachedObj, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster.Path()).
-				Get(ctx, cachedObjName, *options)
+			cachedObj, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster).Lister().Get(cachedObjName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, wrappedGVR, name, err)
 			}
@@ -94,6 +100,8 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCach
 			return unwrapCachedObject(cachedObj)
 		}
 		storage.WatcherFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
+			fmt.Printf("\n\n<> WATCH OPTS %#v <>\n", options)
+
 			parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
 			if err != nil {
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
@@ -123,8 +131,6 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCach
 					labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
 				}
 			}
-
-			listOpts.SetGroupVersionKind(cachev1alpha1.SchemeGroupVersion.WithKind("CachedResource"))
 			listOpts.LabelSelector = labels.FormatLabels(labelMap)
 			listOpts.FieldSelector = ""
 
@@ -138,15 +144,12 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCach
 				}
 			}()
 
-			cachedObjWatch, err := kcpCacheClusterClient.Cluster(parsedKey.CachedResourceCluster.Path()).CacheV1alpha1().CachedObjects().
-				Watch(watchCtx, listOpts)
-			if err != nil {
-				return nil, err
-			}
-
-			return newUnwrappingWatch(cachedObjWatch, innerGVR.GroupResource(), options, namespaced), nil
+			return newUnwrappingWatch(watchCtx, innerGVR, options, namespaced,
+				cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster).Informer())
 		}
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
+			fmt.Printf("\n\n<> LIST OPTS %#v <>\n\n", options)
+
 			parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
 			if err != nil {
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
@@ -172,23 +175,13 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCach
 				replication.LabelKeyObjectVersion:  innerGVR.Version,
 				replication.LabelKeyObjectResource: innerGVR.Resource,
 			}
-			// TODO(gman0): uncomment and finish this once replication for CachedResources fully supports namespaces.
-			// if namespaced {
-			// 	// Namespace must already be present in the context, otherwise
-			// 	// checkCrossNamespaceAndWildcard would have failed earlier.
-			// 	requestNamespace, _ := genericapirequest.NamespaceFrom(ctxWithShardAndCluster)
-			// 	labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
-			// }
-
-			listOpts.SetGroupVersionKind(cachev1alpha1.SchemeGroupVersion.WithKind("CachedResource"))
+			if namespaced {
+				if requestNamespace, hasNamespace := genericapirequest.NamespaceFrom(ctx); hasNamespace {
+					labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
+				}
+			}
 			listOpts.LabelSelector = labels.FormatLabels(labelMap)
 			listOpts.FieldSelector = ""
-
-			cachedObjs, err := kcpCacheClusterClient.CacheV1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster.Path()).
-				List(ctx, listOpts)
-			if err != nil {
-				return nil, err
-			}
 
 			innerListGVK := schema.GroupVersionKind{
 				Group:   wrappedGVR.Group,
@@ -197,6 +190,18 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, kcpCach
 			}
 			if innerListGVK.Kind == "" {
 				innerListGVK.Kind = sch.Spec.Names.Kind + "List"
+			}
+
+			cachedObjs, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer().ByIndex(
+				cachedresourcesreplication.ByGVRAndLogicalClusterAndNamespace,
+				cachedresourcesreplication.GVRAndLogicalClusterAndNamespace(
+					innerGVR,
+					parsedKey.CachedResourceCluster,
+					genericapirequest.NamespaceValue(ctx),
+				),
+			)
+			if err != nil {
+				return nil, err
 			}
 
 			return newUnwrappingList(innerListGVK, innerGVR.GroupResource(), cachedObjs, options, namespaced)
@@ -239,12 +244,29 @@ func checkCrossNamespaceAndWildcard(ctx context.Context, gvr schema.GroupVersion
 
 type unwrappingWatch struct {
 	resultChan chan watch.Event
-	stop       func()
+	handler    clientgocache.ResourceEventHandlerRegistration
+	informer   clientgocache.SharedIndexInformer
 }
 
-func newUnwrappingWatch(cachedObjWatch watch.Interface, innerObjGR schema.GroupResource, innerListOpts *metainternalversion.ListOptions, namespaced bool) *unwrappingWatch {
+func objOrTombstone[T runtime.Object](obj any) T {
+	if t, ok := obj.(T); ok {
+		return t
+	}
+	if tombstone, ok := obj.(clientgocache.DeletedFinalStateUnknown); ok {
+		if t, ok := tombstone.Obj.(T); ok {
+			return t
+		}
+
+		panic(fmt.Errorf("tombstone %T is not a %T", tombstone, new(T)))
+	}
+
+	panic(fmt.Errorf("%T is not a %T", obj, new(T)))
+}
+
+func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionResource, innerListOpts *metainternalversion.ListOptions, namespaced bool, scopedCachedObjectsInformer clientgocache.SharedIndexInformer) (*unwrappingWatch, error) {
 	w := &unwrappingWatch{
 		resultChan: make(chan watch.Event),
+		informer:   scopedCachedObjectsInformer,
 	}
 
 	label := labels.Everything()
@@ -259,67 +281,121 @@ func newUnwrappingWatch(cachedObjWatch watch.Interface, innerObjGR schema.GroupR
 	if namespaced {
 		attrFunc = storage.DefaultNamespaceScopedAttr
 	}
-
-	go func() {
-		defer close(w.resultChan)
-		defer w.Stop()
-
-		for event := range cachedObjWatch.ResultChan() {
-			cachedObj, ok := event.Object.(*cachev1alpha1.CachedObject)
-			if !ok {
-				w.resultChan <- watch.Event{
-					Type:   watch.Error,
-					Object: &apierrors.NewInternalError(fmt.Errorf("unexpected watch object: %T", event.Object)).ErrStatus,
-				}
-				continue
-			}
-
-			innerObj := &unstructured.Unstructured{}
-			if err := innerObj.UnmarshalJSON(cachedObj.Spec.Raw.Raw); err != nil {
-				w.resultChan <- watch.Event{
-					Type:   watch.Error,
-					Object: &apierrors.NewInternalError(fmt.Errorf("failed to decode inner object: %w", err)).ErrStatus,
-				}
-				continue
-			}
-
-			innerObj.SetResourceVersion(cachedObj.GetResourceVersion())
-
-			innerLabels, innerFields, err := attrFunc(innerObj)
-			if err != nil {
-				w.resultChan <- watch.Event{
-					Type:   watch.Error,
-					Object: &apierrors.NewInternalError(fmt.Errorf("failed to get inner object attributes: %w", err)).ErrStatus,
-				}
-				continue
-			}
-			if !label.Matches(innerLabels) {
-				continue
-			}
-			if !field.Matches(innerFields) {
-				continue
-			}
-
-			w.resultChan <- watch.Event{
-				Type:   event.Type,
-				Object: innerObj,
-			}
+	unwrapWithMatchingSelectors := func(cachedObj *cachev1alpha1.CachedObject) (*unstructured.Unstructured, error) {
+		innerObj, err := unwrapCachedObject(cachedObj)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode inner object: %w", err)
 		}
-	}()
+		innerLabels, innerFields, err := attrFunc(innerObj)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get attributes in object: %w", err)
+		}
+		if !label.Matches(innerLabels) {
+			return nil, nil
+		}
+		if !field.Matches(innerFields) {
+			return nil, nil
+		}
+		return innerObj, nil
+	}
 
-	w.stop = cachedObjWatch.Stop
-	return w
+	handler, err := scopedCachedObjectsInformer.AddEventHandler(clientgocache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			cachedObj := objOrTombstone[*cachev1alpha1.CachedObject](obj)
+			if cachedObj.GetLabels() == nil {
+				return false
+			}
+			return cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectGroup] == innerObjGVR.Group &&
+				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectVersion] == innerObjGVR.Version &&
+				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectResource] == innerObjGVR.Resource &&
+				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectOriginalNamespace] == genericapirequest.NamespaceValue(ctx)
+		},
+		Handler: clientgocache.ResourceEventHandlerDetailedFuncs{
+			AddFunc: func(obj interface{}, isInInitialList bool) {
+				cachedObj := objOrTombstone[*cachev1alpha1.CachedObject](obj)
+				if isInInitialList {
+					if innerListOpts.SendInitialEvents == nil || *innerListOpts.SendInitialEvents == false {
+						// The user explicitly requests to not send the initial list.
+						return
+					}
+					if cachedObj.GetResourceVersion() < innerListOpts.ResourceVersion {
+						// This resource is older than the want we want to start from on isInInitial list replay.
+						return
+					}
+				}
+
+				innerObj, err := unwrapWithMatchingSelectors(cachedObj)
+				if err != nil {
+					w.resultChan <- watch.Event{
+						Type:   watch.Error,
+						Object: &apierrors.NewInternalError(err).ErrStatus,
+					}
+					return
+				}
+				if innerObj == nil {
+					return
+				}
+				w.resultChan <- watch.Event{
+					Type:   watch.Added,
+					Object: innerObj,
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				cachedObj := objOrTombstone[*cachev1alpha1.CachedObject](newObj)
+				innerObj, err := unwrapWithMatchingSelectors(cachedObj)
+				if err != nil {
+					w.resultChan <- watch.Event{
+						Type:   watch.Error,
+						Object: &apierrors.NewInternalError(err).ErrStatus,
+					}
+					return
+				}
+				if innerObj == nil {
+					return
+				}
+				w.resultChan <- watch.Event{
+					Type:   watch.Added,
+					Object: innerObj,
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				cachedObj := objOrTombstone[*cachev1alpha1.CachedObject](obj)
+				innerObj, err := unwrapWithMatchingSelectors(cachedObj)
+				if err != nil {
+					w.resultChan <- watch.Event{
+						Type:   watch.Error,
+						Object: &apierrors.NewInternalError(err).ErrStatus,
+					}
+					return
+				}
+				if innerObj == nil {
+					return
+				}
+				w.resultChan <- watch.Event{
+					Type:   watch.Added,
+					Object: innerObj,
+				}
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	w.handler = handler
+
+	return w, nil
 }
 
 func (w *unwrappingWatch) Stop() {
-	w.stop()
+	w.informer.RemoveEventHandler(w.handler)
+	close(w.resultChan)
 }
 
 func (w *unwrappingWatch) ResultChan() <-chan watch.Event {
 	return w.resultChan
 }
 
-func newUnwrappingList(innerListGVK schema.GroupVersionKind, innerObjGR schema.GroupResource, cachedObjList *cachev1alpha1.CachedObjectList, innerListOpts *metainternalversion.ListOptions, namespaced bool) (*unstructured.UnstructuredList, error) {
+func newUnwrappingList(innerListGVK schema.GroupVersionKind, innerObjGR schema.GroupResource, cachedObjs []interface{}, innerListOpts *metainternalversion.ListOptions, namespaced bool) (*unstructured.UnstructuredList, error) {
 	innerList := &unstructured.UnstructuredList{}
 	innerList.SetGroupVersionKind(innerListGVK)
 
@@ -336,8 +412,10 @@ func newUnwrappingList(innerListGVK schema.GroupVersionKind, innerObjGR schema.G
 		attrFunc = storage.DefaultNamespaceScopedAttr
 	}
 
-	for i := range cachedObjList.Items {
-		item := &cachedObjList.Items[i]
+	latestResourceVersion := "0"
+
+	for i := range cachedObjs {
+		item := cachedObjs[i].(*cachev1alpha1.CachedObject)
 		innerObj, err := unwrapCachedObject(item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unwrap item: %w", err)
@@ -356,9 +434,13 @@ func newUnwrappingList(innerListGVK schema.GroupVersionKind, innerObjGR schema.G
 
 		innerObj.SetResourceVersion(item.GetResourceVersion())
 		innerList.Items = append(innerList.Items, *innerObj)
+
+		if innerObj.GetResourceVersion() > latestResourceVersion {
+			latestResourceVersion = innerObj.GetResourceVersion()
+		}
 	}
 
-	innerList.SetResourceVersion(cachedObjList.GetResourceVersion())
+	innerList.SetResourceVersion(latestResourceVersion)
 
 	return innerList, nil
 }

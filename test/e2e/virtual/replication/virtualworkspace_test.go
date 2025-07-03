@@ -83,7 +83,199 @@ import (
 	"github.com/kcp-dev/kcp/test/e2e/framework"
 )
 
-func TestAPIExportVirtualWorkspace(t *testing.T) {
+/*func TestCachedResourceVirtualWorkspaceGet(t *testing.T) {
+
+	t.Parallel()
+	framework.Suite(t, "control-plane")
+
+	server := kcptesting.SharedKcpServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cfg := server.BaseConfig(t)
+
+	kcpClients, err := kcpclientset.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct kcp cluster client for server")
+
+	dynamicClusterClient, err := kcpdynamic.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct dynamic cluster client for server")
+
+	kubeClusterClient, err := kcpkubernetesclientset.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct kube cluster client for server")
+
+	wildwestClusterClient, err := wildwestclientset.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct wildwest cluster client for server")
+
+	orgPath, _ := framework.NewOrganizationFixture(t, server) //nolint:staticcheck // TODO: switch to NewWorkspaceFixture.
+	serviceProviderPath, _ := kcptesting.NewWorkspaceFixture(t, server, orgPath)
+	consumerPath, consumerWorkspace := kcptesting.NewWorkspaceFixture(t, server, orgPath)
+	// consumerClusterName := logicalcluster.Name(consumerWorkspace.Spec.Cluster)
+
+	framework.AdmitWorkspaceAccess(ctx, t, kubeClusterClient, serviceProviderPath, []string{"user-1"}, nil, false)
+	framework.AdmitWorkspaceAccess(ctx, t, kubeClusterClient, consumerPath, []string{"user-1"}, nil, false)
+
+	setUpServiceProvider(ctx, t, dynamicClusterClient, kcpClients, true, serviceProviderPath, cfg, nil)
+	bindConsumerToProvider(ctx, t, consumerPath, serviceProviderPath, kcpClients, cfg)
+	cowboyName1 := createCowboyInConsumer(ctx, t, consumerPath, wildwestClusterClient, nil)
+	createCachedResourceAndCachedResourceEndpointSliceInConsumer(ctx, t, consumerPath, kcpClients, "cow")
+
+	t.Logf("Waiting for APIExport to have a virtual workspace URL for the bound workspace %q", consumerWorkspace.Name)
+	apiExportVWCfg := rest.CopyConfig(cfg)
+	kcptestinghelpers.Eventually(t, func() (bool, string) {
+		apiExportEndpointSlice, err := kcpClients.Cluster(serviceProviderPath).ApisV1alpha1().APIExportEndpointSlices().Get(ctx, "today-cowboys", metav1.GetOptions{})
+		require.NoError(t, err)
+		var found bool
+		apiExportVWCfg.Host, found, err = framework.VirtualWorkspaceURL(ctx, kcpClients, consumerWorkspace, framework.ExportVirtualWorkspaceURLs(apiExportEndpointSlice))
+		require.NoError(t, err)
+		return found, fmt.Sprintf("waiting for virtual workspace URLs to be available: %v", apiExportEndpointSlice.Status.APIExportEndpoints)
+	}, wait.ForeverTestTimeout, time.Millisecond*100)
+
+	t.Logf("Verifying that the virtual workspace includes the cowboy resource")
+	wildwestVCClusterClient, err := wildwestclientset.NewForConfig(apiExportVWCfg)
+	require.NoError(t, err)
+	cowboysProjected, err := wildwestVCClusterClient.WildwestV1alpha1().Cowboys().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(cowboysProjected.Items))
+
+	t.Logf("Verify that the virtual workspace includes apibindings")
+	discoveryVCClusterClient, err := kcpdiscovery.NewForConfig(apiExportVWCfg)
+	require.NoError(t, err)
+	resources, err := discoveryVCClusterClient.ServerResourcesForGroupVersion(apisv1alpha2.SchemeGroupVersion.String())
+	require.NoError(t, err, "error retrieving APIExport discovery")
+	require.True(t, resourceExists(resources, "apibindings"), "missing apibindings")
+
+	resources, err = discoveryVCClusterClient.ServerResourcesForGroupVersion(apisv1alpha1.SchemeGroupVersion.String())
+	require.NoError(t, err, "error retrieving APIExport discovery")
+	require.True(t, resourceExists(resources, "apibindings"), "missing apibindings")
+
+	t.Logf("Waiting for CachedResource to have a virtual workspace URL for the consumer workspace %q", consumerWorkspace.Name)
+	cachedResourceVWCfg := rest.CopyConfig(cfg)
+	kcptestinghelpers.Eventually(t, func() (bool, string) {
+		cachedResourceEndpointSlice, err := kcpClients.Cluster(consumerPath).CacheV1alpha1().CachedResourceEndpointSlices().
+			Get(ctx, "cowboys", metav1.GetOptions{})
+		require.NoError(t, err)
+		var found bool
+		cachedResourceVWCfg.Host, found, err = framework.VirtualWorkspaceURL(ctx, kcpClients, consumerWorkspace,
+			framework.ReplicationVirtualWorkspaceURLs(cachedResourceEndpointSlice))
+		require.NoError(t, err)
+		return found, fmt.Sprintf("waiting for virtual workspace URLs to be available: %v", cachedResourceEndpointSlice.Status.CachedResourceEndpoints)
+	}, wait.ForeverTestTimeout, time.Millisecond*100)
+
+	wwCachedResourceVWClient, err := wildwestclientset.NewForConfig(cachedResourceVWCfg)
+	require.NoError(t, err)
+
+	cachedObj, err := wwCachedResourceVWClient.Cluster(consumerPath).WildwestV1alpha1().Cowboys("default").Get(ctx, cowboyName1, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Cowboy object: %#v", cachedObj)
+}
+
+func TestCachedResourceVirtualWorkspaceList(t *testing.T) {
+
+	t.Parallel()
+	framework.Suite(t, "control-plane")
+
+	server := kcptesting.SharedKcpServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cfg := server.BaseConfig(t)
+
+	kcpClients, err := kcpclientset.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct kcp cluster client for server")
+
+	dynamicClusterClient, err := kcpdynamic.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct dynamic cluster client for server")
+
+	kubeClusterClient, err := kcpkubernetesclientset.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct kube cluster client for server")
+
+	wildwestClusterClient, err := wildwestclientset.NewForConfig(cfg)
+	require.NoError(t, err, "failed to construct wildwest cluster client for server")
+
+	orgPath, _ := framework.NewOrganizationFixture(t, server) //nolint:staticcheck // TODO: switch to NewWorkspaceFixture.
+	serviceProviderPath, _ := kcptesting.NewWorkspaceFixture(t, server, orgPath)
+	consumerPath, consumerWorkspace := kcptesting.NewWorkspaceFixture(t, server, orgPath)
+	// consumerClusterName := logicalcluster.Name(consumerWorkspace.Spec.Cluster)
+
+	framework.AdmitWorkspaceAccess(ctx, t, kubeClusterClient, serviceProviderPath, []string{"user-1"}, nil, false)
+	framework.AdmitWorkspaceAccess(ctx, t, kubeClusterClient, consumerPath, []string{"user-1"}, nil, false)
+
+	setUpServiceProvider(ctx, t, dynamicClusterClient, kcpClients, true, serviceProviderPath, cfg, nil)
+	bindConsumerToProvider(ctx, t, consumerPath, serviceProviderPath, kcpClients, cfg)
+	cowboyName1 := createCowboyInConsumer(ctx, t, consumerPath, wildwestClusterClient, nil)
+	createCachedResourceAndCachedResourceEndpointSliceInConsumer(ctx, t, consumerPath, kcpClients, "cow")
+
+	t.Logf("Waiting for APIExport to have a virtual workspace URL for the bound workspace %q", consumerWorkspace.Name)
+	apiExportVWCfg := rest.CopyConfig(cfg)
+	kcptestinghelpers.Eventually(t, func() (bool, string) {
+		apiExportEndpointSlice, err := kcpClients.Cluster(serviceProviderPath).ApisV1alpha1().APIExportEndpointSlices().Get(ctx, "today-cowboys", metav1.GetOptions{})
+		require.NoError(t, err)
+		var found bool
+		apiExportVWCfg.Host, found, err = framework.VirtualWorkspaceURL(ctx, kcpClients, consumerWorkspace, framework.ExportVirtualWorkspaceURLs(apiExportEndpointSlice))
+		require.NoError(t, err)
+		return found, fmt.Sprintf("waiting for virtual workspace URLs to be available: %v", apiExportEndpointSlice.Status.APIExportEndpoints)
+	}, wait.ForeverTestTimeout, time.Millisecond*100)
+
+	t.Logf("Verifying that the virtual workspace includes the cowboy resource")
+	wildwestVCClusterClient, err := wildwestclientset.NewForConfig(apiExportVWCfg)
+	require.NoError(t, err)
+	cowboysProjected, err := wildwestVCClusterClient.WildwestV1alpha1().Cowboys().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(cowboysProjected.Items))
+
+	t.Logf("Verify that the virtual workspace includes apibindings")
+	discoveryVCClusterClient, err := kcpdiscovery.NewForConfig(apiExportVWCfg)
+	require.NoError(t, err)
+	resources, err := discoveryVCClusterClient.ServerResourcesForGroupVersion(apisv1alpha2.SchemeGroupVersion.String())
+	require.NoError(t, err, "error retrieving APIExport discovery")
+	require.True(t, resourceExists(resources, "apibindings"), "missing apibindings")
+
+	resources, err = discoveryVCClusterClient.ServerResourcesForGroupVersion(apisv1alpha1.SchemeGroupVersion.String())
+	require.NoError(t, err, "error retrieving APIExport discovery")
+	require.True(t, resourceExists(resources, "apibindings"), "missing apibindings")
+
+	t.Logf("Waiting for CachedResource to have a virtual workspace URL for the consumer workspace %q", consumerWorkspace.Name)
+	cachedResourceVWCfg := rest.CopyConfig(cfg)
+	kcptestinghelpers.Eventually(t, func() (bool, string) {
+		cachedResourceEndpointSlice, err := kcpClients.Cluster(consumerPath).CacheV1alpha1().CachedResourceEndpointSlices().
+			Get(ctx, "cowboys", metav1.GetOptions{})
+		require.NoError(t, err)
+		var found bool
+		cachedResourceVWCfg.Host, found, err = framework.VirtualWorkspaceURL(ctx, kcpClients, consumerWorkspace,
+			framework.ReplicationVirtualWorkspaceURLs(cachedResourceEndpointSlice))
+		require.NoError(t, err)
+		return found, fmt.Sprintf("waiting for virtual workspace URLs to be available: %v", cachedResourceEndpointSlice.Status.CachedResourceEndpoints)
+	}, wait.ForeverTestTimeout, time.Millisecond*100)
+
+	wwCachedResourceVWClient, err := wildwestclientset.NewForConfig(cachedResourceVWCfg)
+	require.NoError(t, err)
+
+	cowboyName2 := createCowboyInConsumer(ctx, t, consumerPath, wildwestClusterClient, nil)
+
+	listOpts := metav1.ListOptions{
+		Limit: 1,
+	}
+
+	list, err := wwCachedResourceVWClient.Cluster(consumerPath).WildwestV1alpha1().Cowboys("default").List(ctx, listOpts)
+	listMeta := list.DeepCopy()
+	listMeta.Items = nil
+	t.Logf("List meta object: %#v", list)
+	require.NoError(t, err)
+
+	t.Logf("Listing %d items:", len(list.Items))
+	cowboyNames := sets.NewString()
+	for i := range list.Items {
+		cowboyNames.Insert(list.Items[i].Name)
+		t.Logf("Item %d: %#v", i, list.Items[i])
+	}
+	require.True(t, cowboyNames.HasAll(cowboyName1, cowboyName2),
+		"expected the list to contain both cowboys, %s and %s, have %s", cowboyName1, cowboyName2, cowboyNames.List())
+}*/
+
+func TestCachedResourceVirtualWorkspace(t *testing.T) {
 	t.Parallel()
 	framework.Suite(t, "control-plane")
 

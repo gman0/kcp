@@ -59,10 +59,10 @@ import (
 	// "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	// "github.com/kcp-dev/kcp/pkg/authorization/delegated"
 	//
-	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
+	//cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
+	//"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	//
-	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
+
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualworkspacesdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
@@ -73,6 +73,7 @@ import (
 
 	//"github.com/kcp-dev/kcp/pkg/virtual/framework/handler"
 	"github.com/kcp-dev/kcp/pkg/indexers"
+	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
@@ -80,7 +81,6 @@ import (
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 
-	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 
@@ -130,7 +130,7 @@ func BuildVirtualWorkspace(
 
 			// completedContext = genericapirequest.WithShard(completedContext, "root")
 			completedContext = genericapirequest.WithCluster(requestContext, genericapirequest.Cluster{Name: cachedResourceCluster})
-			completedContext = cacheclient.WithShardInContext(completedContext, shard.Name("root"))
+			// completedContext = cacheclient.WithShardInContext(completedContext, shard.Name("*"))
 			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
 			return true, prefixToStrip, completedContext
 		}),
@@ -147,6 +147,12 @@ func BuildVirtualWorkspace(
 			if err := mainConfig.AddPostStartHook(replication.VirtualWorkspaceName, func(hookContext genericapiserver.PostStartHookContext) error {
 				defer close(readyCh)
 
+				indexers.AddIfNotPresentOrDie(
+					cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer(),
+					cache.Indexers{
+						cachedresourcesreplication.ByGVRAndLogicalClusterAndNamespace: cachedresourcesreplication.IndexByGVRAndLogicalClusterAndNamespace,
+					},
+				)
 				indexers.AddIfNotPresentOrDie(
 					cacheKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 					cache.Indexers{
@@ -202,7 +208,7 @@ func BuildVirtualWorkspace(
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnwrapping(sch, version, kcpCacheClusterClient),
+						withUnwrapping(sch, version, cacheKcpInformers),
 						nil,
 					)
 				},
@@ -366,7 +372,7 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 	return a.getAPIResourceSchemaByName(apiExportClusterName, schName)
 }
 
-func getCachedResourcesForSchema(
+/*func getCachedResourcesForSchema(
 	ctx context.Context,
 	sch *apisv1alpha1.APIResourceSchema,
 	wildcardKcpInformers kcpinformers.SharedInformerFactory,
@@ -399,7 +405,7 @@ func getCachedResourcesForSchema(
 	}
 
 	return cachedResources, nil
-}
+}*/
 
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
 	parsedKey, err := apidomainkey.Parse(key)

@@ -33,6 +33,8 @@ const (
 	ByGVRAndShardAndLogicalCluster = "kcp-byGVRAndShardAndLogicalCluster"
 
 	ByGVRAndShard = "kcp-byGVRAndShard"
+
+	ByGVRAndLogicalClusterAndNamespace = "kcp-byGVRAndLogicalClusterAndNamespace"
 )
 
 // IndexByShardAndLogicalClusterAndNamespace is an index function that indexes by an object's shard and logical cluster, namespace and name.
@@ -86,8 +88,7 @@ func GVRAndShardAndLogicalClusterAndNamespaceKey(gvr schema.GroupVersionResource
 	return fmt.Sprintf("%s%s", key, name)
 }
 
-// IndexByGVRAndShardAndLogicalCluster is an index function that indexes by an object's inner GVR and shard and logical cluster.
-func IndexByGVRAndShardAndLogicalCluster(obj interface{}) ([]string, error) {
+func IndexByGVRAndLogicalClusterAndNamespace(obj interface{}) ([]string, error) {
 	a, err := meta.Accessor(obj)
 	if err != nil {
 		return nil, err
@@ -107,57 +108,20 @@ func IndexByGVRAndShardAndLogicalCluster(obj interface{}) ([]string, error) {
 		Version:  labels[LabelKeyObjectVersion],
 		Resource: labels[LabelKeyObjectResource],
 	}
+	namespace := labels[LabelKeyObjectOriginalNamespace]
 
-	shardName := annotations[genericapirequest.ShardAnnotationKey]
-
-	key := GVRAndShardAndLogicalCluster(gvr, shardName, logicalcluster.From(a))
+	key := GVRAndLogicalClusterAndNamespace(gvr, logicalcluster.From(a), namespace)
 	return []string{key}, nil
 }
 
-func GVRAndShardAndLogicalCluster(gvr schema.GroupVersionResource, shard string, cluster logicalcluster.Name) string {
+func GVRAndLogicalClusterAndNamespace(gvr schema.GroupVersionResource, cluster logicalcluster.Name, namespace string) string {
 	var key string
-	key += gvr.Version + "." + gvr.Resource + "." + gvr.Group + "|"
-	if len(shard) > 0 {
-		key += shard + "|"
-	}
+	key += gvr.Version + "." + gvr.Resource + "." + gvr.Group
 	if !cluster.Empty() {
-		key += cluster.String()
+		key += "|" + cluster.String()
 	}
-	return key
-}
-
-func IndexByGVRAndShard(obj interface{}) ([]string, error) {
-	a, err := meta.Accessor(obj)
-	if err != nil {
-		return nil, err
-	}
-	annotations := a.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-
-	labels := a.GetLabels()
-	if labels == nil {
-		labels = map[string]string{}
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    labels[LabelKeyObjectGroup],
-		Version:  labels[LabelKeyObjectVersion],
-		Resource: labels[LabelKeyObjectResource],
-	}
-
-	shardName := annotations[genericapirequest.ShardAnnotationKey]
-
-	key := GVRAndShard(gvr, shardName)
-	return []string{key}, nil
-}
-
-func GVRAndShard(gvr schema.GroupVersionResource, shard string) string {
-	var key string
-	key += gvr.Version + "." + gvr.Resource + "." + gvr.Group + "|"
-	if len(shard) > 0 {
-		key += shard + "|"
+	if namespace != "" {
+		key += "|" + namespace
 	}
 	return key
 }
