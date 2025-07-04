@@ -484,13 +484,13 @@ func TestCachedResourceVirtualWorkspace(t *testing.T) {
 			expectedNext, actualNext bool,
 			checkCowboy func(cowboy *wildwestv1alpha1.Cowboy),
 		) {
-			require.Equal(t, expectedNext, actualNext, "unexpected channel state, wanted next to be %v", expectedNext)
+			require.Equal(t, expectedNext, actualNext, "unexpected channel state")
 			if !expectedNext {
 				// We don't expect any more events, nothing to check anymore.
 				return
 			}
 
-			require.Equal(t, expectedEventType, actualEvent.Type, "unexpected event type, event %#v", actualEvent)
+			require.Equal(t, expectedEventType, actualEvent.Type, "unexpected event type")
 
 			if checkCowboy != nil {
 				cowboy := actualEvent.Object.(*wildwestv1alpha1.Cowboy)
@@ -519,6 +519,8 @@ func TestCachedResourceVirtualWorkspace(t *testing.T) {
 		e, next = waitForEvent()
 		checkEvent(e, watch.Error, false, next, nil)
 	}
+
+	// watch update counter
 }
 
 func setUpServiceProvider(ctx context.Context, t *testing.T, dynamicClusterClient kcpdynamic.ClusterInterface, kcpClients kcpclientset.ClusterInterface, multipleVersions bool, serviceProviderWorkspace logicalcluster.Path, cfg *rest.Config, claims []apisv1alpha2.PermissionClaim) {

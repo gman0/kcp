@@ -19,6 +19,7 @@ package builder
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"fmt"
 
@@ -43,7 +44,6 @@ import (
 
 	// cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
-	"github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
@@ -121,19 +121,6 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 				return nil, err
 			}
 
-			labelMap := map[string]string{
-				replication.LabelKeyObjectGroup:    innerGVR.Group,
-				replication.LabelKeyObjectVersion:  innerGVR.Version,
-				replication.LabelKeyObjectResource: innerGVR.Resource,
-			}
-			if namespaced {
-				if requestNamespace, hasNamespace := genericapirequest.NamespaceFrom(ctx); hasNamespace {
-					labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
-				}
-			}
-			listOpts.LabelSelector = labels.FormatLabels(labelMap)
-			listOpts.FieldSelector = ""
-
 			watchCtx, cancelFn := context.WithCancel(ctx)
 			go func() {
 				select {
@@ -169,19 +156,6 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 			if err := metainternalversion.Convert_internalversion_ListOptions_To_v1_ListOptions(options, &listOpts, nil); err != nil {
 				return nil, err
 			}
-
-			labelMap := map[string]string{
-				replication.LabelKeyObjectGroup:    innerGVR.Group,
-				replication.LabelKeyObjectVersion:  innerGVR.Version,
-				replication.LabelKeyObjectResource: innerGVR.Resource,
-			}
-			if namespaced {
-				if requestNamespace, hasNamespace := genericapirequest.NamespaceFrom(ctx); hasNamespace {
-					labelMap[replication.LabelKeyObjectOriginalNamespace] = requestNamespace
-				}
-			}
-			listOpts.LabelSelector = labels.FormatLabels(labelMap)
-			listOpts.FieldSelector = ""
 
 			innerListGVK := schema.GroupVersionKind{
 				Group:   wrappedGVR.Group,
@@ -243,9 +217,11 @@ func checkCrossNamespaceAndWildcard(ctx context.Context, gvr schema.GroupVersion
 }
 
 type unwrappingWatch struct {
+	stopLock   sync.Mutex
 	resultChan chan watch.Event
-	handler    clientgocache.ResourceEventHandlerRegistration
-	informer   clientgocache.SharedIndexInformer
+
+	handler  clientgocache.ResourceEventHandlerRegistration
+	informer clientgocache.SharedIndexInformer
 }
 
 func objOrTombstone[T runtime.Object](obj any) T {
@@ -301,6 +277,7 @@ func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionReso
 
 	handler, err := scopedCachedObjectsInformer.AddEventHandler(clientgocache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
+			fmt.Printf("\n\n----------- WATCH EVENT -----------\n\n")
 			cachedObj := objOrTombstone[*cachev1alpha1.CachedObject](obj)
 			if cachedObj.GetLabels() == nil {
 				return false
@@ -354,7 +331,7 @@ func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionReso
 					return
 				}
 				w.resultChan <- watch.Event{
-					Type:   watch.Added,
+					Type:   watch.Modified,
 					Object: innerObj,
 				}
 			},
@@ -372,7 +349,7 @@ func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionReso
 					return
 				}
 				w.resultChan <- watch.Event{
-					Type:   watch.Added,
+					Type:   watch.Deleted,
 					Object: innerObj,
 				}
 			},
