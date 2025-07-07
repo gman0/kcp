@@ -71,17 +71,6 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 	}
 
 	namespaced := sch.Spec.Scope == apiextensionsv1.NamespaceScoped
-	buildCachedObjName := func(gvr schema.GroupVersionResource, ns, resName string) string {
-		if gvr.Group == "" {
-			gvr.Group = "core"
-		}
-		cachedObjName := fmt.Sprintf("%s.%s.%s.%s", gvr.Version, gvr.Resource, gvr.Group, resName)
-		if namespaced {
-			cachedObjName += "." + ns
-		}
-
-		return cachedObjName
-	}
 
 	return forwardingregistry.StorageWrapperFunc(func(resource schema.GroupResource, storage *forwardingregistry.StoreFuncs) {
 		storage.GetterFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
@@ -91,7 +80,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 			}
 			fmt.Printf("<> repl vw parsed key %#v <>\n", parsedKey)
 
-			cachedObjName := buildCachedObjName(schema.GroupVersionResource(wrappedGVR), genericapirequest.NamespaceValue(ctx), name)
+			cachedObjName := cachedresourcesreplication.GenCachedObjectName(schema.GroupVersionResource(wrappedGVR), genericapirequest.NamespaceValue(ctx), name)
 			cachedObj, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster).Lister().Get(cachedObjName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, wrappedGVR, name, err)
