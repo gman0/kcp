@@ -52,13 +52,14 @@ func (r *endpointSlice) reconcile(ctx context.Context, cachedResource *cachev1al
 			cachedResourceEndpointSlice := cachev1alpha1.CachedResourceEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: cachedResource.Name,
-					/*OwnerReferences: []metav1.OwnerReference{
+					OwnerReferences: []metav1.OwnerReference{
 						{
 							APIVersion: cachev1alpha1.SchemeGroupVersion.String(),
 							Kind:       "CachedResource",
 							Name:       cachedResource.Name,
+							UID:        cachedResource.UID,
 						},
-					},*/
+					},
 				},
 				Spec: cachev1alpha1.CachedResourceEndpointSliceSpec{
 					CachedResource: cachev1alpha1.CachedResourceReference{
