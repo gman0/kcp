@@ -22,45 +22,39 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	"github.com/kcp-dev/kcp/pkg/authorization"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-
 	"k8s.io/klog/v2"
 
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
 	"github.com/kcp-dev/logicalcluster/v3"
 
+	"github.com/kcp-dev/kcp/pkg/authorization"
+	"github.com/kcp-dev/kcp/pkg/indexers"
+	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
+	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
+	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualworkspacesdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apiserver"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
-	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
-
-	"github.com/kcp-dev/kcp/pkg/indexers"
-	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
-	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication"
+	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
 	replicationauthorizer "github.com/kcp-dev/kcp/pkg/virtual/replication/authorizer"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
-
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
-	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
-
-	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
+	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
 func BuildVirtualWorkspace(
@@ -69,8 +63,8 @@ func BuildVirtualWorkspace(
 	kcpClusterClient kcpclientset.ClusterInterface,
 	dynamicClusterClient kcpdynamic.ClusterInterface,
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
-	wildcardKcpInformers kcpinformers.SharedInformerFactory,
-	cacheKcpInformers kcpinformers.SharedInformerFactory,
+	localKcpInformers kcpinformers.SharedInformerFactory,
+	globalKcpInformers kcpinformers.SharedInformerFactory,
 ) ([]rootapiserver.NamedVirtualWorkspace, error) {
 	if !strings.HasSuffix(rootPathPrefix, "/") {
 		rootPathPrefix += "/"
@@ -82,16 +76,6 @@ func BuildVirtualWorkspace(
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
 			cachedResourceCluster, apiDomain, prefixToStrip, ok := digestURL(urlPath, rootPathPrefix)
 			if !ok {
-				return false, "", requestContext
-			}
-
-			parsedKey, err := apidomainkey.Parse(apiDomain)
-			if err != nil {
-				return false, "", requestContext
-			}
-
-			if cachedResourceCluster.Wildcard || parsedKey.CachedResourceCluster != cachedResourceCluster.Name {
-				// We can only work with cluster-local resources for a given CachedResource.
 				return false, "", requestContext
 			}
 
@@ -113,28 +97,28 @@ func BuildVirtualWorkspace(
 				defer close(readyCh)
 
 				indexers.AddIfNotPresentOrDie(
-					cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer(),
+					globalKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer(),
 					cache.Indexers{
 						cachedresourcesreplication.ByGVRAndLogicalClusterAndNamespace: cachedresourcesreplication.IndexByGVRAndLogicalClusterAndNamespace,
 					},
 				)
 				indexers.AddIfNotPresentOrDie(
-					cacheKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
+					globalKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 					cache.Indexers{
 						indexers.ByLogicalClusterPathAndName: indexers.IndexByLogicalClusterPathAndName,
 					},
 				)
 				indexers.AddIfNotPresentOrDie(
-					wildcardKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
+					localKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 					cache.Indexers{
 						indexers.ByLogicalClusterPathAndName: indexers.IndexByLogicalClusterPathAndName,
 					},
 				)
 
 				for name, informer := range map[string]cache.SharedIndexInformer{
-					"cachedresources":    cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
-					"apiexports":         cacheKcpInformers.Apis().V1alpha2().APIExports().Informer(),
-					"apiresourceschemas": cacheKcpInformers.Apis().V1alpha1().APIResourceSchemas().Informer(),
+					"cachedresources":    globalKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
+					"apiexports":         globalKcpInformers.Apis().V1alpha2().APIExports().Informer(),
+					"apiresourceschemas": globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Informer(),
 				} {
 					if !cache.WaitForNamedCacheSync(name, hookContext.Done(), informer.HasSynced) {
 						klog.Background().Error(nil, "informer not synced")
@@ -148,31 +132,38 @@ func BuildVirtualWorkspace(
 			}
 
 			return &singleResourceAPIDefinitionSetProvider{
-				wildcardKcpInformers: wildcardKcpInformers,
-				kcpClusterClient:     kcpClusterClient,
+				localKcpInformers: localKcpInformers,
+				kcpClusterClient:  kcpClusterClient,
+
+				getLogicalCluster: func(cluster logicalcluster.Name, name string) (*corev1alpha1.LogicalCluster, error) {
+					return localKcpInformers.Core().V1alpha1().LogicalClusters().Cluster(cluster).Lister().Get(name)
+				},
+
+				getAPIBinding: func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error) {
+					return localKcpInformers.Apis().V1alpha2().APIBindings().Cluster(cluster).Lister().Get(name)
+				},
 
 				getAPIExportByPath: func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error) {
 					return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](
 						apisv1alpha1.Resource("apiexports"),
-						wildcardKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
-						cacheKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
+						localKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
+						globalKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 						path,
 						name,
 					)
 				},
 
 				getAPIResourceSchemaByName: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
-					return cacheKcpInformers.Apis().V1alpha1().APIResourceSchemas().Cluster(cluster).Lister().Get(name)
+					return globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Cluster(cluster).Lister().Get(name)
 				},
 
 				config:               mainConfig,
 				dynamicClusterClient: dynamicClusterClient,
-				exposeSubresources:   false,
 				storageProvider: func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, sch *apisv1alpha1.APIResourceSchema, version string) (apiserver.RestProviderFunc, error) {
 					return forwardingregistry.ProvideReadOnlyRestStorage(
 						ctx,
 						dynamicClusterClientFunc,
-						withUnwrapping(sch, version, cacheKcpInformers),
+						withUnwrapping(sch, version, globalKcpInformers),
 						nil,
 					)
 				},
@@ -257,17 +248,19 @@ func newAuth(deepSARClient kcpkubernetesclientset.ClusterInterface) authorizer.A
 	return wrappedResourceAuthorizer
 }
 
+var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProvider{}
+
 type singleResourceAPIDefinitionSetProvider struct {
 	config               genericapiserver.CompletedConfig
 	dynamicClusterClient kcpdynamic.ClusterInterface
 	resource             *apisv1alpha1.APIResourceSchema
-	exposeSubresources   bool
 	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, sch *apisv1alpha1.APIResourceSchema, version string) (apiserver.RestProviderFunc, error)
 
-	wildcardKcpInformers kcpinformers.SharedInformerFactory
-	kcpClusterClient     kcpclientset.ClusterInterface
-	globalClusterClient  kcpclientset.ClusterInterface
+	kcpClusterClient  kcpclientset.ClusterInterface
+	localKcpInformers kcpinformers.SharedInformerFactory
 
+	getLogicalCluster          func(cluster logicalcluster.Name, name string) (*corev1alpha1.LogicalCluster, error)
+	getAPIBinding              func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
 	getAPIExportByPath         func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
 	getAPIResourceSchemaByName func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
 }
@@ -297,7 +290,7 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 		return builtin.GetBuiltInAPISchema(apisv1alpha1.GroupResource{Group: "", Resource: gvr.Resource})
 	}
 
-	lc, err := a.kcpClusterClient.CoreV1alpha1().LogicalClusters().Cluster(clusterName.Path()).Get(ctx, "cluster", metav1.GetOptions{})
+	lc, err := a.getLogicalCluster(clusterName, "cluster")
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +311,7 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 		return nil, fmt.Errorf("no binding for %s found in %s", gvr.GroupResource().String(), clusterName)
 	}
 
-	apiBinding, err := a.kcpClusterClient.ApisV1alpha2().APIBindings().Cluster(clusterName.Path()).Get(ctx, bindingName, metav1.GetOptions{})
+	apiBinding, err := a.getAPIBinding(clusterName, bindingName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get APIBinding %s in %s", bindingName, clusterName)
 	}
@@ -383,5 +376,3 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		wrappedGVR: apiDefinition,
 	}, true, nil
 }
-
-var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProvider{}

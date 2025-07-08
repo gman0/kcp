@@ -18,13 +18,11 @@ package builder
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 
-	"fmt"
-
 	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
-	// "github.com/kcp-dev/logicalcluster/v3"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -40,17 +38,11 @@ import (
 	storageerrors "k8s.io/apiserver/pkg/storage/errors"
 	clientgocache "k8s.io/client-go/tools/cache"
 
-	// "github.com/kcp-dev/logicalcluster/v3"
-
-	// cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-	// "github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-
-	//kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 

@@ -33,15 +33,15 @@ import (
 )
 
 type wrappedResourceAuthorizer struct {
-	newDeepSARAuthorizer func(clusterName logicalcluster.Name) (authorizer.Authorizer, error)
+	newDelegatedAuthorizer func(clusterName logicalcluster.Name) (authorizer.Authorizer, error)
 }
 
 var readOnlyVerbs = []string{"get", "list", "watch"}
 
-func NewWrappedResourceAuthorizer(deepSARClient kcpkubeclientset.ClusterInterface) authorizer.Authorizer {
+func NewWrappedResourceAuthorizer(kubeClusterClient kcpkubeclientset.ClusterInterface) authorizer.Authorizer {
 	return &wrappedResourceAuthorizer{
-		newDeepSARAuthorizer: func(clusterName logicalcluster.Name) (authorizer.Authorizer, error) {
-			return delegated.NewDelegatedAuthorizer(clusterName, deepSARClient, delegated.Options{})
+		newDelegatedAuthorizer: func(clusterName logicalcluster.Name) (authorizer.Authorizer, error) {
+			return delegated.NewDelegatedAuthorizer(clusterName, kubeClusterClient, delegated.Options{})
 		},
 	}
 }
@@ -62,7 +62,7 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 		return authorizer.DecisionDeny, "write access to CachedResource is not allowed from virtual workspace", nil
 	}
 
-	authz, err := a.newDeepSARAuthorizer(targetCluster.Name)
+	authz, err := a.newDelegatedAuthorizer(targetCluster.Name)
 
 	dec, reason, err := authz.Authorize(ctx, attr)
 	if err != nil {
