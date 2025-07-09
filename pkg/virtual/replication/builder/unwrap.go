@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -37,10 +36,12 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 	storageerrors "k8s.io/apiserver/pkg/storage/errors"
 	clientgocache "k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 
 	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/forwardingregistry"
+	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
@@ -339,7 +340,9 @@ func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionReso
 }
 
 func (w *unwrappingWatch) Stop() {
-	w.informer.RemoveEventHandler(w.handler)
+	if err := w.informer.RemoveEventHandler(w.handler); err != nil {
+		klog.Errorf("Failed to remove handler for a watch in replication VW: %v", err)
+	}
 	close(w.resultChan)
 }
 

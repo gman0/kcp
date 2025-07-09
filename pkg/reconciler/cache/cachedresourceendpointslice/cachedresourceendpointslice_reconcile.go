@@ -49,7 +49,6 @@ type reconciler interface {
 	reconcile(ctx context.Context, endpoints *cachev1alpha1.CachedResourceEndpointSlice) (reconcileStatus, error)
 }
 
-// kcpClusterClient.Cluster(clusterName.Path()).CoreV1alpha1().LogicalClusters().Get(ctx, "cluster", metav1.GetOptions{})
 func (c *controller) reconcile(ctx context.Context, endpoints *cachev1alpha1.CachedResourceEndpointSlice) (bool, error) {
 	reconcilers := []reconciler{
 		&endpointsReconciler{

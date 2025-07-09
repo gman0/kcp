@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 
+	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 
 	kcpkubeclientset "github.com/kcp-dev/client-go/kubernetes"
@@ -29,7 +30,6 @@ import (
 	"github.com/kcp-dev/kcp/pkg/authorization/delegated"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
-	"k8s.io/apiserver/pkg/authorization/authorizer"
 )
 
 type wrappedResourceAuthorizer struct {
