@@ -36,7 +36,6 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 	storageerrors "k8s.io/apiserver/pkg/storage/errors"
 	clientgocache "k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 
 	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
@@ -72,7 +71,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
 
-			cachedObjName := cachedresourcesreplication.GenCachedObjectName(schema.GroupVersionResource(wrappedGVR), genericapirequest.NamespaceValue(ctx), name)
+			cachedObjName := cachedresourcesreplication.GenCachedObjectName(wrappedGVR, genericapirequest.NamespaceValue(ctx), name)
 			cachedObj, err := cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster).Lister().Get(cachedObjName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, wrappedGVR, name, err)
@@ -86,7 +85,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
 
-			innerGVR := schema.GroupVersionResource(wrappedGVR)
+			innerGVR := wrappedGVR
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
 			}
@@ -100,17 +99,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 				return nil, err
 			}
 
-			watchCtx, cancelFn := context.WithCancel(ctx)
-			go func() {
-				select {
-				case <-ctx.Done():
-					cancelFn()
-				case <-watchCtx.Done():
-					return
-				}
-			}()
-
-			return newUnwrappingWatch(watchCtx, innerGVR, options, namespaced,
+			return newUnwrappingWatch(innerGVR, options, namespaced, genericapirequest.NamespaceValue(ctx),
 				cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster).Informer())
 		}
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
@@ -119,7 +108,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 				return nil, fmt.Errorf("invalid API domain key: %v", err)
 			}
 
-			innerGVR := schema.GroupVersionResource(wrappedGVR)
+			innerGVR := wrappedGVR
 			if innerGVR.Group == "" {
 				innerGVR.Group = "core"
 			}
@@ -195,6 +184,7 @@ func checkCrossNamespaceAndWildcard(ctx context.Context, gvr schema.GroupVersion
 
 type unwrappingWatch struct {
 	stopLock   sync.Mutex
+	hasStopped bool
 	resultChan chan watch.Event
 
 	handler  clientgocache.ResourceEventHandlerRegistration
@@ -216,7 +206,13 @@ func objOrTombstone[T runtime.Object](obj any) T {
 	panic(fmt.Errorf("%T is not a %T", obj, new(T)))
 }
 
-func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionResource, innerListOpts *metainternalversion.ListOptions, namespaced bool, scopedCachedObjectsInformer clientgocache.SharedIndexInformer) (*unwrappingWatch, error) {
+func newUnwrappingWatch(
+	innerObjGVR schema.GroupVersionResource,
+	innerListOpts *metainternalversion.ListOptions,
+	namespaced bool,
+	namespace string,
+	scopedCachedObjectsInformer clientgocache.SharedIndexInformer,
+) (*unwrappingWatch, error) {
 	w := &unwrappingWatch{
 		resultChan: make(chan watch.Event),
 		informer:   scopedCachedObjectsInformer,
@@ -261,13 +257,13 @@ func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionReso
 			return cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectGroup] == innerObjGVR.Group &&
 				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectVersion] == innerObjGVR.Version &&
 				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectResource] == innerObjGVR.Resource &&
-				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectOriginalNamespace] == genericapirequest.NamespaceValue(ctx)
+				cachedObj.Labels[cachedresourcesreplication.LabelKeyObjectOriginalNamespace] == namespace
 		},
 		Handler: clientgocache.ResourceEventHandlerDetailedFuncs{
 			AddFunc: func(obj interface{}, isInInitialList bool) {
 				cachedObj := objOrTombstone[*cachev1alpha1.CachedObject](obj)
 				if isInInitialList {
-					if innerListOpts.SendInitialEvents == nil || *innerListOpts.SendInitialEvents == false {
+					if innerListOpts.SendInitialEvents == nil || !*innerListOpts.SendInitialEvents {
 						// The user explicitly requests to not send the initial list.
 						return
 					}
@@ -340,10 +336,16 @@ func newUnwrappingWatch(ctx context.Context, innerObjGVR schema.GroupVersionReso
 }
 
 func (w *unwrappingWatch) Stop() {
-	if err := w.informer.RemoveEventHandler(w.handler); err != nil {
-		klog.Errorf("Failed to remove handler for a watch in replication VW: %v", err)
+	w.stopLock.Lock()
+	defer w.stopLock.Unlock()
+
+	if w.hasStopped {
+		return
 	}
+
+	_ = w.informer.RemoveEventHandler(w.handler)
 	close(w.resultChan)
+	w.hasStopped = true
 }
 
 func (w *unwrappingWatch) ResultChan() <-chan watch.Event {

@@ -63,6 +63,9 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 	}
 
 	authz, err := a.newDelegatedAuthorizer(targetCluster.Name)
+	if err != nil {
+		return authorizer.DecisionNoOpinion, "", err
+	}
 
 	dec, reason, err := authz.Authorize(ctx, attr)
 	if err != nil {

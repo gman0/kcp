@@ -91,10 +91,6 @@ func IndexByGVRAndLogicalClusterAndNamespace(obj interface{}) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	annotations := a.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
 
 	labels := a.GetLabels()
 	if labels == nil {

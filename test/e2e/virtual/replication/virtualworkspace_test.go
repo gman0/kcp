@@ -18,7 +18,6 @@ package replication
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -738,11 +737,4 @@ func admit(t *testing.T, kubeClusterClient kubernetesclientset.Interface, ruleNa
 	require.NoError(t, err)
 	_, err = kubeClusterClient.RbacV1().ClusterRoleBindings().Create(ctx, crb, metav1.CreateOptions{})
 	require.NoError(t, err)
-}
-
-func toJSON(t *testing.T, obj interface{}) string {
-	t.Helper()
-	ret, err := json.Marshal(obj)
-	require.NoError(t, err)
-	return string(ret)
 }

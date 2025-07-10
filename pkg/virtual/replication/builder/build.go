@@ -238,7 +238,7 @@ func digestURL(urlPath, rootPathPrefix string) (
 	}
 
 	key = apidomainkey.New(logicalcluster.Name(cachedResourceClusterName), cachedResourceName)
-	return cluster, dynamiccontext.APIDomainKey(key), strings.TrimSuffix(urlPath, realPath), true
+	return cluster, key, strings.TrimSuffix(urlPath, realPath), true
 }
 
 func newAuth(deepSARClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
@@ -253,7 +253,6 @@ var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProv
 type singleResourceAPIDefinitionSetProvider struct {
 	config               genericapiserver.CompletedConfig
 	dynamicClusterClient kcpdynamic.ClusterInterface
-	resource             *apisv1alpha1.APIResourceSchema
 	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, sch *apisv1alpha1.APIResourceSchema, version string) (apiserver.RestProviderFunc, error)
 
 	kcpClusterClient  kcpclientset.ClusterInterface
@@ -296,6 +295,9 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 	}
 	resBindingsAnnStr := getResourceBindingsAnnJSON(lc)
 	resBindingsAnn, err := apibinding.UnmarshalResourceBindingsAnnotation(resBindingsAnnStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse annotation on LogicalCluster %s|%s: %v", clusterName, "cluster", err)
+	}
 
 	bindingName := ""
 	for gr, v := range resBindingsAnn {
@@ -308,12 +310,12 @@ func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
 	}
 
 	if bindingName == "" {
-		return nil, fmt.Errorf("no binding for %s found in %s", gvr.GroupResource().String(), clusterName)
+		return nil, fmt.Errorf("no binding for %s found in workspace %s", gvr.GroupResource().String(), clusterName)
 	}
 
 	apiBinding, err := a.getAPIBinding(clusterName, bindingName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get APIBinding %s in %s", bindingName, clusterName)
+		return nil, fmt.Errorf("failed to get APIBinding %s|%s", bindingName, clusterName)
 	}
 
 	apiExport, err := a.getAPIExportByPath(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
