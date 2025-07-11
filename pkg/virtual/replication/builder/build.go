@@ -74,12 +74,27 @@ func BuildVirtualWorkspace(
 
 	apiExportContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
-			cachedResourceCluster, apiDomain, prefixToStrip, ok := digestURL(urlPath, rootPathPrefix)
+			targetCluster, apiDomain, prefixToStrip, ok := digestURL(urlPath, rootPathPrefix)
 			if !ok {
 				return false, "", requestContext
 			}
 
-			completedContext = genericapirequest.WithCluster(requestContext, cachedResourceCluster)
+			if targetCluster.Wildcard {
+				return false, "", requestContext
+			}
+
+			parsedKey, err := apidomainkey.Parse(apiDomain)
+			if err != nil {
+				return false, "", requestContext
+			}
+
+			if targetCluster.Name != parsedKey.CachedResourceCluster {
+				return false, "", requestContext
+			}
+
+			// We only accept requests for CachedResource's local cluster.
+
+			completedContext = genericapirequest.WithCluster(requestContext, targetCluster)
 			completedContext = dynamiccontext.WithAPIDomainKey(completedContext, apiDomain)
 			return true, prefixToStrip, completedContext
 		}),

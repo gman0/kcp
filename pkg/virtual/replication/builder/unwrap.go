@@ -76,7 +76,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 			if err != nil {
 				return nil, fmt.Errorf("failed to get CachedObject %s for resource %s %s: %v", cachedObjName, wrappedGVR, name, err)
 			}
-			// TODO: add selectors
+
 			return unwrapCachedObject(cachedObj)
 		}
 		storage.WatcherFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
@@ -99,7 +99,7 @@ func withUnwrapping(sch *apisv1alpha1.APIResourceSchema, version string, cacheKc
 				return nil, err
 			}
 
-			return newUnwrappingWatch(innerGVR, options, namespaced, genericapirequest.NamespaceValue(ctx),
+			return newUnwrappingWatch(ctx, innerGVR, options, namespaced, genericapirequest.NamespaceValue(ctx),
 				cacheKcpInformers.Cache().V1alpha1().CachedObjects().Cluster(parsedKey.CachedResourceCluster).Informer())
 		}
 		storage.ListerFunc = func(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
@@ -183,8 +183,8 @@ func checkCrossNamespaceAndWildcard(ctx context.Context, gvr schema.GroupVersion
 }
 
 type unwrappingWatch struct {
-	stopLock   sync.Mutex
-	hasStopped bool
+	lock       sync.Mutex
+	doneChan   chan struct{}
 	resultChan chan watch.Event
 
 	handler  clientgocache.ResourceEventHandlerRegistration
@@ -207,6 +207,7 @@ func objOrTombstone[T runtime.Object](obj any) T {
 }
 
 func newUnwrappingWatch(
+	ctx context.Context,
 	innerObjGVR schema.GroupVersionResource,
 	innerListOpts *metainternalversion.ListOptions,
 	namespaced bool,
@@ -214,9 +215,23 @@ func newUnwrappingWatch(
 	scopedCachedObjectsInformer clientgocache.SharedIndexInformer,
 ) (*unwrappingWatch, error) {
 	w := &unwrappingWatch{
+		doneChan:   make(chan struct{}),
 		resultChan: make(chan watch.Event),
 		informer:   scopedCachedObjectsInformer,
 	}
+	go func() {
+		for {
+			select {
+			case <-w.doneChan:
+				// Watch was stopped externally via Stop().
+				return
+			case <-ctx.Done():
+				// Watch was stopped due to context. We also clean up with Stop().
+				w.Stop()
+				return
+			}
+		}
+	}()
 
 	label := labels.Everything()
 	if innerListOpts != nil && innerListOpts.LabelSelector != nil {
@@ -282,6 +297,7 @@ func newUnwrappingWatch(
 					return
 				}
 				if innerObj == nil {
+					// No match because of selectors.
 					return
 				}
 				w.resultChan <- watch.Event{
@@ -318,6 +334,7 @@ func newUnwrappingWatch(
 					return
 				}
 				if innerObj == nil {
+					// No match because of selectors.
 					return
 				}
 				w.resultChan <- watch.Event{
@@ -336,16 +353,16 @@ func newUnwrappingWatch(
 }
 
 func (w *unwrappingWatch) Stop() {
-	w.stopLock.Lock()
-	defer w.stopLock.Unlock()
+	w.lock.Lock()
+	defer w.lock.Unlock()
 
-	if w.hasStopped {
-		return
+	select {
+	case <-w.doneChan:
+	default:
+		_ = w.informer.RemoveEventHandler(w.handler)
+		close(w.doneChan)
+		close(w.resultChan)
 	}
-
-	_ = w.informer.RemoveEventHandler(w.handler)
-	close(w.resultChan)
-	w.hasStopped = true
 }
 
 func (w *unwrappingWatch) ResultChan() <-chan watch.Event {
