@@ -174,6 +174,17 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		return nil, err
 	}
 
+	s.CompleteDiscoveringDynamicSharedInformerFactory, err = informer.NewDiscoveringDynamicSharedInformerFactory(
+		s.DynamicClusterClient,
+		func(obj interface{}) bool { return true },
+		nil,
+		crdGVRSource,
+		cache.Indexers{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	if c.Options.Virtual.Enabled {
 		s.virtual, err = c.OptionalVirtual.NewServer(s.preHandlerChainMux)
 		if err != nil {
@@ -594,6 +605,9 @@ func (s *Server) Run(ctx context.Context) error {
 
 		logger.Info("starting dynamic metadata informer worker")
 		go s.DiscoveringDynamicSharedInformerFactory.StartWorker(hookCtx)
+
+		logger.Info("starting complete dynamic informer worker")
+		go s.CompleteDiscoveringDynamicSharedInformerFactory.StartWorker(hookCtx)
 
 		logger.Info("synced all informers, ready to start controllers")
 		close(s.syncedCh)

@@ -127,13 +127,14 @@ type ExtraConfig struct {
 	ShardVirtualWorkspaceURL func() string
 
 	// informers
-	KcpSharedInformerFactory                     kcpinformers.SharedInformerFactory
-	KubeSharedInformerFactory                    kcpkubernetesinformers.SharedInformerFactory
-	ApiExtensionsSharedInformerFactory           kcpapiextensionsinformers.SharedInformerFactory
-	DiscoveringDynamicSharedInformerFactory      *informer.DiscoveringDynamicSharedInformerFactory
-	CacheDiscoveringDynamicSharedInformerFactory *informer.DiscoveringDynamicSharedInformerFactory
-	CacheKcpSharedInformerFactory                kcpinformers.SharedInformerFactory
-	CacheKubeSharedInformerFactory               kcpkubernetesinformers.SharedInformerFactory
+	KcpSharedInformerFactory                        kcpinformers.SharedInformerFactory
+	KubeSharedInformerFactory                       kcpkubernetesinformers.SharedInformerFactory
+	ApiExtensionsSharedInformerFactory              kcpapiextensionsinformers.SharedInformerFactory
+	DiscoveringDynamicSharedInformerFactory         *informer.DiscoveringDynamicSharedInformerFactory
+	CompleteDiscoveringDynamicSharedInformerFactory *informer.DiscoveringDynamicSharedInformerFactory
+	CacheDiscoveringDynamicSharedInformerFactory    *informer.DiscoveringDynamicSharedInformerFactory
+	CacheKcpSharedInformerFactory                   kcpinformers.SharedInformerFactory
+	CacheKubeSharedInformerFactory                  kcpkubernetesinformers.SharedInformerFactory
 }
 
 type completedConfig struct {
