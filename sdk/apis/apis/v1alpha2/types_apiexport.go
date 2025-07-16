@@ -179,14 +179,22 @@ type ResourceSchemaStorage struct {
 	// Like in vanilla Kubernetes, users can then create, update and delete
 	// custom resources.
 	CRD *ResourceSchemaStorageCRD `json:"crd,omitempty"`
+
+	// Reference points to another object that has a URL to a virtual workspace
+	// in a "url" field in its status. The object can be of any kind.
+	Virtual *ResourceSchemaStorageVirtual `json:"virtual,omitempty"`
 }
 
 type ResourceSchemaStorageCRD struct{}
 
 type ResourceSchemaStorageVirtual struct {
-	// Reference points to another object that has a URL to a virtual workspace
-	// in a "url" field in its status. The object can be of any kind.
-	Reference corev1.TypedLocalObjectReference `json:"reference"`
+	metav1.TypeMeta `json:",inline"`
+
+	Path string `json:"path"`
+
+	IdentitySecretRef *corev1.SecretReference `json:"identitySecretRef"`
+
+	ResourceSelector *ResourceSelector `json:"resourceSelector,omitempty"`
 }
 
 // Identity defines the identity of an APIExport, i.e. determines the etcd prefix
@@ -246,7 +254,7 @@ type PermissionClaim struct {
 	IdentityHash string `json:"identityHash,omitempty"`
 }
 
-// +kubebuilder:validation:XValidation:rule="has(self.__namespace__) || has(self.name)",message="at least one field must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.__namespace__) || has(self.name) || (has(self.labelSelector) && (size(self.labelSelector.matchLabels) > 0 || size(self.labelSelector.matchExpressions) > 0))",message="at least one field must be set"
 type ResourceSelector struct {
 	// name of an object within a claimed group/resource.
 	// It matches the metadata.name field of the underlying object.
@@ -264,6 +272,10 @@ type ResourceSelector struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	Namespace string `json:"namespace,omitempty"`
+
+	// LabelSelector is used to filter which resources should be published
+	// +optional
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 
 	//
 	// WARNING: If adding new fields, add them to the XValidation check!

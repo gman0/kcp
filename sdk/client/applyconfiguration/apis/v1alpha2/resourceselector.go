@@ -18,11 +18,16 @@ limitations under the License.
 
 package v1alpha2
 
+import (
+	v1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/meta/v1"
+)
+
 // ResourceSelectorApplyConfiguration represents a declarative configuration of the ResourceSelector type for use
 // with apply.
 type ResourceSelectorApplyConfiguration struct {
-	Name      *string `json:"name,omitempty"`
-	Namespace *string `json:"namespace,omitempty"`
+	Name          *string                             `json:"name,omitempty"`
+	Namespace     *string                             `json:"namespace,omitempty"`
+	LabelSelector *v1.LabelSelectorApplyConfiguration `json:"labelSelector,omitempty"`
 }
 
 // ResourceSelectorApplyConfiguration constructs a declarative configuration of the ResourceSelector type for use with
@@ -44,5 +49,13 @@ func (b *ResourceSelectorApplyConfiguration) WithName(value string) *ResourceSel
 // If called multiple times, the Namespace field is set to the value of the last call.
 func (b *ResourceSelectorApplyConfiguration) WithNamespace(value string) *ResourceSelectorApplyConfiguration {
 	b.Namespace = &value
+	return b
+}
+
+// WithLabelSelector sets the LabelSelector field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LabelSelector field is set to the value of the last call.
+func (b *ResourceSelectorApplyConfiguration) WithLabelSelector(value *v1.LabelSelectorApplyConfiguration) *ResourceSelectorApplyConfiguration {
+	b.LabelSelector = value
 	return b
 }
