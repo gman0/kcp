@@ -430,53 +430,6 @@ spec:
                         selectors.
                       items:
                         properties:
-                          labelSelector:
-                            description: LabelSelector is used to filter which resources
-                              should be published
-                            properties:
-                              matchExpressions:
-                                description: matchExpressions is a list of label selector
-                                  requirements. The requirements are ANDed.
-                                items:
-                                  description: |-
-                                    A label selector requirement is a selector that contains values, a key, and an operator that
-                                    relates the key and values.
-                                  properties:
-                                    key:
-                                      description: key is the label key that the selector
-                                        applies to.
-                                      type: string
-                                    operator:
-                                      description: |-
-                                        operator represents a key's relationship to a set of values.
-                                        Valid operators are In, NotIn, Exists and DoesNotExist.
-                                      type: string
-                                    values:
-                                      description: |-
-                                        values is an array of string values. If the operator is In or NotIn,
-                                        the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                        the values array must be empty. This array is replaced during a strategic
-                                        merge patch.
-                                      items:
-                                        type: string
-                                      type: array
-                                      x-kubernetes-list-type: atomic
-                                  required:
-                                  - key
-                                  - operator
-                                  type: object
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              matchLabels:
-                                additionalProperties:
-                                  type: string
-                                description: |-
-                                  matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                  map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                  operator is "In", and the values array contains only "value". The requirements are ANDed.
-                                type: object
-                            type: object
-                            x-kubernetes-map-type: atomic
                           name:
                             description: |-
                               name of an object within a claimed group/resource.
@@ -495,9 +448,7 @@ spec:
                         type: object
                         x-kubernetes-validations:
                         - message: at least one field must be set
-                          rule: has(self.__namespace__) || has(self.name) || (has(self.labelSelector)
-                            && (size(self.labelSelector.matchLabels) > 0 || size(self.labelSelector.matchExpressions)
-                            > 0))
+                          rule: has(self.__namespace__) || has(self.name)
                       type: array
                     verbs:
                       description: |-
@@ -600,78 +551,6 @@ spec:
                               type: string
                             path:
                               type: string
-                            resourceSelector:
-                              properties:
-                                labelSelector:
-                                  description: LabelSelector is used to filter which
-                                    resources should be published
-                                  properties:
-                                    matchExpressions:
-                                      description: matchExpressions is a list of label
-                                        selector requirements. The requirements are
-                                        ANDed.
-                                      items:
-                                        description: |-
-                                          A label selector requirement is a selector that contains values, a key, and an operator that
-                                          relates the key and values.
-                                        properties:
-                                          key:
-                                            description: key is the label key that
-                                              the selector applies to.
-                                            type: string
-                                          operator:
-                                            description: |-
-                                              operator represents a key's relationship to a set of values.
-                                              Valid operators are In, NotIn, Exists and DoesNotExist.
-                                            type: string
-                                          values:
-                                            description: |-
-                                              values is an array of string values. If the operator is In or NotIn,
-                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                              the values array must be empty. This array is replaced during a strategic
-                                              merge patch.
-                                            items:
-                                              type: string
-                                            type: array
-                                            x-kubernetes-list-type: atomic
-                                        required:
-                                        - key
-                                        - operator
-                                        type: object
-                                      type: array
-                                      x-kubernetes-list-type: atomic
-                                    matchLabels:
-                                      additionalProperties:
-                                        type: string
-                                      description: |-
-                                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                        map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                        operator is "In", and the values array contains only "value". The requirements are ANDed.
-                                      type: object
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                                name:
-                                  description: |-
-                                    name of an object within a claimed group/resource.
-                                    It matches the metadata.name field of the underlying object.
-                                    If namespace is unset, all objects matching that name will be claimed.
-                                  maxLength: 253
-                                  minLength: 1
-                                  pattern: ^([a-z0-9][-a-z0-9_.]*)?[a-z0-9]$
-                                  type: string
-                                namespace:
-                                  description: |-
-                                    namespace containing the named object. Matches metadata.namespace field.
-                                    If "name" is unset, all objects from the namespace are being claimed.
-                                  minLength: 1
-                                  type: string
-                              type: object
-                              x-kubernetes-validations:
-                              - message: at least one field must be set
-                                rule: has(self.__namespace__) || has(self.name) ||
-                                  (has(self.labelSelector) && (size(self.labelSelector.matchLabels)
-                                  > 0 || size(self.labelSelector.matchExpressions)
-                                  > 0))
                           required:
                           - identitySecretRef
                           - path

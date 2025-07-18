@@ -2808,17 +2808,12 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref common.Refer
 							Ref: ref("k8s.io/api/core/v1.SecretReference"),
 						},
 					},
-					"resourceSelector": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ResourceSelector"),
-						},
-					},
 				},
 				Required: []string{"path", "identitySecretRef"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ResourceSelector", "k8s.io/api/core/v1.SecretReference"},
+			"k8s.io/api/core/v1.SecretReference"},
 	}
 }
 
@@ -2842,17 +2837,9 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSelector(ref common.ReferenceCallback
 							Format:      "",
 						},
 					},
-					"labelSelector": {
-						SchemaProps: spec.SchemaProps{
-							Description: "LabelSelector is used to filter which resources should be published",
-							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelector"),
-						},
-					},
 				},
 			},
 		},
-		Dependencies: []string{
-			"k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelector"},
 	}
 }
 

@@ -28,9 +28,8 @@ import (
 // with apply.
 type ResourceSchemaStorageVirtualApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration `json:",inline"`
-	Path                          *string                             `json:"path,omitempty"`
-	IdentitySecretRef             *corev1.SecretReference             `json:"identitySecretRef,omitempty"`
-	ResourceSelector              *ResourceSelectorApplyConfiguration `json:"resourceSelector,omitempty"`
+	Path                          *string                 `json:"path,omitempty"`
+	IdentitySecretRef             *corev1.SecretReference `json:"identitySecretRef,omitempty"`
 }
 
 // ResourceSchemaStorageVirtualApplyConfiguration constructs a declarative configuration of the ResourceSchemaStorageVirtual type for use with
@@ -71,13 +70,5 @@ func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithPath(value string) 
 // If called multiple times, the IdentitySecretRef field is set to the value of the last call.
 func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithIdentitySecretRef(value corev1.SecretReference) *ResourceSchemaStorageVirtualApplyConfiguration {
 	b.IdentitySecretRef = &value
-	return b
-}
-
-// WithResourceSelector sets the ResourceSelector field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ResourceSelector field is set to the value of the last call.
-func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithResourceSelector(value *ResourceSelectorApplyConfiguration) *ResourceSchemaStorageVirtualApplyConfiguration {
-	b.ResourceSelector = value
 	return b
 }

@@ -194,7 +194,8 @@ type ResourceSchemaStorageVirtual struct {
 
 	IdentitySecretRef *corev1.SecretReference `json:"identitySecretRef"`
 
-	ResourceSelector *ResourceSelector `json:"resourceSelector,omitempty"`
+	// Resource selector TBD.
+	// We are not sure if it belongs here.
 }
 
 // Identity defines the identity of an APIExport, i.e. determines the etcd prefix
@@ -254,7 +255,7 @@ type PermissionClaim struct {
 	IdentityHash string `json:"identityHash,omitempty"`
 }
 
-// +kubebuilder:validation:XValidation:rule="has(self.__namespace__) || has(self.name) || (has(self.labelSelector) && (size(self.labelSelector.matchLabels) > 0 || size(self.labelSelector.matchExpressions) > 0))",message="at least one field must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.__namespace__) || has(self.name)",message="at least one field must be set"
 type ResourceSelector struct {
 	// name of an object within a claimed group/resource.
 	// It matches the metadata.name field of the underlying object.
@@ -272,10 +273,6 @@ type ResourceSelector struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	Namespace string `json:"namespace,omitempty"`
-
-	// LabelSelector is used to filter which resources should be published
-	// +optional
-	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 
 	//
 	// WARNING: If adding new fields, add them to the XValidation check!
