@@ -53,7 +53,7 @@ const (
 	ControllerName = "kcp-virtual-apiexport-api-reconciler"
 )
 
-type CreateAPIDefinitionFunc func(apiResourceSchema *apisv1alpha1.APIResourceSchema, version string, identityHash string, additionalLabelRequirements labels.Requirements) (apidefinition.APIDefinition, error)
+type CreateAPIDefinitionFunc func(apiResourceSchema *apisv1alpha1.APIResourceSchema, version string, identityHash string, additionalLabelRequirements labels.Requirements, resSchStorage *apisv1alpha2.ResourceSchemaStorage) (apidefinition.APIDefinition, error)
 
 // NewAPIReconciler returns a new controller which reconciles APIResourceImport resources
 // and delegates the corresponding SyncTargetAPI management to the given SyncTargetAPIManager.
@@ -139,6 +139,7 @@ type APIReconciler struct {
 
 	createAPIDefinition           CreateAPIDefinitionFunc
 	createAPIBindingAPIDefinition func(ctx context.Context, apibindingVersion string, clusterName logicalcluster.Name, apiExportName string) (apidefinition.APIDefinition, error)
+	createVWAPIDefinition         func() (apidefinition.APIDefinition, error)
 
 	mutex   sync.RWMutex // protects the map, not the values!
 	apiSets map[dynamiccontext.APIDomainKey]apidefinition.APIDefinitionSet

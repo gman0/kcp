@@ -24,6 +24,7 @@ type BoundAPIResourceApplyConfiguration struct {
 	Group           *string                                   `json:"group,omitempty"`
 	Resource        *string                                   `json:"resource,omitempty"`
 	Schema          *BoundAPIResourceSchemaApplyConfiguration `json:"schema,omitempty"`
+	VirtualResource *BoundVirtualResourceApplyConfiguration   `json:"virtualResource,omitempty"`
 	StorageVersions []string                                  `json:"storageVersions,omitempty"`
 }
 
@@ -54,6 +55,14 @@ func (b *BoundAPIResourceApplyConfiguration) WithResource(value string) *BoundAP
 // If called multiple times, the Schema field is set to the value of the last call.
 func (b *BoundAPIResourceApplyConfiguration) WithSchema(value *BoundAPIResourceSchemaApplyConfiguration) *BoundAPIResourceApplyConfiguration {
 	b.Schema = value
+	return b
+}
+
+// WithVirtualResource sets the VirtualResource field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the VirtualResource field is set to the value of the last call.
+func (b *BoundAPIResourceApplyConfiguration) WithVirtualResource(value *BoundVirtualResourceApplyConfiguration) *BoundAPIResourceApplyConfiguration {
+	b.VirtualResource = value
 	return b
 }
 

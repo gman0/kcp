@@ -360,6 +360,17 @@ test-run-sharded-server:
 	echo 'Server started' && \
 	wait $$PID
 
+test-run-single-sharded-server: WORK_DIR ?= $(PWD)
+test-run-single-sharded-server: LOG_DIR ?= $(WORK_DIR)/.kcp
+test-run-single-sharded-server:
+	mkdir -p "$(LOG_DIR)" "$(WORK_DIR)/.kcp"
+	rm -f "$(WORK_DIR)/.kcp/ready-to-test"
+	UNSAFE_E2E_HACK_DISABLE_ETCD_FSYNC=true NO_GORUN=1 ./bin/sharded-test-server --quiet --v=2 --log-dir-path="$(LOG_DIR)" --work-dir-path="$(WORK_DIR)" --shard-run-virtual-workspaces=false --shard-feature-gates=$(TEST_FEATURE_GATES) $(TEST_SERVER_ARGS) --number-of-shards=1 2>&1 & PID=$$!; echo "PID $$PID" && \
+	trap 'kill -TERM $$PID && wait $$PID' TERM INT EXIT && \
+	while [ ! -f "$(WORK_DIR)/.kcp/ready-to-test" ]; do sleep 1; done && \
+	echo 'Server started' && \
+	wait $$PID
+
 .PHONY: test
 ifdef USE_GOTESTSUM
 test: $(GOTESTSUM)

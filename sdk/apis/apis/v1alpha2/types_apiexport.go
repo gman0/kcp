@@ -173,15 +173,21 @@ type ResourceSchema struct {
 }
 
 // ResourceSchemaStorage defines how the resource is stored.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.crd) != has(self.virtual)",message="Exactly one of crd or virtual must be set"
 type ResourceSchemaStorage struct {
 	// CRD storage defines that this APIResourceSchema is exposed as
 	// CustomResourceDefinitions inside the workspaces that bind to the APIExport.
 	// Like in vanilla Kubernetes, users can then create, update and delete
 	// custom resources.
+	//
+	// +optional
 	CRD *ResourceSchemaStorageCRD `json:"crd,omitempty"`
 
 	// Reference points to another object that has a URL to a virtual workspace
 	// in a "url" field in its status. The object can be of any kind.
+	//
+	// +optional
 	Virtual *ResourceSchemaStorageVirtual `json:"virtual,omitempty"`
 }
 

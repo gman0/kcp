@@ -74,17 +74,21 @@ func BuildVirtualWorkspace(
 
 	cachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
+			fmt.Printf("\n\n<> VW Replication: URL=%s <>\n\n", urlPath)
+
 			targetCluster, apiDomain, prefixToStrip, ok := digestURL(urlPath, rootPathPrefix)
 			if !ok {
 				return false, "", requestContext
 			}
-
-			if targetCluster.Wildcard {
+			parsedKey, err := apidomainkey.Parse(apiDomain)
+			if err != nil {
 				return false, "", requestContext
 			}
 
-			parsedKey, err := apidomainkey.Parse(apiDomain)
-			if err != nil {
+			targetCluster.Wildcard = false
+			targetCluster.Name = parsedKey.CachedResourceCluster
+
+			if targetCluster.Wildcard {
 				return false, "", requestContext
 			}
 

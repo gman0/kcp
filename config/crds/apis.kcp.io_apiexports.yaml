@@ -503,9 +503,6 @@ spec:
                       default:
                         crd: {}
                       description: Storage defines how the resource is stored.
-                      oneOf:
-                      - required:
-                        - crd
                       properties:
                         crd:
                           description: |-
@@ -556,6 +553,9 @@ spec:
                           - path
                           type: object
                       type: object
+                      x-kubernetes-validations:
+                      - message: Exactly one of crd or virtual must be set
+                        rule: has(self.crd) != has(self.virtual)
                   required:
                   - group
                   - name

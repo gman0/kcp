@@ -48,12 +48,22 @@ func provideAPIExportFilteredRestStorage(ctx context.Context, dynamicClusterClie
 		return nil, fmt.Errorf("unable to create a selector from the provided labels")
 	}
 
+	fmt.Printf("<x><> provideAPIExportFilteredRestStorage <>\n")
+
 	return registry.ProvideReadOnlyRestStorage(ctx, dynamicClusterClientFunc, registry.WithStaticLabelSelector(requirements), nil)
+}
+
+func provideDelegatingReadOnlyRestStorage(ctx context.Context, dynamicClusterClientFunc registry.DynamicClusterClientFunc) apiserver.RestProviderFunc {
+	storageFuncs, _ := registry.ProvideReadOnlyRestStorage(ctx, dynamicClusterClientFunc, nil, nil)
+	fmt.Printf("<x><> provideAPIExportFilteredRestStorage <>\n")
+	return storageFuncs
 }
 
 // provideDelegatingRestStorage returns a forwarding storage build function, with an optional storage wrapper e.g. to add label based filtering.
 func provideDelegatingRestStorage(ctx context.Context, dynamicClusterClientFunc registry.DynamicClusterClientFunc, apiExportIdentityHash string, wrapper registry.StorageWrapper) apiserver.RestProviderFunc {
 	return func(resource schema.GroupVersionResource, kind schema.GroupVersionKind, listKind schema.GroupVersionKind, typer runtime.ObjectTyper, tableConvertor rest.TableConvertor, namespaceScoped bool, schemaValidator validation.SchemaValidator, subresourcesSchemaValidator map[string]validation.SchemaValidator, structuralSchema *structuralschema.Structural) (mainStorage rest.Storage, subresourceStorages map[string]rest.Storage) {
+		fmt.Printf("<x><> provideAPIExportFilteredRestStorage <>\n")
+
 		statusSchemaValidate, statusEnabled := subresourcesSchemaValidator["status"]
 
 		var statusSpec *apiextensions.CustomResourceSubresourceStatus
