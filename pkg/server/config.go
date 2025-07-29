@@ -29,6 +29,7 @@ import (
 
 	apiextensionsapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/endpoints/filters"
@@ -67,6 +68,7 @@ import (
 	kcpserveroptions "github.com/kcp-dev/kcp/pkg/server/options"
 	"github.com/kcp-dev/kcp/pkg/server/options/batteries"
 	"github.com/kcp-dev/kcp/pkg/server/requestinfo"
+	"github.com/kcp-dev/kcp/pkg/server/virtualresources"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
@@ -79,11 +81,12 @@ type Config struct {
 
 	EmbeddedEtcd *embeddedetcd.Config
 
-	GenericConfig   *genericapiserver.Config // the config embedded into MiniAggregator, the head of the delegation chain
-	MiniAggregator  *miniaggregator.MiniAggregatorConfig
-	Apis            *controlplaneapiserver.Config
-	ApiExtensions   *apiextensionsapiserver.Config
-	OptionalVirtual *VirtualConfig
+	GenericConfig    *genericapiserver.Config // the config embedded into MiniAggregator, the head of the delegation chain
+	MiniAggregator   *miniaggregator.MiniAggregatorConfig
+	Apis             *controlplaneapiserver.Config
+	ApiExtensions    *apiextensionsapiserver.Config
+	VirtualResources *virtualresources.Config
+	OptionalVirtual  *VirtualConfig
 
 	ExtraConfig
 }
@@ -139,12 +142,13 @@ type ExtraConfig struct {
 type completedConfig struct {
 	Options kcpserveroptions.CompletedOptions
 
-	GenericConfig   genericapiserver.CompletedConfig
-	EmbeddedEtcd    embeddedetcd.CompletedConfig
-	MiniAggregator  miniaggregator.CompletedMiniAggregatorConfig
-	Apis            controlplaneapiserver.CompletedConfig
-	ApiExtensions   apiextensionsapiserver.CompletedConfig
-	OptionalVirtual CompletedVirtualConfig
+	GenericConfig    genericapiserver.CompletedConfig
+	EmbeddedEtcd     embeddedetcd.CompletedConfig
+	MiniAggregator   miniaggregator.CompletedMiniAggregatorConfig
+	Apis             controlplaneapiserver.CompletedConfig
+	ApiExtensions    apiextensionsapiserver.CompletedConfig
+	VirtualResources virtualresources.CompletedConfig
+	OptionalVirtual  CompletedVirtualConfig
 
 	ExtraConfig
 }
@@ -161,11 +165,12 @@ func (c *Config) Complete() (CompletedConfig, error) {
 	return CompletedConfig{&completedConfig{
 		Options: c.Options,
 
-		GenericConfig:  c.GenericConfig.Complete(informerfactoryhack.Wrap(c.KubeSharedInformerFactory)),
-		EmbeddedEtcd:   c.EmbeddedEtcd.Complete(),
-		MiniAggregator: miniAggregator,
-		Apis:           c.Apis.Complete(),
-		ApiExtensions:  c.ApiExtensions.Complete(),
+		GenericConfig:    c.GenericConfig.Complete(informerfactoryhack.Wrap(c.KubeSharedInformerFactory)),
+		EmbeddedEtcd:     c.EmbeddedEtcd.Complete(),
+		MiniAggregator:   miniAggregator,
+		Apis:             c.Apis.Complete(),
+		ApiExtensions:    c.ApiExtensions.Complete(),
+		VirtualResources: c.VirtualResources.Complete(),
 		OptionalVirtual: c.OptionalVirtual.Complete(
 			miniAggregator.GenericConfig.Authentication,
 			miniAggregator.GenericConfig.AuditPolicyRuleEvaluator,
@@ -593,6 +598,11 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	c.ApiExtensions.ExtraConfig.Client = c.ApiExtensionsClusterClient
 	c.ApiExtensions.ExtraConfig.Informers = c.ApiExtensionsSharedInformerFactory
 	c.ApiExtensions.ExtraConfig.TableConverterProvider = NewTableConverterProvider()
+
+	c.VirtualResources, err = virtualresources.NewConfig(genericapiserver.NewRecommendedConfig(serializer.NewCodecFactory(runtime.NewScheme())))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config for virtual resources server: %v", err)
+	}
 
 	c.openAPIv3Controller = openapiv3.NewController(c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions())
 	c.openAPIv3ServiceCache = openapiv3.NewServiceCache(c.GenericConfig.OpenAPIV3Config, c.ApiExtensions.ExtraConfig.ClusterAwareCRDLister, c.openAPIv3Controller, openapiv3.DefaultServiceCacheSize)

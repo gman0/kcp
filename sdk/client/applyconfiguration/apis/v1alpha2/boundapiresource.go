@@ -21,11 +21,11 @@ package v1alpha2
 // BoundAPIResourceApplyConfiguration represents a declarative configuration of the BoundAPIResource type for use
 // with apply.
 type BoundAPIResourceApplyConfiguration struct {
-	Group           *string                                   `json:"group,omitempty"`
-	Resource        *string                                   `json:"resource,omitempty"`
-	Schema          *BoundAPIResourceSchemaApplyConfiguration `json:"schema,omitempty"`
-	VirtualResource *BoundVirtualResourceApplyConfiguration   `json:"virtualResource,omitempty"`
-	StorageVersions []string                                  `json:"storageVersions,omitempty"`
+	Group              *string                                   `json:"group,omitempty"`
+	Resource           *string                                   `json:"resource,omitempty"`
+	Schema             *BoundAPIResourceSchemaApplyConfiguration `json:"schema,omitempty"`
+	VirtualResourceURL *string                                   `json:"virtualResourceURL,omitempty"`
+	StorageVersions    []string                                  `json:"storageVersions,omitempty"`
 }
 
 // BoundAPIResourceApplyConfiguration constructs a declarative configuration of the BoundAPIResource type for use with
@@ -58,11 +58,11 @@ func (b *BoundAPIResourceApplyConfiguration) WithSchema(value *BoundAPIResourceS
 	return b
 }
 
-// WithVirtualResource sets the VirtualResource field in the declarative configuration to the given value
+// WithVirtualResourceURL sets the VirtualResourceURL field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the VirtualResource field is set to the value of the last call.
-func (b *BoundAPIResourceApplyConfiguration) WithVirtualResource(value *BoundVirtualResourceApplyConfiguration) *BoundAPIResourceApplyConfiguration {
-	b.VirtualResource = value
+// If called multiple times, the VirtualResourceURL field is set to the value of the last call.
+func (b *BoundAPIResourceApplyConfiguration) WithVirtualResourceURL(value string) *BoundAPIResourceApplyConfiguration {
+	b.VirtualResourceURL = &value
 	return b
 }
 

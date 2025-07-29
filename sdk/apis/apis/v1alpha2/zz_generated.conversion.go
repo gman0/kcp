@@ -109,16 +109,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*BoundAPIResource)(nil), (*v1alpha1.BoundAPIResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(a.(*BoundAPIResource), b.(*v1alpha1.BoundAPIResource), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha1.BoundAPIResource)(nil), (*BoundAPIResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_BoundAPIResource_To_v1alpha2_BoundAPIResource(a.(*v1alpha1.BoundAPIResource), b.(*BoundAPIResource), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*BoundAPIResourceSchema)(nil), (*v1alpha1.BoundAPIResourceSchema)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_BoundAPIResourceSchema_To_v1alpha1_BoundAPIResourceSchema(a.(*BoundAPIResourceSchema), b.(*v1alpha1.BoundAPIResourceSchema), scope)
 	}); err != nil {
@@ -219,6 +209,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*v1alpha1.BoundAPIResource)(nil), (*BoundAPIResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_BoundAPIResource_To_v1alpha2_BoundAPIResource(a.(*v1alpha1.BoundAPIResource), b.(*BoundAPIResource), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*APIBinding)(nil), (*v1alpha1.APIBinding)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_APIBinding_To_v1alpha1_APIBinding(a.(*APIBinding), b.(*v1alpha1.APIBinding), scope)
 	}); err != nil {
@@ -231,6 +226,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*APIExport)(nil), (*v1alpha1.APIExport)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_APIExport_To_v1alpha1_APIExport(a.(*APIExport), b.(*v1alpha1.APIExport), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*BoundAPIResource)(nil), (*v1alpha1.BoundAPIResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(a.(*BoundAPIResource), b.(*v1alpha1.BoundAPIResource), scope)
 	}); err != nil {
 		return err
 	}
@@ -616,7 +616,7 @@ func autoConvert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(in *Boun
 	out.Group = in.Group
 	out.Resource = in.Resource
 	// WARNING: in.Schema requires manual conversion: inconvertible types (*github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema vs github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1.BoundAPIResourceSchema)
-	// WARNING: in.VirtualResource requires manual conversion: does not exist in peer-type
+	// WARNING: in.VirtualResourceURL requires manual conversion: does not exist in peer-type
 	out.StorageVersions = *(*[]string)(unsafe.Pointer(&in.StorageVersions))
 	return nil
 }

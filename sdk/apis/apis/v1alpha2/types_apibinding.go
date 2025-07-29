@@ -227,7 +227,6 @@ const (
 )
 
 // BoundAPIResource describes a bound GroupVersionResource through an APIResourceSchema of an APIExport..
-// +kubebuilder:validation:XValidation:rule="has(self.schema) != has(self.virtualResource)",message="Exactly one of schema or virtualResource must be set"
 type BoundAPIResource struct {
 	// group is the group of the bound API. Empty string for the core API group.
 	//
@@ -246,7 +245,7 @@ type BoundAPIResource struct {
 	Schema *BoundAPIResourceSchema `json:"schema,omitempty"`
 
 	// +optional
-	VirtualResource *BoundVirtualResource `json:"virtualResource,omitempty"`
+	VirtualResourceURL string `json:"virtualResourceURL,omitempty"`
 
 	// storageVersions lists all versions of a resource that were ever persisted. Tracking these
 	// versions allows a migration path for stored versions in etcd. The field is mutable
@@ -281,12 +280,6 @@ type BoundAPIResourceSchema struct {
 	// under a distinct resource. A CRD of the same GroupVersionResource uses a
 	// different identity and hence a separate etcd prefix.
 	//
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	IdentityHash string `json:"identityHash"`
-}
-
-type BoundVirtualResource struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	IdentityHash string `json:"identityHash"`

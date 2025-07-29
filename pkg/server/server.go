@@ -59,6 +59,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/reconciler/dynamicrestmapper"
 	"github.com/kcp-dev/kcp/pkg/reconciler/kubequota"
 	"github.com/kcp-dev/kcp/pkg/server/options/batteries"
+	"github.com/kcp-dev/kcp/pkg/server/virtualresources"
 	virtualrootapiserver "github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	"github.com/kcp-dev/kcp/sdk/apis/core"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
@@ -71,10 +72,11 @@ const resyncPeriod = 10 * time.Hour
 type Server struct {
 	CompletedConfig
 
-	ApiExtensions  *extensionsapiserver.CustomResourceDefinitions
-	Apis           *controlplaneapiserver.Server
-	MiniAggregator *miniaggregator.MiniAggregatorServer
-	virtual        *virtualrootapiserver.Server
+	ApiExtensions    *extensionsapiserver.CustomResourceDefinitions
+	Apis             *controlplaneapiserver.Server
+	VirtualResources *virtualresources.Server
+	MiniAggregator   *miniaggregator.MiniAggregatorServer
+	virtual          *virtualrootapiserver.Server
 	// DynRESTMapper is a workspace-aware REST mapper, backed by a reconciler,
 	// which dynamically loads all bound resources through every type associated
 	// with an APIBinding in the workspace into the mapper. Another controller can
@@ -108,6 +110,11 @@ func NewServer(c CompletedConfig) (*Server, error) {
 	s.ApiExtensions, err = c.ApiExtensions.New(genericapiserver.NewEmptyDelegateWithCustomHandler(notFoundHandler))
 	if err != nil {
 		return nil, fmt.Errorf("create api extensions: %v", err)
+	}
+
+	s.VirtualResources, err = virtualresources.NewServer(c.VirtualResources, genericapiserver.NewEmptyDelegateWithCustomHandler(notFoundHandler))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create virtual resources server: %v", err)
 	}
 
 	s.Apis, err = c.Apis.New("generic-control-plane", s.ApiExtensions.GenericAPIServer)

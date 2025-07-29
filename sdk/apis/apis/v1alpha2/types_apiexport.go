@@ -196,6 +196,8 @@ type ResourceSchemaStorageCRD struct{}
 type ResourceSchemaStorageVirtual struct {
 	metav1.TypeMeta `json:",inline"`
 
+	Name string `json:"name"`
+
 	Path string `json:"path"`
 
 	IdentitySecretRef *corev1.SecretReference `json:"identitySecretRef"`

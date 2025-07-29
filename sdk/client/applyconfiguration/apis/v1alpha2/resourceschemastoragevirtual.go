@@ -28,6 +28,7 @@ import (
 // with apply.
 type ResourceSchemaStorageVirtualApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration `json:",inline"`
+	Name                          *string                 `json:"name,omitempty"`
 	Path                          *string                 `json:"path,omitempty"`
 	IdentitySecretRef             *corev1.SecretReference `json:"identitySecretRef,omitempty"`
 }
@@ -54,6 +55,14 @@ func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithKind(value string) 
 // If called multiple times, the APIVersion field is set to the value of the last call.
 func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithAPIVersion(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
 	b.TypeMetaApplyConfiguration.APIVersion = &value
+	return b
+}
+
+// WithName sets the Name field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Name field is set to the value of the last call.
+func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithName(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
+	b.Name = &value
 	return b
 }
 

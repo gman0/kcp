@@ -727,21 +727,12 @@ spec:
                         type: string
                       type: array
                       x-kubernetes-list-type: set
-                    virtualResource:
-                      properties:
-                        identityHash:
-                          minLength: 1
-                          type: string
-                      required:
-                      - identityHash
-                      type: object
+                    virtualResourceURL:
+                      type: string
                   required:
                   - group
                   - resource
                   type: object
-                  x-kubernetes-validations:
-                  - message: Exactly one of schema or virtualResource must be set
-                    rule: has(self.schema) != has(self.virtualResource)
                 type: array
                 x-kubernetes-list-map-keys:
                 - group

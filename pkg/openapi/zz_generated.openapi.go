@@ -78,7 +78,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BindingReference":                            schema_sdk_apis_apis_v1alpha2_BindingReference(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResource":                            schema_sdk_apis_apis_v1alpha2_BoundAPIResource(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema":                      schema_sdk_apis_apis_v1alpha2_BoundAPIResourceSchema(ref),
-		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundVirtualResource":                        schema_sdk_apis_apis_v1alpha2_BoundVirtualResource(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ExportBindingReference":                      schema_sdk_apis_apis_v1alpha2_ExportBindingReference(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.GroupResource":                               schema_sdk_apis_apis_v1alpha2_GroupResource(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.Identity":                                    schema_sdk_apis_apis_v1alpha2_Identity(ref),
@@ -2435,9 +2434,10 @@ func schema_sdk_apis_apis_v1alpha2_BoundAPIResource(ref common.ReferenceCallback
 							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema"),
 						},
 					},
-					"virtualResource": {
+					"virtualResourceURL": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundVirtualResource"),
+							Type:   []string{"string"},
+							Format: "",
 						},
 					},
 					"storageVersions": {
@@ -2465,7 +2465,7 @@ func schema_sdk_apis_apis_v1alpha2_BoundAPIResource(ref common.ReferenceCallback
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema", "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundVirtualResource"},
+			"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema"},
 	}
 }
 
@@ -2502,26 +2502,6 @@ func schema_sdk_apis_apis_v1alpha2_BoundAPIResourceSchema(ref common.ReferenceCa
 					},
 				},
 				Required: []string{"name", "UID", "identityHash"},
-			},
-		},
-	}
-}
-
-func schema_sdk_apis_apis_v1alpha2_BoundVirtualResource(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Type: []string{"object"},
-				Properties: map[string]spec.Schema{
-					"identityHash": {
-						SchemaProps: spec.SchemaProps{
-							Default: "",
-							Type:    []string{"string"},
-							Format:  "",
-						},
-					},
-				},
-				Required: []string{"identityHash"},
 			},
 		},
 	}
@@ -2821,6 +2801,13 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref common.Refer
 							Format:      "",
 						},
 					},
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
+						},
+					},
 					"path": {
 						SchemaProps: spec.SchemaProps{
 							Default: "",
@@ -2834,7 +2821,7 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref common.Refer
 						},
 					},
 				},
-				Required: []string{"path", "identitySecretRef"},
+				Required: []string{"name", "path", "identitySecretRef"},
 			},
 		},
 		Dependencies: []string{

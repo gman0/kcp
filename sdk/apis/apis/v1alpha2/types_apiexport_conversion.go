@@ -383,3 +383,23 @@ func Convert_v1alpha1_APIBinding_To_v1alpha2_APIBinding(in *apisv1alpha1.APIBind
 func Convert_v1alpha2_PermissionClaim_To_v1alpha1_PermissionClaim(in *PermissionClaim, out *apisv1alpha1.PermissionClaim, s kubeconversion.Scope) error {
 	return autoConvert_v1alpha2_PermissionClaim_To_v1alpha1_PermissionClaim(in, out, s)
 }
+
+func Convert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(in *BoundAPIResource, out *apisv1alpha1.BoundAPIResource, s kubeconversion.Scope) error {
+	out.Group = in.Group
+	out.Resource = in.Resource
+	out.StorageVersions = in.StorageVersions
+
+	if in.VirtualResourceURL != "" {
+		return fmt.Errorf("cannot convert virtualResource in v1alpha2 BoundAPIResource to v1alpha1")
+	}
+
+	return Convert_v1alpha2_BoundAPIResourceSchema_To_v1alpha1_BoundAPIResourceSchema(in.Schema, &out.Schema, s)
+}
+
+func Convert_v1alpha1_BoundAPIResource_To_v1alpha2_BoundAPIResource(in *apisv1alpha1.BoundAPIResource, out *BoundAPIResource, s kubeconversion.Scope) error {
+	out.Group = in.Group
+	out.Resource = in.Resource
+	out.StorageVersions = in.StorageVersions
+
+	return Convert_v1alpha1_BoundAPIResourceSchema_To_v1alpha2_BoundAPIResourceSchema(&in.Schema, out.Schema, s)
+}
