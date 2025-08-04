@@ -1,17 +1,22 @@
 package virtualresources
 
 import (
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	apiopenapi "k8s.io/apiserver/pkg/endpoints/openapi"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/rest"
-	utilversion "k8s.io/component-base/version"
+	openapicommon "k8s.io/kube-openapi/pkg/common"
 )
 
 type Config struct {
-	Generic *genericapiserver.RecommendedConfig
+	Generic *genericapiserver.Config
 	Extra   ExtraConfig
 }
 
 type ExtraConfig struct {
+	VWClientConfig *rest.Config
 }
 
 type completedConfig struct {
@@ -31,9 +36,18 @@ func (c *Config) Complete() CompletedConfig {
 	}
 
 	cfg := completedConfig{
-		c.Generic.Complete(),
+		c.Generic.Complete(nil),
 		&c.Extra,
 	}
+
+	cfg.Generic.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
+		func(rc openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
+			return map[string]openapicommon.OpenAPIDefinition{}
+		},
+		apiopenapi.NewDefinitionNamer(runtime.NewScheme()),
+	)
+
+	// cfg.Generic.EnableDiscovery = false
 
 	return CompletedConfig{&cfg}
 }
@@ -42,21 +56,18 @@ func (c *completedConfig) WithOpenAPIAggregationController(delegatedAPIServer *g
 	return nil
 }
 
-func NewConfig(recommendedConfig *genericapiserver.RecommendedConfig) (*Config, error) {
-	// Loopback is not wired for now, since virtual workspaces are expected to delegate to
-	// some APIServer.
-	// The RootAPIServer is just a proxy to the various virtual workspaces.
-	// We might consider a giving a special meaning to a global loopback config, in the future
-	// but that's not the case for now.
-	recommendedConfig.Config.LoopbackClientConfig = &rest.Config{
-		Host: "loopback-config-not-wired-for-now",
-	}
-	recommendedConfig.EffectiveVersion = utilversion.DefaultKubeEffectiveVersion()
+func NewConfig(cfg *genericapiserver.Config, vwClientConfig *rest.Config) (*Config, error) {
+	rest.AddUserAgent(vwClientConfig, ControllerName)
+	vwClientConfig.ServerName = ""
 
 	ret := &Config{
-		Generic: recommendedConfig,
-		Extra:   ExtraConfig{},
+		Generic: cfg,
+		Extra: ExtraConfig{
+			VWClientConfig: vwClientConfig,
+		},
 	}
+
+	fmt.Printf("<> VWClientConfig %#v <>\n", ret.Extra.VWClientConfig)
 
 	return ret, nil
 }

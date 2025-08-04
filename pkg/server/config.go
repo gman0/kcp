@@ -29,7 +29,6 @@ import (
 
 	apiextensionsapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/endpoints/filters"
@@ -386,6 +385,7 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	}
 
 	var virtualWorkspaceServerProxyTransport http.RoundTripper
+	var virtualWorkspaceTranposportTLSClientConfig *tls.Config
 	if opts.Extra.ShardClientCertFile != "" && opts.Extra.ShardClientKeyFile != "" && opts.Extra.ShardVirtualWorkspaceCAFile != "" {
 		caCert, err := os.ReadFile(opts.Extra.ShardVirtualWorkspaceCAFile)
 		if err != nil {
@@ -401,10 +401,11 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 		}
 
 		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{
+		virtualWorkspaceTranposportTLSClientConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			RootCAs:      caCertPool,
 		}
+		transport.TLSClientConfig = virtualWorkspaceTranposportTLSClientConfig
 		virtualWorkspaceServerProxyTransport = transport
 	}
 
@@ -599,7 +600,16 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	c.ApiExtensions.ExtraConfig.Informers = c.ApiExtensionsSharedInformerFactory
 	c.ApiExtensions.ExtraConfig.TableConverterProvider = NewTableConverterProvider()
 
-	c.VirtualResources, err = virtualresources.NewConfig(genericapiserver.NewRecommendedConfig(serializer.NewCodecFactory(runtime.NewScheme())))
+	virtualResourcesConfig := *c.GenericConfig
+	virtualResourcesConfig.SkipOpenAPIInstallation = true
+	vwClientConfig := rest.CopyConfig(c.GenericConfig.LoopbackClientConfig)
+	if !opts.Virtual.Enabled && opts.Extra.ShardVirtualWorkspaceURL != "" {
+		vwClientConfig.TLSClientConfig.CAData = nil
+		vwClientConfig.TLSClientConfig.CAFile = opts.Extra.ShardVirtualWorkspaceCAFile
+		vwClientConfig.TLSClientConfig.CertFile = opts.Extra.ShardClientCertFile
+		vwClientConfig.TLSClientConfig.KeyFile = opts.Extra.ShardClientKeyFile
+	}
+	c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create config for virtual resources server: %v", err)
 	}

@@ -389,10 +389,6 @@ func Convert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(in *BoundAPI
 	out.Resource = in.Resource
 	out.StorageVersions = in.StorageVersions
 
-	if in.VirtualResourceURL != "" {
-		return fmt.Errorf("cannot convert virtualResource in v1alpha2 BoundAPIResource to v1alpha1")
-	}
-
 	return Convert_v1alpha2_BoundAPIResourceSchema_To_v1alpha1_BoundAPIResourceSchema(in.Schema, &out.Schema, s)
 }
 
