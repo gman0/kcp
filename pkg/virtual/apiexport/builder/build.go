@@ -240,6 +240,14 @@ func BuildVirtualWorkspace(
 							cancelFn()
 							return nil, fmt.Errorf("<><> error listing cachedresourceendpointslices: %v", err)
 						}
+						if len(endpointsSlices.Items) == 0 {
+							cancelFn()
+							return nil, fmt.Errorf("<><> CachedResourceEndpoints not yet populated")
+						}
+						if len(endpointsSlices.Items[0].Status.CachedResourceEndpoints) == 0 {
+							cancelFn()
+							return nil, fmt.Errorf("<><> CachedResourceEndpoint URLs not yet populated")
+						}
 						url := endpointsSlices.Items[0].Status.CachedResourceEndpoints[0].URL
 						fmt.Printf("\n\n\n<> VW ENDPOINT URL %q <>\n\n\n", url)
 						storageBuilder = provideDelegatingReadOnlyRestStorage(ctx, func(ctx context.Context) (kcpdynamic.ClusterInterface, error) {

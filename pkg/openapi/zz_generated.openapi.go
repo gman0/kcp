@@ -2431,6 +2431,7 @@ func schema_sdk_apis_apis_v1alpha2_BoundAPIResource(ref common.ReferenceCallback
 					"schema": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Schema references the APIResourceSchema that is bound to this API.",
+							Default:     map[string]interface{}{},
 							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema"),
 						},
 					},
@@ -2461,7 +2462,7 @@ func schema_sdk_apis_apis_v1alpha2_BoundAPIResource(ref common.ReferenceCallback
 						},
 					},
 				},
-				Required: []string{"group", "resource"},
+				Required: []string{"group", "resource", "schema"},
 			},
 		},
 		Dependencies: []string{

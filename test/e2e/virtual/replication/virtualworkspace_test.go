@@ -132,6 +132,8 @@ func TestCachedResourceVirtualWorkspace(t *testing.T) {
 		return found, fmt.Sprintf("waiting for virtual workspace URLs to be available: %v", cachedResourceEndpointSlice.Status.CachedResourceEndpoints)
 	}, wait.ForeverTestTimeout, time.Millisecond*100)
 
+	t.Logf("<> cachedResourceVWCfg:%#v <>", cachedResourceVWCfg)
+
 	user1CachedResourceVWCfg := framework.StaticTokenUserConfig("user-1", cachedResourceVWCfg)
 	wwUser1CachedResourceVWConfig, err := wildwestclientset.NewForConfig(user1CachedResourceVWCfg)
 	require.NoError(t, err)

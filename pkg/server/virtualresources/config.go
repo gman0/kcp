@@ -58,7 +58,7 @@ func (c *completedConfig) WithOpenAPIAggregationController(delegatedAPIServer *g
 
 func NewConfig(cfg *genericapiserver.Config, vwClientConfig *rest.Config) (*Config, error) {
 	rest.AddUserAgent(vwClientConfig, ControllerName)
-	vwClientConfig.ServerName = ""
+	cfg.SkipOpenAPIInstallation = true
 
 	ret := &Config{
 		Generic: cfg,

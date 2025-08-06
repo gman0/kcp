@@ -604,10 +604,11 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	virtualResourcesConfig.SkipOpenAPIInstallation = true
 	vwClientConfig := rest.CopyConfig(c.GenericConfig.LoopbackClientConfig)
 	if !opts.Virtual.Enabled && opts.Extra.ShardVirtualWorkspaceURL != "" {
-		vwClientConfig.TLSClientConfig.CAData = nil
-		vwClientConfig.TLSClientConfig.CAFile = opts.Extra.ShardVirtualWorkspaceCAFile
-		vwClientConfig.TLSClientConfig.CertFile = opts.Extra.ShardClientCertFile
-		vwClientConfig.TLSClientConfig.KeyFile = opts.Extra.ShardClientKeyFile
+		vwClientConfig.TLSClientConfig = rest.TLSClientConfig{
+			CAFile:   opts.Extra.ShardVirtualWorkspaceCAFile,
+			CertFile: opts.Extra.ShardClientCertFile,
+			KeyFile:  opts.Extra.ShardClientKeyFile,
+		}
 	}
 	c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig)
 	if err != nil {

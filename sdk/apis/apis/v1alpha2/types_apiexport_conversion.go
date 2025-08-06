@@ -385,17 +385,6 @@ func Convert_v1alpha2_PermissionClaim_To_v1alpha1_PermissionClaim(in *Permission
 }
 
 func Convert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(in *BoundAPIResource, out *apisv1alpha1.BoundAPIResource, s kubeconversion.Scope) error {
-	out.Group = in.Group
-	out.Resource = in.Resource
-	out.StorageVersions = in.StorageVersions
-
-	return Convert_v1alpha2_BoundAPIResourceSchema_To_v1alpha1_BoundAPIResourceSchema(in.Schema, &out.Schema, s)
-}
-
-func Convert_v1alpha1_BoundAPIResource_To_v1alpha2_BoundAPIResource(in *apisv1alpha1.BoundAPIResource, out *BoundAPIResource, s kubeconversion.Scope) error {
-	out.Group = in.Group
-	out.Resource = in.Resource
-	out.StorageVersions = in.StorageVersions
-
-	return Convert_v1alpha1_BoundAPIResourceSchema_To_v1alpha2_BoundAPIResourceSchema(&in.Schema, out.Schema, s)
+	// TODO: Use annotation for the virtualVWUrl field??
+	return autoConvert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(in, out, s)
 }

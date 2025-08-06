@@ -146,7 +146,7 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to create virtual resources server: %v", err)
 	}
 
-	s.MiniAggregator, err = c.MiniAggregator.New(s.VirtualResources.GenericAPIServer, s.Apis, s.ApiExtensions /*, s.VirtualResources.GenericAPIServer*/)
+	s.MiniAggregator, err = c.MiniAggregator.New(s.VirtualResources.GenericAPIServer, s.Apis, s.ApiExtensions, s.VirtualResources.GenericAPIServer)
 	if err != nil {
 		return nil, err
 	}

@@ -732,6 +732,7 @@ spec:
                   required:
                   - group
                   - resource
+                  - schema
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:

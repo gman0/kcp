@@ -241,8 +241,8 @@ type BoundAPIResource struct {
 
 	// Schema references the APIResourceSchema that is bound to this API.
 	//
-	// +optional
-	Schema *BoundAPIResourceSchema `json:"schema,omitempty"`
+	// +required
+	Schema BoundAPIResourceSchema `json:"schema"`
 
 	// +optional
 	VirtualResourceURL string `json:"virtualResourceURL,omitempty"`
