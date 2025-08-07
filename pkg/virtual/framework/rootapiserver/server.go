@@ -100,8 +100,11 @@ func getRootHandlerChain(c CompletedConfig, delegateAPIServer genericapiserver.D
 					fmt.Sprintf("You are using an old kubectl-kcp plugin. Please update to a version matching the kcp server version %q.", componentbaseversion.Get().GitVersion))
 			}
 
+			fmt.Printf("\n<<VWROOTAPISERVER>> enter handler\n")
 			for _, vw := range c.Extra.VirtualWorkspaces {
+				fmt.Printf("\n<<VWROOTAPISERVER>> attempt vw %s\n", vw.Name)
 				if accepted, prefixToStrip, completedContext := vw.ResolveRootPath(req.URL.Path, requestContext); accepted {
+					fmt.Printf("\n<<VWROOTAPISERVER>> accepted vw %s\n", vw.Name)
 					req.URL.Path = strings.TrimPrefix(req.URL.Path, prefixToStrip)
 					newURL, err := url.Parse(req.URL.String())
 					if err != nil {
@@ -117,6 +120,7 @@ func getRootHandlerChain(c CompletedConfig, delegateAPIServer genericapiserver.D
 				}
 			}
 			delegateAfterDefaultHandlerChain.ServeHTTP(w, req)
+			fmt.Printf("\n<<VWROOTAPISERVER>> finish handler\n")
 		})
 	}
 }

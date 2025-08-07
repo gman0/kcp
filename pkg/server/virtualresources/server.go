@@ -6,6 +6,7 @@ import (
 
 	"sync"
 
+	"net/http"
 	// apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,16 +15,21 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	// "k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
+	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 
-	"k8s.io/client-go/discovery"
+	// discoveryapi "k8s.io/apiserver/pkg/endpoints/discovery"
+	discoveryclient "k8s.io/client-go/discovery"
 
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
+
+	openapiv3aggregator "k8s.io/kube-aggregator/pkg/controllers/openapiv3/aggregator"
+	"k8s.io/kube-openapi/pkg/spec3"
 )
 
 var (
@@ -41,8 +47,9 @@ type Server struct {
 	GenericAPIServer *genericapiserver.GenericAPIServer
 	Extra            *ExtraConfig
 
-	lock       sync.RWMutex
-	vwHandlers map[logicalcluster.Name]map[schema.GroupResource]*vwProxy
+	lock           sync.RWMutex
+	vwHandlers     map[logicalcluster.Name]map[schema.GroupResource]*vwProxy
+	openapiv3Specs map[logicalcluster.Name]map[string]*spec3.OpenAPI
 }
 
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
@@ -61,8 +68,7 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		return nil, err
 	}
 
-	// s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/", &delegateOnly{delegate: delegationTarget.UnprotectedHandler()})
-	s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/openapi/v2", &openapiv2Handler{s})
+	//s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/", &delegateOnly{delegate: delegationTarget.UnprotectedHandler()})
 
 	return s, nil
 }
@@ -71,7 +77,7 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 	config := *s.Extra.VWClientConfig
 	config.Host = vwEndpointURL + fmt.Sprintf("/clusters/%s", cluster.String())
 
-	dc, err := discovery.NewDiscoveryClientForConfig(&config)
+	dc, err := discoveryclient.NewDiscoveryClientForConfig(&config)
 	if err != nil {
 		return fmt.Errorf("failed to create discovery client for gr=%q, endpoint=%q: %v", gr, config.Host, err)
 	}
@@ -86,7 +92,7 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	proxy, err := newVWProxy(vwEndpointURL, s.Extra.VWClientConfig)
+	proxy, err := newVWProxy(vwEndpointURL+fmt.Sprintf("/clusters/%s", cluster.String()), s.Extra.VWClientConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create vw proxy: %v", err)
 	}
@@ -101,7 +107,23 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 
 	for _, apiGroup := range apiGroupList.Groups {
 		s.GenericAPIServer.DiscoveryGroupManager.AddGroup(apiGroup)
+		s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix(fmt.Sprintf("/apis/%s/", apiGroup.Name), proxy)
+		// s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/openapi/", proxy)
 	}
+
+	withCluster := func(handler http.Handler) http.HandlerFunc {
+		return func(res http.ResponseWriter, req *http.Request) {
+			req = req.Clone(genericapirequest.WithCluster(req.Context(), genericapirequest.Cluster{Name: cluster}))
+			handler.ServeHTTP(res, req)
+		}
+	}
+
+	specDownloader := openapiv3aggregator.NewDownloader()
+	specDiscovery, n, err := specDownloader.OpenAPIV3Root(withCluster(proxy))
+	if err != nil {
+		return fmt.Errorf("failed to download openapiv3 spec: %v", err)
+	}
+	fmt.Printf("\n<><> DISCOVERED OPENAPIv3 SPEC n=%d specs=%#v <>\n", n, specDiscovery.Paths)
 
 	return nil
 }

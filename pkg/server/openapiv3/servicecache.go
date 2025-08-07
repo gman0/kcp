@@ -122,6 +122,7 @@ func (c *ServiceCache) RegisterStaticAPIs(cont *restful.Container) error {
 }
 
 func (c *ServiceCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("<<OPENAPIv3>> WEHEEE\n")
 	ctx := r.Context()
 
 	clusterName, err := request.ClusterNameFrom(r.Context())

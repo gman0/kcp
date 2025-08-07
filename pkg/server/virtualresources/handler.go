@@ -135,8 +135,9 @@ func newVWProxy(vwURL string, cfg *rest.Config) (*vwProxy, error) {
 }
 
 func (r *vwProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	fmt.Printf("\n\n<<VWPROXY>> path=%s", req.URL.Path)
+	fmt.Printf("\n\n<<VWPROXY>> path=%s start\n", req.URL.Path)
 	r.ReverseProxy.ServeHTTP(w, req)
+	fmt.Printf("\n\n<<VWPROXY>> path=%s finish\n", req.URL.Path)
 }
 
 type openapiv2Handler struct {
