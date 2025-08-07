@@ -79,6 +79,8 @@ type ServiceCache struct {
 	specGetter CRDSpecGetter
 	crdLister  kcp.ClusterAwareCRDClusterLister
 
+	virtualSpecsHandler http.Handler
+
 	services    *lru.Cache
 	staticSpecs map[string]cached.Value[*spec3.OpenAPI]
 }
@@ -119,6 +121,10 @@ func (c *ServiceCache) RegisterStaticAPIs(cont *restful.Container) error {
 	}
 
 	return nil
+}
+
+func (c *ServiceCache) RegisterVirtualAPIs(handler http.Handler) {
+	c.virtualSpecsHandler = handler
 }
 
 func (c *ServiceCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {

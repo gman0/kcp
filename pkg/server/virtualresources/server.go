@@ -68,7 +68,9 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		return nil, err
 	}
 
-	//s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/", &delegateOnly{delegate: delegationTarget.UnprotectedHandler()})
+	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/", &delegateOnly{delegate: delegationTarget.UnprotectedHandler()})
+	s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/openapi", &openapiHandler{s: s})
+	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/openapi/", &openapiHandler{s: s})
 
 	return s, nil
 }

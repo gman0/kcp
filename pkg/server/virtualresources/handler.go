@@ -140,21 +140,24 @@ func (r *vwProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Printf("\n\n<<VWPROXY>> path=%s finish\n", req.URL.Path)
 }
 
-type openapiv2Handler struct {
+type openapiHandler struct {
 	s *Server
 }
 
-func (r *openapiv2Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	fmt.Printf("\n\n<<OPENAPIV2HANDLER>> START\n\n")
+func (r *openapiHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	cluster := genericapirequest.ClusterFrom(req.Context())
+	fmt.Printf("\n\n<<OPENAPIV2HANDLER>> START with cluster in context %v\n\n", cluster)
+
 	r.s.lock.Lock()
 	defer r.s.lock.Unlock()
-	for cluster, m := range r.s.vwHandlers {
-		fmt.Printf("\n\n<<OPENAPIV2HANDLER>> cluster=%s\n\n", cluster)
-		for gr, proxy := range m {
-			fmt.Printf("\n\n<<OPENAPIV2HANDLER>> gr=%s\n\n", gr)
-			proxy.ServeHTTP(w, req)
-		}
+
+	for gr, proxy := range r.s.vwHandlers[cluster.Name] {
+		fmt.Printf("\n\n<<OPENAPIV2HANDLER>> gr=%v \n\n", gr)
+		proxy.ServeHTTP(w, req)
+		break
 	}
+
+	fmt.Printf("\n\n<<OPENAPIV2HANDLER>> FINISH with cluster in context %v\n\n", cluster)
 }
 
 type versionDiscoveryHandler struct{}
