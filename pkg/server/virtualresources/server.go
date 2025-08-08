@@ -1,35 +1,33 @@
 package virtualresources
 
 import (
-	"encoding/json"
+	// "encoding/json"
+	"crypto/tls"
 	"fmt"
-
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
 	"sync"
 
-	"net/http"
 	// apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	// "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	// "k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
+	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
+	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/warning"
 
 	"github.com/kcp-dev/logicalcluster/v3"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-
-	// discoveryapi "k8s.io/apiserver/pkg/endpoints/discovery"
 	discoveryclient "k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 
-	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apiextapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
-
-	openapiv3aggregator "k8s.io/kube-aggregator/pkg/controllers/openapiv3/aggregator"
-	"k8s.io/kube-openapi/pkg/spec3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
 var (
@@ -46,31 +44,61 @@ func init() {
 type Server struct {
 	GenericAPIServer *genericapiserver.GenericAPIServer
 	Extra            *ExtraConfig
+	delegate         genericapiserver.DelegationTarget
+	vwTlsConfig      *tls.Config
 
-	lock           sync.RWMutex
-	vwHandlers     map[logicalcluster.Name]map[schema.GroupResource]*vwProxy
-	openapiv3Specs map[logicalcluster.Name]map[string]*spec3.OpenAPI
+	groupManagers *clusterAwareGroupManager
+	handlers      *proxyToVirtualWorkspace
+
+	lock          sync.RWMutex
+	groupInfos    map[logicalcluster.Name]map[string]metav1.APIGroup
+	resourceInfos map[logicalcluster.Name]map[schema.GroupVersion]metav1.APIResource
+	grEndpointMap map[logicalcluster.Name]map[schema.GroupResource]string
+}
+
+type resourceInfo struct {
+	group            string
+	resource         string
+	versions         []metav1.GroupVersionForDiscovery
+	preferredVersion metav1.GroupVersionForDiscovery
 }
 
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
-	s := &Server{
-		Extra:      c.Extra,
-		vwHandlers: make(map[logicalcluster.Name]map[schema.GroupResource]*vwProxy),
+	handlers, err := newProxyToVirtualWorkspace(c.Extra.VWClientConfig)
+	if err != nil {
+		return nil, err
 	}
+
+	s := &Server{
+		Extra:         c.Extra,
+		delegate:      delegationTarget,
+		groupManagers: newClusterAwareGroupManager(c.Generic.DiscoveryAddresses, c.Generic.Serializer),
+		handlers:      handlers,
+		groupInfos:    make(map[logicalcluster.Name]map[string]metav1.APIGroup),
+		resourceInfos: make(map[logicalcluster.Name]map[schema.GroupVersion]metav1.APIResource),
+		grEndpointMap: make(map[logicalcluster.Name]map[schema.GroupResource]string),
+	}
+
+	tlsConfig, err := rest.TLSConfigFor(c.Extra.VWClientConfig)
+	if err != nil {
+		return nil, err
+	}
+	s.vwTlsConfig = tlsConfig
 
 	// c.Generic.BuildHandlerChainFunc = s.buildHandlerChain(c, delegationTarget)
 	// c.Generic.ReadyzChecks = append(c.Generic.ReadyzChecks, asHealthChecks(c.Extra.VirtualWorkspaces)...)
 	// apiBindings lister synced ^
 
-	var err error
 	s.GenericAPIServer, err = c.Generic.New("virtual-resources-root-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
 	}
+	s.GenericAPIServer.DiscoveryGroupManager = s.groupManagers
 
-	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/", &delegateOnly{delegate: delegationTarget.UnprotectedHandler()})
-	s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/openapi", &openapiHandler{s: s})
-	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/openapi/", &openapiHandler{s: s})
+	apisHandler := s.newApisHandler()
+
+	s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/apis", apisHandler)
+	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/apis/", apisHandler)
 
 	return s, nil
 }
@@ -84,196 +112,199 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 		return fmt.Errorf("failed to create discovery client for gr=%q, endpoint=%q: %v", gr, config.Host, err)
 	}
 
-	apiGroupList, err := dc.ServerGroups()
-	if err != nil {
-		return fmt.Errorf("discovery client failed to list api groups for endpoint=%q: %v", config.Host, err)
-	}
-
-	fmt.Printf("\n<><> DISCOVERED APIS %#v <>\n", apiGroupList)
-
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	proxy, err := newVWProxy(vwEndpointURL+fmt.Sprintf("/clusters/%s", cluster.String()), s.Extra.VWClientConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create vw proxy: %v", err)
-	}
-
-	if vwHandlers := s.vwHandlers[cluster]; vwHandlers != nil {
-		vwHandlers[gr] = proxy
-	} else {
-		s.vwHandlers[cluster] = map[schema.GroupResource]*vwProxy{
-			gr: proxy,
-		}
-	}
-
-	for _, apiGroup := range apiGroupList.Groups {
-		s.GenericAPIServer.DiscoveryGroupManager.AddGroup(apiGroup)
-		s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix(fmt.Sprintf("/apis/%s/", apiGroup.Name), proxy)
-		// s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/openapi/", proxy)
-	}
-
-	withCluster := func(handler http.Handler) http.HandlerFunc {
-		return func(res http.ResponseWriter, req *http.Request) {
-			req = req.Clone(genericapirequest.WithCluster(req.Context(), genericapirequest.Cluster{Name: cluster}))
-			handler.ServeHTTP(res, req)
-		}
-	}
-
-	specDownloader := openapiv3aggregator.NewDownloader()
-	specDiscovery, n, err := specDownloader.OpenAPIV3Root(withCluster(proxy))
-	if err != nil {
-		return fmt.Errorf("failed to download openapiv3 spec: %v", err)
-	}
-	fmt.Printf("\n<><> DISCOVERED OPENAPIv3 SPEC n=%d specs=%#v <>\n", n, specDiscovery.Paths)
-
-	return nil
-}
-
-/*func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResource, vwEndpointURL string) error {
-	config := *s.Extra.VWClientConfig
-	config.Host = vwEndpointURL + fmt.Sprintf("/clusters/%s", cluster.String())
-
-	dc, err := discovery.NewDiscoveryClientForConfig(&config)
-	if err != nil {
-		return fmt.Errorf("failed to create discovery client for gr=%q, endpoint=%q: %v", gr, config.Host, err)
-	}
+	// Get API groups from the VW.
 
 	apiGroupList, err := dc.ServerGroups()
 	if err != nil {
 		return fmt.Errorf("discovery client failed to list api groups for endpoint=%q: %v", config.Host, err)
 	}
 
-	fmt.Printf("\n<><> DISCOVERED APIS %#v <>\n", apiGroupList)
+	// Find the group we want to bind.
 
-	return nil
-
-	var discoveredVersions []string
-	var preferredVersion metav1.GroupVersionForDiscovery
+	var apiGroup *metav1.APIGroup
 	for _, group := range apiGroupList.Groups {
 		if group.Name == gr.Group {
-			for _, version := range group.Versions {
-				discoveredVersions = append(discoveredVersions, version.Version)
-			}
-			preferredVersion = group.PreferredVersion
+			apiGroup = group.DeepCopy()
 			break
 		}
 	}
-	if len(discoveredVersions) == 0 {
+	if apiGroup == nil {
 		return fmt.Errorf("group %s not found in %s discovery", gr.Group, vwEndpointURL)
 	}
 
-	var servedInVersions []string
-	for _, version := range discoveredVersions {
-		groupVersion := fmt.Sprintf("%s/%s", gr.Group, version)
-		apiResourceList, err := dc.ServerResourcesForGroupVersion(groupVersion)
+	// Get all versions in the found group that are serving the bound resource.
+
+	var apiResources []metav1.APIResource
+	for _, version := range apiGroup.Versions {
+		apiResourceList, err := dc.ServerResourcesForGroupVersion(version.GroupVersion)
 		if err != nil {
-			return fmt.Errorf("discovery client failed to list resources for group/version %s in %s: %v", groupVersion, vwEndpointURL, err)
+			return fmt.Errorf("discovery client failed to list resources for group/version %s in %s: %v", version.GroupVersion, vwEndpointURL, err)
 		}
 
 		for _, res := range apiResourceList.APIResources {
 			if res.Name == gr.Resource {
-				fmt.Printf("\n<><> DISCOVERED RESOURCE %#v <>\n", res)
-				servedInVersions = append(servedInVersions, version)
+				apiResources = append(apiResources, *res.DeepCopy())
 				break
 			}
 		}
 	}
-	if len(servedInVersions) == 0 {
+
+	if apiResources == nil {
 		return fmt.Errorf("resource %s/%s not found in %s", gr.Group, gr.Resource, vwEndpointURL)
 	}
 
-	sch := runtime.NewScheme()
-	codecs := serializer.NewCodecFactory(sch)
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(gr.Group, sch, metav1.ParameterCodec, codecs)
-	apiGroupInfo.PrioritizedVersions = []schema.GroupVersion{{Group: gr.Group, Version: preferredVersion.Version}}
-	for _, servedVersion := range servedInVersions {
-		apiGroupInfo.VersionedResourcesStorageMap[servedVersion] = map[string]reststorage.Storage{
-			gr.Resource: NewDummyStorage(gr.WithVersion(servedVersion)),
-		}
+	// Store the group we've found.
+
+	s.groupManagers.AddGroupForCluster(cluster, gr.Group)
+
+	if _, ok := s.groupInfos[cluster]; !ok {
+		s.groupInfos[cluster] = make(map[string]metav1.APIGroup)
+	}
+	s.groupInfos[cluster][gr.Group] = *apiGroup
+
+	// Store resource's gv.
+
+	if _, ok := s.resourceInfos[cluster]; !ok {
+		s.resourceInfos[cluster] = make(map[schema.GroupVersion]metav1.APIResource)
+	}
+	scopedResourceInfos := s.resourceInfos[cluster]
+	for _, res := range apiResources {
+		scopedResourceInfos[schema.GroupVersion{
+			Group:   res.Group,
+			Version: res.Version,
+		}] = res
 	}
 
-	return s.GenericAPIServer.InstallAPIGroup(&apiGroupInfo)
-}*/
+	// Store the vw url.
 
-func boundCRDName(schema *apisv1alpha1.APIResourceSchema) string {
-	return string(schema.UID)
+	s.grEndpointMap[cluster][gr] = vwEndpointURL
+
+	return nil
 }
 
-func generateCRD(schema *apisv1alpha1.APIResourceSchema) (*apiextensionsv1.CustomResourceDefinition, error) {
-	fmt.Printf("\n\n<> generating CRD for G=%s,K=%s,R=%s\n\n", schema.Spec.Group, schema.Spec.Names.Kind, schema.Spec.Names.Plural)
-	crd := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: boundCRDName(schema),
-			Annotations: map[string]string{
-				apisv1alpha1.AnnotationBoundCRDKey:      "",
-				apisv1alpha1.AnnotationSchemaClusterKey: logicalcluster.From(schema).String(),
-				apisv1alpha1.AnnotationSchemaNameKey:    schema.Name,
-			},
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: schema.Spec.Group,
-			Names: schema.Spec.Names,
-			Scope: schema.Spec.Scope,
-		},
-	}
+func (s *Server) removeHandlerFor(cluster logicalcluster.Name, gr schema.GroupResource, vwEndpointURL string) error {
+	return nil
+}
 
-	// Propagate the protected API approval annotation, `api-approved.kubernetes.io`, if any.
-	// API groups that match `*.k8s.io` or `*.kubernetes.io` are owned by the Kubernetes community,
-	// and protected by API review. The API server rejects the creation of a CRD whose group is
-	// protected, unless the approval annotation is present.
-	// See https://github.com/kubernetes/enhancements/pull/1111 for more details.
-	if value, found := schema.Annotations[apiextensionsv1.KubeAPIApprovedAnnotation]; found {
-		crd.Annotations[apiextensionsv1.KubeAPIApprovedAnnotation] = value
+func splitPath(path string) []string {
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return []string{}
 	}
+	return strings.Split(path, "/")
+}
 
-	switch schema.Spec.NameValidation {
-	case "PathSegmentName":
-		crd.Annotations[apiextapiserver.KcpValidateNameAnnotationKey] = "path-segment"
-	}
-
-	for _, version := range schema.Spec.Versions {
-		crdVersion := apiextensionsv1.CustomResourceDefinitionVersion{
-			Name:                     version.Name,
-			Served:                   version.Served,
-			Storage:                  version.Storage,
-			Deprecated:               version.Deprecated,
-			DeprecationWarning:       version.DeprecationWarning,
-			Subresources:             &version.Subresources,
-			AdditionalPrinterColumns: version.AdditionalPrinterColumns,
+func (s *Server) newApisHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		pathParts := splitPath(r.URL.Path)
+		fmt.Printf("\nAAAA path=%v\n", pathParts)
+		switch len(pathParts) {
+		case 1:
+			s.handleAPIGroupList(w, r)
+			return
+		case 3:
+			s.handleAPIResourceList(w, r)
+			return
+		default:
+			s.handleResource(w, r)
+			return
 		}
+	}
+}
 
-		var validation apiextensionsv1.CustomResourceValidation
-		if err := json.Unmarshal(version.Schema.Raw, &validation.OpenAPIV3Schema); err != nil {
-			return nil, err
-		}
-		crdVersion.Schema = &validation
+func (s *Server) handleAPIGroupList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
-		crd.Spec.Versions = append(crd.Spec.Versions, crdVersion)
+	cluster := genericapirequest.ClusterFrom(ctx)
+	if cluster == nil {
+		warning.AddWarning(ctx, "", "cluster missing in context")
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
 	}
 
-	if len(schema.Spec.Versions) > 1 && schema.Spec.Conversion == nil {
-		return nil, fmt.Errorf("multiple versions specified but no conversion strategy")
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	knownGroups := s.groupInfos[cluster.Name]
+	groupList := &metav1.APIGroupList{}
+	groupList.Groups = make([]metav1.APIGroup, 0, len(knownGroups))
+
+	for _, res := range knownGroups {
+		groupList.Groups = append(groupList.Groups, res)
 	}
 
-	if len(schema.Spec.Versions) > 1 {
-		conversion := &apiextensionsv1.CustomResourceConversion{
-			Strategy: apiextensionsv1.ConversionStrategyType(schema.Spec.Conversion.Strategy),
-		}
+	responsewriters.WriteObjectNegotiated(s.GenericAPIServer.Serializer, negotiation.DefaultEndpointRestrictions, schema.GroupVersion{}, w, r, http.StatusOK, groupList, false)
+}
 
-		if schema.Spec.Conversion.Strategy == "Webhook" {
-			conversion.Webhook = &apiextensionsv1.WebhookConversion{
-				ConversionReviewVersions: schema.Spec.Conversion.Webhook.ConversionReviewVersions,
-				ClientConfig: &apiextensionsv1.WebhookClientConfig{
-					URL:      &(schema.Spec.Conversion.Webhook.ClientConfig.URL),
-					CABundle: schema.Spec.Conversion.Webhook.ClientConfig.CABundle,
-				},
-			}
-		}
+func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
-		crd.Spec.Conversion = conversion
+	cluster := genericapirequest.ClusterFrom(ctx)
+	if cluster == nil {
+		warning.AddWarning(ctx, "", "cluster missing in context")
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
 	}
 
-	return crd, nil
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	knownVersionedResources := s.resourceInfos[cluster.Name]
+	apiResourceList := &metav1.APIResourceList{}
+	apiResourceList.APIResources = make([]metav1.APIResource, 0, len(knownVersionedResources))
+
+	for _, res := range knownVersionedResources {
+		apiResourceList.APIResources = append(apiResourceList.APIResources, res)
+	}
+
+	responsewriters.WriteObjectNegotiated(s.GenericAPIServer.Serializer, negotiation.DefaultEndpointRestrictions, schema.GroupVersion{}, w, r, http.StatusOK, apiResourceList, false)
+}
+
+func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	cluster := genericapirequest.ClusterFrom(ctx)
+	if cluster == nil {
+		warning.AddWarning(ctx, "", "cluster missing in context")
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	reqInfo, hasReqInfo := genericapirequest.RequestInfoFrom(ctx)
+	if !hasReqInfo {
+		warning.AddWarning(ctx, "", "request info missing in context")
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	var vwUrl string
+	if endpoints := s.grEndpointMap[cluster.Name]; endpoints != nil {
+		vwUrl = endpoints[schema.GroupResource{
+			Group:    reqInfo.APIGroup,
+			Resource: reqInfo.Resource,
+		}]
+	}
+	if vwUrl == "" {
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	scopedURL, err := url.Parse(fmt.Sprintf("%s/clusters/%s", vwUrl, cluster.Name))
+	if err != nil {
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	handler := httputil.NewSingleHostReverseProxy(scopedURL)
+	handler.Transport = &http.Transport{
+		TLSClientConfig: s.vwTlsConfig,
+	}
+
+	handler.ServeHTTP(w, r)
 }
