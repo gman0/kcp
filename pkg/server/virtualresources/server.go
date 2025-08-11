@@ -21,6 +21,8 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/warning"
 
+	// restful "github.com/emicklei/go-restful/v3"
+
 	"github.com/kcp-dev/logicalcluster/v3"
 	discoveryclient "k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
@@ -99,6 +101,8 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 
 	s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/apis", apisHandler)
 	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/apis/", apisHandler)
+
+	// s.GenericAPIServer.Handler.GoRestfulContainer.Filter(func(req *restful.Request, res *restful.Response, chain *restful.FilterChain) {})
 
 	return s, nil
 }
@@ -224,6 +228,8 @@ func (s *Server) handleAPIGroupList(w http.ResponseWriter, r *http.Request) {
 		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 		return
 	}
+
+	// TODO: sorting
 
 	s.lock.RLock()
 	defer s.lock.RUnlock()
