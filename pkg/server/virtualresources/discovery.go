@@ -61,16 +61,14 @@ func (m *clusterAwareGroupManager) Groups(ctx context.Context, req *http.Request
 	return nil, nil
 }
 
-func (m *clusterAwareGroupManager) AddGroupForCluster(cluster logicalcluster.Name, groupName string) {
+func (m *clusterAwareGroupManager) AddGroupForCluster(cluster logicalcluster.Name, apiGroup *metav1.APIGroup) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	if _, found := m.groupManagers[cluster]; !found {
 		m.groupManagers[cluster] = discoveryapi.NewRootAPIsHandler(m.addresses, m.serializer)
 	}
-	m.groupManagers[cluster].AddGroup(metav1.APIGroup{
-		Name: groupName,
-	})
+	m.groupManagers[cluster].AddGroup(*apiGroup)
 }
 
 func (m *clusterAwareGroupManager) RemoveGroupForCluster(cluster logicalcluster.Name, groupName string) {

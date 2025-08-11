@@ -112,7 +112,12 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		return nil, fmt.Errorf("create api extensions: %v", err)
 	}
 
-	s.Apis, err = c.Apis.New("generic-control-plane", s.ApiExtensions.GenericAPIServer)
+	s.VirtualResources, err = virtualresources.NewServer(c.VirtualResources, s.ApiExtensions.GenericAPIServer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create virtual resources server: %v", err)
+	}
+
+	s.Apis, err = c.Apis.New("generic-control-plane", s.VirtualResources.GenericAPIServer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic controlplane apiserver: %w", err)
 	}
@@ -141,12 +146,7 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		return nil, err
 	}
 
-	s.VirtualResources, err = virtualresources.NewServer(c.VirtualResources, s.Apis.GenericAPIServer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create virtual resources server: %v", err)
-	}
-
-	s.MiniAggregator, err = c.MiniAggregator.New(s.VirtualResources.GenericAPIServer, s.Apis, s.ApiExtensions, s.VirtualResources.GenericAPIServer)
+	s.MiniAggregator, err = c.MiniAggregator.New(s.Apis.GenericAPIServer, s.Apis, s.ApiExtensions, s.VirtualResources.GenericAPIServer)
 	if err != nil {
 		return nil, err
 	}
