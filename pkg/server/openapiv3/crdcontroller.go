@@ -45,15 +45,14 @@ import (
 	"github.com/kcp-dev/kcp/pkg/logging"
 )
 
-const ControllerName = "kcp-openapiv3"
 const CrdControllerName = "crd_openapi_v3_controller"
 
 type CRDSpecGetter interface {
 	GetCRDSpecs(clusterName logicalcluster.Name, name string) (specs map[string]cached.Value[*spec3.OpenAPI], err error)
 }
 
-// Controller watches CustomResourceDefinitions and publishes OpenAPI v3.
-type Controller struct {
+// CRDController watches CustomResourceDefinitions and publishes OpenAPI v3.
+type CRDController struct {
 	crdLister  kcpapiextensionsv1listers.CustomResourceDefinitionClusterLister
 	crdsSynced cache.InformerSynced
 
@@ -64,9 +63,9 @@ type Controller struct {
 	byClusterNameVersion map[logicalcluster.Name]map[string]map[string]cached.Value[*spec3.OpenAPI]
 }
 
-// NewController creates a new Controller with input CustomResourceDefinition informer.
-func NewController(crdInformer kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer) *Controller {
-	c := &Controller{
+// NewCRDController creates a new Controller with input CustomResourceDefinition informer.
+func NewCRDController(crdInformer kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer) *CRDController {
+	c := &CRDController{
 		crdLister:  crdInformer.Lister(),
 		crdsSynced: crdInformer.Informer().HasSynced,
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
@@ -87,11 +86,11 @@ func NewController(crdInformer kcpapiextensionsv1informers.CustomResourceDefinit
 	return c
 }
 
-func (c *Controller) Run(ctx context.Context) {
+func (c *CRDController) Run(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 
-	log := logging.WithReconciler(klog.FromContext(ctx), ControllerName)
+	log := logging.WithReconciler(klog.FromContext(ctx), CrdControllerName)
 	ctx = klog.NewContext(ctx, log)
 	log.Info("Starting controller")
 	defer log.Info("Shutting down controller")
@@ -115,12 +114,12 @@ func (c *Controller) Run(ctx context.Context) {
 	<-ctx.Done()
 }
 
-func (c *Controller) startWorker(ctx context.Context) {
+func (c *CRDController) startWorker(ctx context.Context) {
 	for c.processNextWorkItem(ctx) {
 	}
 }
 
-func (c *Controller) processNextWorkItem(ctx context.Context) bool {
+func (c *CRDController) processNextWorkItem(ctx context.Context) bool {
 	// Wait until there is a new item in the working queue
 	k, quit := c.queue.Get()
 	if quit {
@@ -146,7 +145,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	}()
 
 	if requeue, err := c.process(ctx, key); err != nil {
-		utilruntime.HandleError(fmt.Errorf("%q controller failed to sync %q, err: %w", ControllerName, key, err))
+		utilruntime.HandleError(fmt.Errorf("%q controller failed to sync %q, err: %w", CrdControllerName, key, err))
 		c.queue.AddRateLimited(key)
 		return true
 	} else if requeue {
@@ -158,7 +157,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	return true
 }
 
-func (c *Controller) process(ctx context.Context, key string) (bool, error) {
+func (c *CRDController) process(ctx context.Context, key string) (bool, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -185,7 +184,7 @@ func (c *Controller) process(ctx context.Context, key string) (bool, error) {
 	return false, nil
 }
 
-func (c *Controller) processCRD(crd *apiextensionsv1.CustomResourceDefinition) {
+func (c *CRDController) processCRD(crd *apiextensionsv1.CustomResourceDefinition) {
 	clusterName := logicalcluster.From(crd)
 
 	// remove old instance
@@ -222,17 +221,17 @@ func (c *Controller) processCRD(crd *apiextensionsv1.CustomResourceDefinition) {
 	}
 }
 
-func (c *Controller) addCustomResourceDefinition(obj interface{}) {
+func (c *CRDController) addCustomResourceDefinition(obj interface{}) {
 	castObj := obj.(*apiextensionsv1.CustomResourceDefinition)
 	c.enqueue(castObj)
 }
 
-func (c *Controller) updateCustomResourceDefinition(oldObj, newObj interface{}) {
+func (c *CRDController) updateCustomResourceDefinition(oldObj, newObj interface{}) {
 	castNewObj := newObj.(*apiextensionsv1.CustomResourceDefinition)
 	c.enqueue(castNewObj)
 }
 
-func (c *Controller) deleteCustomResourceDefinition(obj interface{}) {
+func (c *CRDController) deleteCustomResourceDefinition(obj interface{}) {
 	castObj, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -247,7 +246,7 @@ func (c *Controller) deleteCustomResourceDefinition(obj interface{}) {
 	c.enqueue(castObj)
 }
 
-func (c *Controller) enqueue(obj *apiextensionsv1.CustomResourceDefinition) {
+func (c *CRDController) enqueue(obj *apiextensionsv1.CustomResourceDefinition) {
 	key, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(obj)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", obj, err))
@@ -256,7 +255,7 @@ func (c *Controller) enqueue(obj *apiextensionsv1.CustomResourceDefinition) {
 	c.queue.Add(key)
 }
 
-func (c *Controller) GetCRDSpecs(clusterName logicalcluster.Name, name string) (specs map[string]cached.Value[*spec3.OpenAPI], err error) {
+func (c *CRDController) GetCRDSpecs(clusterName logicalcluster.Name, name string) (specs map[string]cached.Value[*spec3.OpenAPI], err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
