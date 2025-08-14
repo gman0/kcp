@@ -17,6 +17,7 @@ import (
 	restful "github.com/emicklei/go-restful/v3"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/apiserver/pkg/endpoints/request"
@@ -53,10 +54,11 @@ type Server struct {
 	groupManagers *clusterAwareGroupManager
 	handlers      *proxyToVirtualWorkspace
 
-	lock                      sync.RWMutex
-	groups                    map[logicalcluster.Name]map[string]metav1.APIGroup
-	resourcesForGroupVersion  map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource
-	endpointsForGroupResource map[logicalcluster.Name]map[schema.GroupResource]string
+	lock                        sync.RWMutex
+	groups                      map[logicalcluster.Name]map[string]metav1.APIGroup
+	apiResourcesForGroupVersion map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource
+	resourcesForGroupVersion    map[logicalcluster.Name]map[schema.GroupVersion]sets.Set[string]
+	endpointsForGroupResource   map[logicalcluster.Name]map[schema.GroupResource]string
 }
 
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
@@ -66,13 +68,13 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 	}
 
 	s := &Server{
-		Extra:                     c.Extra,
-		delegate:                  delegationTarget,
-		groupManagers:             newClusterAwareGroupManager(c.Generic.DiscoveryAddresses, c.Generic.Serializer),
-		handlers:                  handlers,
-		groups:                    make(map[logicalcluster.Name]map[string]metav1.APIGroup),
-		resourcesForGroupVersion:  make(map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource),
-		endpointsForGroupResource: make(map[logicalcluster.Name]map[schema.GroupResource]string),
+		Extra:                       c.Extra,
+		delegate:                    delegationTarget,
+		groupManagers:               newClusterAwareGroupManager(c.Generic.DiscoveryAddresses, c.Generic.Serializer),
+		handlers:                    handlers,
+		groups:                      make(map[logicalcluster.Name]map[string]metav1.APIGroup),
+		apiResourcesForGroupVersion: make(map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource),
+		endpointsForGroupResource:   make(map[logicalcluster.Name]map[schema.GroupResource]string),
 	}
 
 	tlsConfig, err := rest.TLSConfigFor(c.Extra.VWClientConfig)
@@ -207,10 +209,10 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 
 	// Store resource's gv.
 
-	if _, ok := s.resourcesForGroupVersion[cluster]; !ok {
-		s.resourcesForGroupVersion[cluster] = make(map[schema.GroupVersion][]metav1.APIResource)
+	if _, ok := s.apiResourcesForGroupVersion[cluster]; !ok {
+		s.apiResourcesForGroupVersion[cluster] = make(map[schema.GroupVersion][]metav1.APIResource)
 	}
-	scopedResourceInfos := s.resourcesForGroupVersion[cluster]
+	scopedResourceInfos := s.apiResourcesForGroupVersion[cluster]
 	for _, res := range apiResources {
 		gv := schema.GroupVersion{
 			Group:   res.Group,
@@ -219,7 +221,7 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 		scopedResourceInfos[gv] = append(scopedResourceInfos[gv], res)
 	}
 
-	fmt.Printf("\n\nYYYY scopedResourceInfos=%#v s.resourceInfos=%#v \n\n\n", scopedResourceInfos, s.resourcesForGroupVersion)
+	fmt.Printf("\n\nYYYY scopedResourceInfos=%#v s.resourceInfos=%#v \n\n\n", scopedResourceInfos, s.apiResourcesForGroupVersion)
 
 	// Store the vw url.
 
@@ -247,7 +249,7 @@ func splitPath(path string) []string {
 func (s *Server) newApisHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pathParts := splitPath(r.URL.Path)
-		fmt.Printf("\nAAAA path=%v s.grEndpointMap=%#v ; s.groupInfos=%#v ; s.resourceInfos=%#v\n", pathParts, s.endpointsForGroupResource, s.groups, s.resourcesForGroupVersion)
+		fmt.Printf("\nAAAA path=%v s.grEndpointMap=%#v ; s.groupInfos=%#v ; s.resourceInfos=%#v\n", pathParts, s.endpointsForGroupResource, s.groups, s.apiResourcesForGroupVersion)
 		switch len(pathParts) {
 		case 3:
 			s.handleAPIResourceList(w, r)
@@ -293,7 +295,7 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 
 	var knownVersionedResources []metav1.APIResource
 	s.lock.RLock()
-	if gvResources := s.resourcesForGroupVersion[cluster.Name]; gvResources != nil {
+	if gvResources := s.apiResourcesForGroupVersion[cluster.Name]; gvResources != nil {
 		fmt.Printf("\nAAAA path=%s handleAPIResourceList has cluster %s\n", r.URL.Path, cluster.Name)
 		fmt.Printf("\nAAAA path=%s handleAPIResourceList needs gv=%s\n", r.URL.Path, gv)
 		fmt.Printf("\nAAAA path=%s handleAPIResourceList RequestInfo=%#v\n", r.URL.Path, reqInfo)

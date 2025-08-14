@@ -2,7 +2,10 @@ package virtualresources
 
 import (
 	"context"
+	"crypto/sha512"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
@@ -10,9 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/client-go/discovery"
-	clientopenapi "k8s.io/client-go/openapi"
 	clientopenapi3 "k8s.io/client-go/openapi3"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	"k8s.io/kube-openapi/pkg/cached"
 	"k8s.io/kube-openapi/pkg/spec3"
 )
@@ -24,68 +27,78 @@ func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]cac
 			return nil, err
 		}
 
-		endpointsForGroupResource := s.getEndpointsForCluster(cluster)
+		log := klog.FromContext(ctx).WithName("virtualresource-openapiv3-getter").WithValues("cluster", cluster)
 
-		fmt.Printf("<<OpenAPIv3SpecGetter>> 1 grEndpoints=%#v\n", endpointsForGroupResource)
-
-		type trackedResources struct {
-			resourcesForGV       map[schema.GroupVersion]sets.Set[string]
-			resourcesForEndpoint map[string]map[schema.GroupResource]map[string]struct{}
-		}
-
-		tracked := func() trackedResources {
+		trackedResourcesForEndpoint := func() map[string]map[schema.GroupVersion]sets.Set[string] {
 			s.lock.RLock()
 			defer s.lock.RUnlock()
 
 			resourcesForGroupVersion := s.resourcesForGroupVersion[cluster]
 			if len(resourcesForGroupVersion) == 0 {
-				return trackedResources{}
+				return nil
+			}
+			endpointsForGroupResource := s.endpointsForGroupResource[cluster]
+			if len(endpointsForGroupResource) == 0 {
+				return nil
 			}
 
-			return trackedResources{}
+			m := make(map[string]map[schema.GroupVersion]sets.Set[string])
+
+			for gr, endpoint := range endpointsForGroupResource {
+				if _, ok := m[endpoint]; !ok {
+					m[endpoint] = make(map[schema.GroupVersion]sets.Set[string])
+				}
+
+				resourcesForGroupVersion := make(map[schema.GroupVersion]sets.Set[string])
+				for gv, resources := range resourcesForGroupVersion {
+					if resources.Has(gr.Resource) {
+						resourcesForGroupVersion[gv].Insert(gr.Resource)
+					}
+				}
+
+				m[endpoint] = resourcesForGroupVersion
+			}
+
+			return m
 		}()
 
 		specs := make(map[string]cached.Value[*spec3.OpenAPI])
 
-		for vwURL, resourcesForGroupVersions := range tracked.resourcesForEndpoint {
-			vwOpenAPIv3Client, err := newOpenAPIv3Client(s.Extra.VWClientConfig, vwURL, cluster)
+		for vwURL, resourcesForGroupVersions := range trackedResourcesForEndpoint {
+			log := log.WithValues("url", vwURL)
+
+			vwOpenAPIv3Root, err := newOpenAPIv3Root(s.Extra.VWClientConfig, vwURL, cluster)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create discovery client for virtual workspace %s: %v", vwURL, err)
 			}
 
 			for groupVersion, resources := range resourcesForGroupVersions {
+				specs[fmt.Sprintf("apis/%s", groupVersion)] = cached.Once(cached.Func[*spec3.OpenAPI](
+					func() (*spec3.OpenAPI, string, error) {
+						log := log.WithValues("groupVersion", groupVersion)
 
+						spec, err := vwOpenAPIv3Root.GVSpec(groupVersion)
+						if err != nil {
+							log.V(4).Error(err, "Failed to get OpenAPIv3 spec")
+							return nil, "", err
+						}
+						filterSpecForResources(spec, resources)
+
+						bs, err := json.Marshal(spec)
+						if err != nil {
+							return nil, "", err
+						}
+						return spec, fmt.Sprintf("%X", sha512.Sum512(bs)), nil
+					},
+				))
 			}
-		}
-
-		endpoints := make(map[string]struct{})
-		groupPaths := make(map[string]struct{})
-		for gr, endpoint := range endpointsForGroupResource {
-			endpoints[endpoint] = struct{}{}
-			groupPaths[fmt.Sprintf("apis/%s", gr.Group)] = struct{}{}
-		}
-
-		fmt.Printf("<<OpenAPIv3SpecGetter>> 2 endpoints=%#v\n", endpoints)
-
-		for vwURL := range endpoints {
-
-			clientopenapi3.NewRoot(vwOpenAPIv3Client)
-
-			openApiv3Root := clientopenapi3.NewRoot(vwOpenAPIv3Client)
-			gv := schema.GroupVersion{Group: "wildwest.dev", Version: "v1alpha1"}
-			spec, err := openApiv3Root.GVSpec(gv)
-
-			if err != nil {
-				return nil, fmt.Errorf("failed to get %s OpenAPIv3 spec for virtual workspace %s: %v", gv, vwURL, err)
-			}
-			fmt.Printf("\n\n\n<<OpenAPIv3SpecGetter>> szpek %#v <>\n\n", spec)
 		}
 
 		return nil, nil
 	}
 }
 
-func newOpenAPIv3Client(config *rest.Config, vwURL string, cluster logicalcluster.Name) (clientopenapi.Client, error) {
+func newOpenAPIv3Root(config *rest.Config, vwURL string, cluster logicalcluster.Name) (clientopenapi3.Root, error) {
 	vwConfig := *config
 	vwConfig.Host = urlWithCluster(vwURL, cluster)
 
@@ -94,5 +107,26 @@ func newOpenAPIv3Client(config *rest.Config, vwURL string, cluster logicalcluste
 		return nil, err
 	}
 
-	return vwDiscoveryClient.OpenAPIV3(), nil
+	return clientopenapi3.NewRoot(vwDiscoveryClient.OpenAPIV3()), nil
+}
+
+func pathHasAnyResource(apiPath string, acceptedResources sets.Set[string]) bool {
+	parts := strings.Split(strings.Trim(apiPath, "/"), "/")
+	if len(parts) < 1 {
+		return false
+	}
+	// last fixed segment before optional "{name}"
+	resource := parts[len(parts)-1]
+	if strings.HasPrefix(resource, "{") && len(parts) >= 2 {
+		resource = parts[len(parts)-2]
+	}
+	return acceptedResources.Has(resource)
+}
+
+func filterSpecForResources(spec *spec3.OpenAPI, resources sets.Set[string]) {
+	for path := range spec.Paths.Paths {
+		if !pathHasAnyResource(path, resources) {
+			delete(spec.Paths.Paths, path)
+		}
+	}
 }
