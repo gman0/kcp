@@ -120,7 +120,7 @@ type ExtraConfig struct {
 	// misc
 	preHandlerChainMux    *handlerChainMuxes
 	quotaAdmissionStopCh  chan struct{}
-	openAPIv3Controller   *openapiv3.Controller
+	openAPIv3Controller   *openapiv3.CRDController
 	openAPIv3ServiceCache *openapiv3.ServiceCache
 
 	// URL getters depending on genericspiserver.ExternalAddress which is initialized on server run
@@ -615,7 +615,7 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 		return nil, fmt.Errorf("failed to create config for virtual resources server: %v", err)
 	}
 
-	c.openAPIv3Controller = openapiv3.NewController(c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions())
+	c.openAPIv3Controller = openapiv3.NewCRDController(c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions())
 	c.openAPIv3ServiceCache = openapiv3.NewServiceCache(c.GenericConfig.OpenAPIV3Config, c.ApiExtensions.ExtraConfig.ClusterAwareCRDLister, c.openAPIv3Controller, openapiv3.DefaultServiceCacheSize)
 
 	c.MiniAggregator = &miniaggregator.MiniAggregatorConfig{

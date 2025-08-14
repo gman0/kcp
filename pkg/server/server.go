@@ -145,6 +145,7 @@ func NewServer(c CompletedConfig) (*Server, error) {
 	if err := s.openAPIv3ServiceCache.RegisterStaticAPIs(s.Apis.GenericAPIServer.Handler.GoRestfulContainer); err != nil {
 		return nil, err
 	}
+	s.openAPIv3ServiceCache.RegisterVRSpecsGetter(s.VirtualResources.OpenAPIv3SpecGetter())
 
 	s.MiniAggregator, err = c.MiniAggregator.New(s.Apis.GenericAPIServer, s.Apis, s.ApiExtensions, s.VirtualResources.GenericAPIServer)
 	if err != nil {

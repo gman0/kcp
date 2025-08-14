@@ -53,17 +53,10 @@ type Server struct {
 	groupManagers *clusterAwareGroupManager
 	handlers      *proxyToVirtualWorkspace
 
-	lock          sync.RWMutex
-	groupInfos    map[logicalcluster.Name]map[string]metav1.APIGroup
-	resourceInfos map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource
-	grEndpointMap map[logicalcluster.Name]map[schema.GroupResource]string
-}
-
-type resourceInfo struct {
-	group            string
-	resource         string
-	versions         []metav1.GroupVersionForDiscovery
-	preferredVersion metav1.GroupVersionForDiscovery
+	lock                      sync.RWMutex
+	groups                    map[logicalcluster.Name]map[string]metav1.APIGroup
+	resourcesForGroupVersion  map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource
+	endpointsForGroupResource map[logicalcluster.Name]map[schema.GroupResource]string
 }
 
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
@@ -73,13 +66,13 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 	}
 
 	s := &Server{
-		Extra:         c.Extra,
-		delegate:      delegationTarget,
-		groupManagers: newClusterAwareGroupManager(c.Generic.DiscoveryAddresses, c.Generic.Serializer),
-		handlers:      handlers,
-		groupInfos:    make(map[logicalcluster.Name]map[string]metav1.APIGroup),
-		resourceInfos: make(map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource),
-		grEndpointMap: make(map[logicalcluster.Name]map[schema.GroupResource]string),
+		Extra:                     c.Extra,
+		delegate:                  delegationTarget,
+		groupManagers:             newClusterAwareGroupManager(c.Generic.DiscoveryAddresses, c.Generic.Serializer),
+		handlers:                  handlers,
+		groups:                    make(map[logicalcluster.Name]map[string]metav1.APIGroup),
+		resourcesForGroupVersion:  make(map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource),
+		endpointsForGroupResource: make(map[logicalcluster.Name]map[schema.GroupResource]string),
 	}
 
 	tlsConfig, err := rest.TLSConfigFor(c.Extra.VWClientConfig)
@@ -207,17 +200,17 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 
 	s.groupManagers.AddGroupForCluster(cluster, apiGroup)
 
-	if _, ok := s.groupInfos[cluster]; !ok {
-		s.groupInfos[cluster] = make(map[string]metav1.APIGroup)
+	if _, ok := s.groups[cluster]; !ok {
+		s.groups[cluster] = make(map[string]metav1.APIGroup)
 	}
-	s.groupInfos[cluster][gr.Group] = *apiGroup
+	s.groups[cluster][gr.Group] = *apiGroup
 
 	// Store resource's gv.
 
-	if _, ok := s.resourceInfos[cluster]; !ok {
-		s.resourceInfos[cluster] = make(map[schema.GroupVersion][]metav1.APIResource)
+	if _, ok := s.resourcesForGroupVersion[cluster]; !ok {
+		s.resourcesForGroupVersion[cluster] = make(map[schema.GroupVersion][]metav1.APIResource)
 	}
-	scopedResourceInfos := s.resourceInfos[cluster]
+	scopedResourceInfos := s.resourcesForGroupVersion[cluster]
 	for _, res := range apiResources {
 		gv := schema.GroupVersion{
 			Group:   res.Group,
@@ -226,14 +219,15 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 		scopedResourceInfos[gv] = append(scopedResourceInfos[gv], res)
 	}
 
-	fmt.Printf("\n\nYYYY scopedResourceInfos=%#v s.resourceInfos=%#v \n\n\n", scopedResourceInfos, s.resourceInfos)
+	fmt.Printf("\n\nYYYY scopedResourceInfos=%#v s.resourceInfos=%#v \n\n\n", scopedResourceInfos, s.resourcesForGroupVersion)
 
 	// Store the vw url.
 
-	if _, ok := s.grEndpointMap[cluster][gr]; !ok {
-		s.grEndpointMap[cluster] = make(map[schema.GroupResource]string)
+	if _, ok := s.endpointsForGroupResource[cluster][gr]; !ok {
+		s.endpointsForGroupResource[cluster] = make(map[schema.GroupResource]string)
 	}
-	s.grEndpointMap[cluster][gr] = vwEndpointURL
+	s.endpointsForGroupResource[cluster][gr] = vwEndpointURL
+	fmt.Printf("\n\n<><> FINISHING ADDING HANDLER grEndpointMap=%#v cluster=%s gr=%v <><>\n\n", s.endpointsForGroupResource, cluster, gr)
 
 	return nil
 }
@@ -253,7 +247,7 @@ func splitPath(path string) []string {
 func (s *Server) newApisHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pathParts := splitPath(r.URL.Path)
-		fmt.Printf("\nAAAA path=%v s.grEndpointMap=%#v, s.groupInfos=%#v, s.resourceInfos=%#v\n", pathParts, s.grEndpointMap, s.groupInfos, s.resourceInfos)
+		fmt.Printf("\nAAAA path=%v s.grEndpointMap=%#v ; s.groupInfos=%#v ; s.resourceInfos=%#v\n", pathParts, s.endpointsForGroupResource, s.groups, s.resourcesForGroupVersion)
 		switch len(pathParts) {
 		case 3:
 			s.handleAPIResourceList(w, r)
@@ -299,7 +293,7 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 
 	var knownVersionedResources []metav1.APIResource
 	s.lock.RLock()
-	if gvResources := s.resourceInfos[cluster.Name]; gvResources != nil {
+	if gvResources := s.resourcesForGroupVersion[cluster.Name]; gvResources != nil {
 		fmt.Printf("\nAAAA path=%s handleAPIResourceList has cluster %s\n", r.URL.Path, cluster.Name)
 		fmt.Printf("\nAAAA path=%s handleAPIResourceList needs gv=%s\n", r.URL.Path, gv)
 		fmt.Printf("\nAAAA path=%s handleAPIResourceList RequestInfo=%#v\n", r.URL.Path, reqInfo)
@@ -354,34 +348,68 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoints := make(map[schema.GroupResource]string)
+	handler := s.proxyFor(cluster.Name, schema.GroupResource{Group: reqInfo.APIGroup, Resource: reqInfo.Resource})
+	if handler == nil {
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+func (s *Server) proxyFor(cluster logicalcluster.Name, gr schema.GroupResource) http.Handler {
 	s.lock.RLock()
-	for k, v := range s.grEndpointMap[cluster.Name] {
-		endpoints[k] = v
-	}
-	s.lock.RUnlock()
+	defer s.lock.RUnlock()
 
-	vwUrl := endpoints[schema.GroupResource{
-		Group:    reqInfo.APIGroup,
-		Resource: reqInfo.Resource,
-	}]
-	if vwUrl == "" {
-		fmt.Printf("\nAAAA path=%s handleResource 3\n", r.URL.Path)
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
+	endpoints := s.endpointsForGroupResource[cluster]
+	if endpoints == nil {
+		return nil
 	}
 
-	scopedURL, err := url.Parse(fmt.Sprintf("%s/clusters/%s", vwUrl, cluster.Name))
+	vwURL := endpoints[gr]
+	if vwURL == "" {
+		return nil
+	}
+
+	handler, err := newProxy(cluster, vwURL, s.vwTlsConfig)
 	if err != nil {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		fmt.Printf("\nAAAA path=%s handleResource 4\n", r.URL.Path)
-		return
+		return nil
+	}
+
+	return handler
+}
+
+func (s *Server) getEndpointsForCluster(cluster logicalcluster.Name) map[schema.GroupResource]string {
+	m := make(map[schema.GroupResource]string)
+
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	fmt.Printf("\n<><> getEndpointsForCluster(cluster=%s), s.grEndpointMap=%#v <><>\n", cluster, s.endpointsForGroupResource)
+
+	if grEndpoints := s.endpointsForGroupResource[cluster]; grEndpoints != nil {
+		for k, v := range s.endpointsForGroupResource[cluster] {
+			m[k] = v
+		}
+	}
+
+	return m
+}
+
+func newProxy(cluster logicalcluster.Name, vwURL string, vwTLSConfig *tls.Config) (http.Handler, error) {
+	scopedURL, err := url.Parse(urlWithCluster(vwURL, cluster))
+	if err != nil {
+		return nil, err
 	}
 
 	handler := httputil.NewSingleHostReverseProxy(scopedURL)
 	handler.Transport = &http.Transport{
-		TLSClientConfig: s.vwTlsConfig,
+		TLSClientConfig: vwTLSConfig,
 	}
-	fmt.Printf("\nAAAA path=%s handleResource 6\n", r.URL.Path)
-	handler.ServeHTTP(w, r)
+
+	return handler, nil
+}
+
+func urlWithCluster(vwURL string, cluster logicalcluster.Name) string {
+	return fmt.Sprintf("%s/clusters/%s", vwURL, cluster)
 }
