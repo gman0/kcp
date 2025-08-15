@@ -122,6 +122,52 @@ const (
 
 	// ReplicationStarted represents status of the replication process for this published resource.
 	ReplicationStarted conditionsv1alpha1.ConditionType = "ReplicationStarted"
+
+	// CachedResourceInvalidReferenceReason is a reason for the CachedResourceValid condition of APIBinding that the referenced
+	// CachedResource reference is invalid.
+	CachedResourceInvalidReferenceReason = "CachedResourceInvalidReference"
+	// CachedResourceNotFoundReason is a reason for the CachedResourceValid condition that the referenced CachedResource is not found.
+	CachedResourceNotFoundReason = "CachedResourceNotFound"
+
+	// APIResourceSchemaInvalidReason is a reason for the InitialBindingCompleted and BindingUpToDate conditions when one of generated CRD is invalid.
+	APIResourceSchemaInvalidReason = "APIResourceSchemaInvalid"
+
+	// InternalErrorReason is a reason used by multiple conditions that something went wrong.
+	InternalErrorReason = "InternalError"
+
+	// InitialBindingCompleted is a condition for APIBinding that indicates the initial binding completed successfully.
+	// Once true, this can never be reset to false.
+	InitialBindingCompleted conditionsv1alpha1.ConditionType = "InitialBindingCompleted"
+
+	// LogicalClusterNotFoundReason is a reason for the InitialBindingCompleted condition that
+	// the LogicalCluster has not been found.
+	LogicalClusterNotFoundReason = "LogicalClusterNotFound"
+
+	// WaitingForEstablishedReason is a reason for the InitialBindingCompleted condition that the bound CRDs are not ready.
+	WaitingForEstablishedReason = "WaitingForEstablished"
+
+	// BindingUpToDate is a condition for APIBinding that indicates that the APIs currently bound are up-to-date with
+	// the binding's desired export.
+	BindingUpToDate conditionsv1alpha1.ConditionType = "BindingUpToDate"
+
+	// NamingConflictsReason is a reason for the BindingUpToDate condition that at least one API coming in from the APIBinding
+	// has a naming conflict with other APIs.
+	NamingConflictsReason = "NamingConflicts"
+
+	// BindingResourceDeleteSuccess is a condition for APIBinding that indicates the resources relating this binding are deleted
+	// successfully when the APIBinding is deleting.
+	BindingResourceDeleteSuccess conditionsv1alpha1.ConditionType = "BindingResourceDeleteSuccess"
+
+	// PermissionClaimsValid is a condition for APIBinding that indicates that the permission claims were valid or not.
+	PermissionClaimsValid conditionsv1alpha1.ConditionType = "PermissionClaimsValid"
+
+	// InvalidPermissionClaimsReason indicates there were unexpected and/or invalid permission claims (e.g. due to
+	// identity mismatch).
+	InvalidPermissionClaimsReason = "InvalidPermissionClaims"
+
+	// PermissionClaimsApplied is a condition for APIBinding that indicates that all the accepted permission claims
+	// have been applied.
+	PermissionClaimsApplied conditionsv1alpha1.ConditionType = "PermissionClaimsApplied"
 )
 
 const (

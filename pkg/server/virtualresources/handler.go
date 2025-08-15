@@ -4,23 +4,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-
-	"sync"
-
 	"net/http/httputil"
 	"net/url"
+	"sync"
 
-	// apierrors "k8s.io/apimachinery/pkg/api/errors"
-	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	// "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	// "k8s.io/apimachinery/pkg/runtime"
-
-	// "k8s.io/apimachinery/pkg/runtime/schema"
-	// "k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 
 	// reststorage "k8s.io/apiserver/pkg/registry/rest"
 	"github.com/kcp-dev/logicalcluster/v3"
-	"k8s.io/client-go/rest"
 )
 
 type proxyToVirtualWorkspace struct {

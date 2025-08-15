@@ -29,7 +29,6 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"github.com/go-logr/logr"
 
-	"github.com/kcp-dev/logicalcluster/v3"
 	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder"
@@ -47,6 +46,8 @@ import (
 	"k8s.io/kube-openapi/pkg/handler3"
 	"k8s.io/kube-openapi/pkg/spec3"
 	"k8s.io/utils/lru"
+
+	"github.com/kcp-dev/logicalcluster/v3"
 )
 
 const (

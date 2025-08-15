@@ -4,30 +4,24 @@ import (
 	// "encoding/json"
 	"context"
 	"fmt"
-
+	"net/http"
 	"sync"
 
-	"net/http"
-	// apierrors "k8s.io/apimachinery/pkg/api/errors"
-	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	restful "github.com/emicklei/go-restful/v3"
 
 	// "k8s.io/apimachinery/pkg/runtime/schema"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	discoveryapi "k8s.io/apiserver/pkg/endpoints/discovery"
 	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
-	"k8s.io/apiserver/pkg/warning"
-
 	// "k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
+	"k8s.io/apiserver/pkg/warning"
 
 	"github.com/kcp-dev/logicalcluster/v3"
-
-	discoveryapi "k8s.io/apiserver/pkg/endpoints/discovery"
-
-	restful "github.com/emicklei/go-restful/v3"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type clusterAwareGroupManager struct {

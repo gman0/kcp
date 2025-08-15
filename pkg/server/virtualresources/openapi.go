@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kcp-dev/logicalcluster/v3"
-
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -18,6 +16,8 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kube-openapi/pkg/cached"
 	"k8s.io/kube-openapi/pkg/spec3"
+
+	"github.com/kcp-dev/logicalcluster/v3"
 )
 
 // Returns map of VW URL -> Group path -> cached value for OpenAPI spec.

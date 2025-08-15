@@ -42,6 +42,7 @@ import (
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	"github.com/kcp-dev/kcp/sdk/apis/core"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	topologyv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/topology/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	cachev1alpha1client "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/typed/cache/v1alpha1"
 	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
@@ -145,23 +146,41 @@ type controller struct {
 	listCachedResourceEndpointSlicesByCachedResource func(cachedResource *cachev1alpha1.CachedResource) ([]*cachev1alpha1.CachedResourceEndpointSlice, error)
 	getCachedResourceEndpointSlice                   func(clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error)
 	getCachedResource                                func(clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResource, error)
-	getMyShard                                       func() (*corev1alpha1.Shard, error)
-	getLogicalCluster                                func(clusterName logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
-	getAPIBinding                                    func(clusterName logicalcluster.Name, bindingName string) (*apisv1alpha2.APIBinding, error)
+	getAPIBinding                                    func(clusterName logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
+	getPartition                                     func(clusterName logicalcluster.Name, name string) (*topologyv1alpha1.Partition, error)
+	getCachedResourceEndpointSlicesByPartition       func(key string) ([]*cachev1alpha1.CachedResourceEndpointSlice, error)
 
 	cachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer
 	commit                                     CommitFunc
 }
 
+func (c *controller) enqueuePartition(obj *topologyv1alpha1.Partition, logger logr.Logger) {
+	key, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(obj)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	slices, err := c.getCachedResourceEndpointSlicesByPartition(key)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	for _, slice := range slices {
+		c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](slice), logger, " because of Partition change")
+	}
+}
+
 // enqueueCachedResourceEndpointSlice enqueues an CachedResourceEndpointSlice.
-func (c *controller) enqueueCachedResourceEndpointSlice(endpoints *cachev1alpha1.CachedResourceEndpointSlice, logger logr.Logger) {
+func (c *controller) enqueueCachedResourceEndpointSlice(endpoints *cachev1alpha1.CachedResourceEndpointSlice, logger logr.Logger, logSuffix string) {
 	key, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(endpoints)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}
 
-	logger.V(4).Info("queueing CachedResourceEndpointSlice")
+	logger.V(4).Info("queueing CachedResourceEndpointSlice%s", logSuffix)
 	c.queue.Add(key)
 }
 
@@ -173,8 +192,7 @@ func (c *controller) enqueueCachedResourceEndpointSliceByCachedResource(cachedRe
 	}
 
 	for i := range slices {
-		logger.V(4).Info("queueing CachedResourceEndpointSlice because of CachedResource")
-		c.enqueueCachedResourceEndpointSlice(slices[i], logger)
+		c.enqueueCachedResourceEndpointSlice(slices[i], logger, " because of CachedResource")
 	}
 }
 
