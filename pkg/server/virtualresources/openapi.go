@@ -20,18 +20,23 @@ import (
 	"k8s.io/kube-openapi/pkg/spec3"
 )
 
-func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]cached.Value[*spec3.OpenAPI], error) {
-	return func(ctx context.Context) (map[string]cached.Value[*spec3.OpenAPI], error) {
+// Returns map of VW URL -> Group path -> cached value for OpenAPI spec.
+// The (VW URL, Group path) tuple is used as a key for the OpenAPI service.
+func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]map[string]cached.Value[*spec3.OpenAPI], error) {
+	return func(ctx context.Context) (map[string]map[string]cached.Value[*spec3.OpenAPI], error) {
 		cluster, err := genericapirequest.ClusterNameFrom(ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		log := klog.FromContext(ctx).WithName("virtualresource-openapiv3-getter").WithValues("cluster", cluster)
+		log.Info("hellooooo")
 
 		trackedResourcesForEndpoint := func() map[string]map[schema.GroupVersion]sets.Set[string] {
 			s.lock.RLock()
 			defer s.lock.RUnlock()
+
+			fmt.Printf("\n<><> trackedResourcesForEndpoint len(resourcesForGroupVersion)=%d len(endpointsForGroupResource)=%d <>\n", len(s.resourcesForGroupVersion[cluster]), len(s.endpointsForGroupResource[cluster]))
 
 			resourcesForGroupVersion := s.resourcesForGroupVersion[cluster]
 			if len(resourcesForGroupVersion) == 0 {
@@ -42,6 +47,7 @@ func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]cac
 				return nil
 			}
 
+			// VW URL -> GroupVersion -> Set[ResourceName]
 			m := make(map[string]map[schema.GroupVersion]sets.Set[string])
 
 			for gr, endpoint := range endpointsForGroupResource {
@@ -49,20 +55,24 @@ func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]cac
 					m[endpoint] = make(map[schema.GroupVersion]sets.Set[string])
 				}
 
-				resourcesForGroupVersion := make(map[schema.GroupVersion]sets.Set[string])
+				foundResources := make(map[schema.GroupVersion]sets.Set[string])
+
 				for gv, resources := range resourcesForGroupVersion {
 					if resources.Has(gr.Resource) {
-						resourcesForGroupVersion[gv].Insert(gr.Resource)
+						if _, ok := foundResources[gv]; !ok {
+							foundResources[gv] = sets.New[string]()
+						}
+						foundResources[gv].Insert(gr.Resource)
 					}
 				}
 
-				m[endpoint] = resourcesForGroupVersion
+				m[endpoint] = foundResources
 			}
 
 			return m
 		}()
 
-		specs := make(map[string]cached.Value[*spec3.OpenAPI])
+		specsByEndpoint := make(map[string]map[string]cached.Value[*spec3.OpenAPI])
 
 		for vwURL, resourcesForGroupVersions := range trackedResourcesForEndpoint {
 			log := log.WithValues("url", vwURL)
@@ -72,8 +82,9 @@ func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]cac
 				return nil, fmt.Errorf("failed to create discovery client for virtual workspace %s: %v", vwURL, err)
 			}
 
+			specsByEndpoint[vwURL] = make(map[string]cached.Value[*spec3.OpenAPI])
 			for groupVersion, resources := range resourcesForGroupVersions {
-				specs[fmt.Sprintf("apis/%s", groupVersion)] = cached.Once(cached.Func[*spec3.OpenAPI](
+				specsByEndpoint[vwURL][fmt.Sprintf("apis/%s", groupVersion)] = cached.Once(cached.Func[*spec3.OpenAPI](
 					func() (*spec3.OpenAPI, string, error) {
 						log := log.WithValues("groupVersion", groupVersion)
 
@@ -94,7 +105,7 @@ func (s *Server) OpenAPIv3SpecGetter() func(ctx context.Context) (map[string]cac
 			}
 		}
 
-		return nil, nil
+		return specsByEndpoint, nil
 	}
 }
 

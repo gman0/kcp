@@ -74,6 +74,7 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		handlers:                    handlers,
 		groups:                      make(map[logicalcluster.Name]map[string]metav1.APIGroup),
 		apiResourcesForGroupVersion: make(map[logicalcluster.Name]map[schema.GroupVersion][]metav1.APIResource),
+		resourcesForGroupVersion:    make(map[logicalcluster.Name]map[schema.GroupVersion]sets.Set[string]),
 		endpointsForGroupResource:   make(map[logicalcluster.Name]map[schema.GroupResource]string),
 	}
 
@@ -212,16 +213,24 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 	if _, ok := s.apiResourcesForGroupVersion[cluster]; !ok {
 		s.apiResourcesForGroupVersion[cluster] = make(map[schema.GroupVersion][]metav1.APIResource)
 	}
-	scopedResourceInfos := s.apiResourcesForGroupVersion[cluster]
+	if _, ok := s.resourcesForGroupVersion[cluster]; !ok {
+		s.resourcesForGroupVersion[cluster] = make(map[schema.GroupVersion]sets.Set[string])
+	}
+	scopedApiResources := s.apiResourcesForGroupVersion[cluster]
+	scopedResources := s.resourcesForGroupVersion[cluster]
 	for _, res := range apiResources {
 		gv := schema.GroupVersion{
 			Group:   res.Group,
 			Version: res.Version,
 		}
-		scopedResourceInfos[gv] = append(scopedResourceInfos[gv], res)
+		scopedApiResources[gv] = append(scopedApiResources[gv], res)
+		if _, ok := scopedResources[gv]; !ok {
+			scopedResources[gv] = sets.New[string]()
+		}
+		scopedResources[gv].Insert(res.Name)
 	}
 
-	fmt.Printf("\n\nYYYY scopedResourceInfos=%#v s.resourceInfos=%#v \n\n\n", scopedResourceInfos, s.apiResourcesForGroupVersion)
+	fmt.Printf("\n\nYYYY scopedResourceInfos=%#v s.resourceInfos=%#v \n\n\n", scopedApiResources, s.apiResourcesForGroupVersion)
 
 	// Store the vw url.
 

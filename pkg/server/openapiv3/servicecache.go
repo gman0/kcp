@@ -29,6 +29,7 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"github.com/go-logr/logr"
 
+	"github.com/kcp-dev/logicalcluster/v3"
 	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder"
@@ -46,8 +47,6 @@ import (
 	"k8s.io/kube-openapi/pkg/handler3"
 	"k8s.io/kube-openapi/pkg/spec3"
 	"k8s.io/utils/lru"
-
-	"github.com/kcp-dev/logicalcluster/v3"
 )
 
 const (
@@ -86,7 +85,7 @@ type ServiceCache struct {
 	staticSpecs map[string]cached.Value[*spec3.OpenAPI]
 }
 
-type SpecsGetter func(ctx context.Context) (map[string]cached.Value[*spec3.OpenAPI], error)
+type SpecsGetter func(ctx context.Context) (map[string]map[string]cached.Value[*spec3.OpenAPI], error)
 
 func NewServiceCache(config *common.OpenAPIV3Config, crdLister kcp.ClusterAwareCRDClusterLister, crdSpecGetter CRDSpecGetter, serviceCacheSize int) *ServiceCache {
 	return &ServiceCache{
@@ -142,8 +141,9 @@ func (c *ServiceCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	log := klog.FromContext(ctx).WithValues("cluster", clusterName, "path", r.URL.Path)
 
+	var vrSpecs map[string]map[string]cached.Value[*spec3.OpenAPI]
 	if c.vrSpecsGetter != nil {
-		vrSpecs, err := c.vrSpecsGetter(ctx)
+		vrSpecs, err = c.vrSpecsGetter(ctx)
 		fmt.Printf("<<OPENAPIv3>> vrSpecs=%#v err=%v <>\n", vrSpecs, err)
 	} else {
 		fmt.Printf("<<OPENAPIv3>> vrSpecsGetter is nil <>\n")
@@ -173,7 +173,7 @@ func (c *ServiceCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// get the OpenAPI service from cache or create a new one
-	key, err := apiConfigurationKey(orderedCRDs, crdSpecs)
+	key, err := apiConfigurationKey(orderedCRDs, crdSpecs, vrSpecs)
 	if err != nil {
 		responsewriters.InternalError(w, r, err)
 		return
@@ -193,7 +193,7 @@ func (c *ServiceCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// add static and dynamic APIs
-		addSpecs(service, c.staticSpecs, orderedCRDs, crdSpecs, log)
+		addSpecs(service, c.staticSpecs, vrSpecs, orderedCRDs, crdSpecs, log)
 
 		// remember for next time
 		c.services.Add(key, m)
@@ -206,12 +206,20 @@ func (c *ServiceCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	service.ServeHTTP(w, r)
 }
 
-func addSpecs(service *handler3.OpenAPIService, static map[string]cached.Value[*spec3.OpenAPI], crds []*apiextensionsv1.CustomResourceDefinition, crdSpecs []map[string]cached.Value[*spec3.OpenAPI], log logr.Logger) {
+func addSpecs(service *handler3.OpenAPIService, static map[string]cached.Value[*spec3.OpenAPI], vrSpecs map[string]map[string]cached.Value[*spec3.OpenAPI], crds []*apiextensionsv1.CustomResourceDefinition, crdSpecs []map[string]cached.Value[*spec3.OpenAPI], log logr.Logger) {
 	// start with static specs
 	byGroupVersionSpecs := make(map[string][]cached.Value[*spec3.OpenAPI])
 	for gvPath, spec := range static {
 		fmt.Printf("\n<> XXXXX gvPath=%s XXX\n\n", gvPath)
 		byGroupVersionSpecs[gvPath] = []cached.Value[*spec3.OpenAPI]{spec}
+	}
+
+	// add virtual resource specs
+	for _, gvPathSpec := range vrSpecs {
+		for gvPath, spec := range gvPathSpec {
+			fmt.Printf("\n<> XXXXX adding vrSpec gvPath=%s XXX\n\n", gvPath)
+			byGroupVersionSpecs[gvPath] = []cached.Value[*spec3.OpenAPI]{spec}
+		}
 	}
 
 	// add dynamic specs
@@ -256,10 +264,10 @@ func addSpecs(service *handler3.OpenAPIService, static map[string]cached.Value[*
 	}
 }
 
-func apiConfigurationKey(orderedCRDs []*apiextensionsv1.CustomResourceDefinition, specs []map[string]cached.Value[*spec3.OpenAPI]) (string, error) {
+func apiConfigurationKey(orderedCRDs []*apiextensionsv1.CustomResourceDefinition, crdSpecs []map[string]cached.Value[*spec3.OpenAPI], vrSpecs map[string]map[string]cached.Value[*spec3.OpenAPI]) (string, error) {
 	var buf bytes.Buffer
 	for i, crd := range orderedCRDs {
-		spec := specs[i]
+		spec := crdSpecs[i]
 		if !apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Established) {
 			continue
 		}
@@ -287,6 +295,30 @@ func apiConfigurationKey(orderedCRDs []*apiextensionsv1.CustomResourceDefinition
 
 		buf.WriteRune(';')
 	}
+	for vwURL, gvPathSpec := range vrSpecs {
+		buf.WriteString(vwURL)
+		buf.WriteRune(':')
+		firstGVPath := true
+		for gvPath, spec := range gvPathSpec {
+			if !firstGVPath {
+				buf.WriteByte(',')
+			}
+			_, etag, err := spec.Get()
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString(gvPath)
+			buf.WriteRune(':')
+			buf.WriteString(etag)
+
+			firstGVPath = false
+		}
+
+		buf.WriteRune(';')
+	}
+
+	key := buf.String()
+	fmt.Printf("\nXXXXX key=%q <>\n", key)
 
 	return buf.String(), nil
 }
