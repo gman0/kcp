@@ -40,14 +40,11 @@ import (
 	"github.com/kcp-dev/kcp/pkg/reconciler/committer"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	"github.com/kcp-dev/kcp/sdk/apis/core"
-	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	topologyv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/topology/v1alpha1"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	cachev1alpha1client "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/typed/cache/v1alpha1"
 	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
 	cachev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/cache/v1alpha1"
-	corev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/core/v1alpha1"
 )
 
 const (
@@ -59,8 +56,6 @@ func NewController(
 	shardName string,
 	cachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer,
 	cachedResourceClusterInformer cachev1alpha1informers.CachedResourceClusterInformer,
-	globalShardClusterInformer corev1alpha1informers.ShardClusterInformer,
-	lcClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
 	apiBindingClusterInformer apisv1alpha2informers.APIBindingClusterInformer,
 	kcpClusterClient kcpclientset.ClusterInterface,
 ) (*controller, error) {
@@ -89,12 +84,6 @@ func NewController(
 		getCachedResource: func(clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResource, error) {
 			return cachedResourceClusterInformer.Cluster(clusterName).Lister().Get(name)
 		},
-		getMyShard: func() (*corev1alpha1.Shard, error) {
-			return globalShardClusterInformer.Cluster(core.RootCluster).Lister().Get(shardName)
-		},
-		getLogicalCluster: func(clusterName logicalcluster.Name) (*corev1alpha1.LogicalCluster, error) {
-			return lcClusterInformer.Cluster(clusterName).Lister().Get("cluster")
-		},
 		getAPIBinding: func(clusterName logicalcluster.Name, bindingName string) (*apisv1alpha2.APIBinding, error) {
 			return apiBindingClusterInformer.Cluster(clusterName).Lister().Get(bindingName)
 		},
@@ -106,13 +95,13 @@ func NewController(
 
 	_, _ = cachedResourceEndpointSliceClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](obj), logger)
+			c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](obj), logger, "")
 		},
 		UpdateFunc: func(_, newObj interface{}) {
-			c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](newObj), logger)
+			c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](newObj), logger, "")
 		},
 		DeleteFunc: func(obj interface{}) {
-			c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](obj), logger)
+			c.enqueueCachedResourceEndpointSlice(objOrTombstone[*cachev1alpha1.CachedResourceEndpointSlice](obj), logger, "")
 		},
 	})
 

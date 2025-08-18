@@ -3301,6 +3301,13 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceReference(ref common.Reference
 				Description: "CachedResourceReference is a reference to a CachedResource.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
+					"path": {
+						SchemaProps: spec.SchemaProps{
+							Description: "path is a logical cluster path where the CachedResource is defined. If the path is unset, the logical cluster of the object holding the reference is used.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"name": {
 						SchemaProps: spec.SchemaProps{
 							Description: "name is the name of the CachedResource the reference points to.",

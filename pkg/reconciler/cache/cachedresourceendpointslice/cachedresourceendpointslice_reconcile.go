@@ -18,22 +18,16 @@ package cachedresourceendpointslice
 
 import (
 	"context"
-	"net/url"
-	"path"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	virtualworkspacesoptions "github.com/kcp-dev/kcp/cmd/virtual-workspaces/options"
-	"github.com/kcp-dev/kcp/pkg/logging"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	conditionsv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
 	"github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/util/conditions"
 	topologyv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/topology/v1alpha1"
@@ -88,8 +82,6 @@ type endpointsReconciler struct {
 }
 
 func (r *endpointsReconciler) reconcile(ctx context.Context, endpoints *cachev1alpha1.CachedResourceEndpointSlice) (reconcileStatus, error) {
-	logger := klog.FromContext(ctx)
-
 	_, err := r.getCachedResource(logicalcluster.From(endpoints), endpoints.Spec.CachedResource.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -173,25 +165,4 @@ func (r *endpointsReconciler) reconcile(ctx context.Context, endpoints *cachev1a
 	endpoints.Status.ShardSelector = selector.String()
 
 	return reconcileStatusStopAndRequeue, err
-}
-
-func addURLIfNotPresent(endpoints []cachev1alpha1.CachedResourceEndpoint, urlToAdd string) []cachev1alpha1.CachedResourceEndpoint {
-	for _, endpoint := range endpoints {
-		if endpoint.URL == urlToAdd {
-			// Already in endpoints slice, nothing to do.
-			return endpoints
-		}
-	}
-	return append(endpoints, cachev1alpha1.CachedResourceEndpoint{
-		URL: urlToAdd,
-	})
-}
-
-func removeURLIfPresent(endpoints []cachev1alpha1.CachedResourceEndpoint, urlToRemove string) []cachev1alpha1.CachedResourceEndpoint {
-	for i, endpoint := range endpoints {
-		if endpoint.URL == urlToRemove {
-			return append(endpoints[:i], endpoints[i+1:]...)
-		}
-	}
-	return endpoints
 }
