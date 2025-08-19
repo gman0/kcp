@@ -25,7 +25,6 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -91,8 +90,6 @@ func NewController(
 			return obj, err
 		},
 		getAPIExportByCachedResource: func(cr *cachev1alpha1.CachedResource) (*apisv1alpha2.APIExport, error) {
-			allLcs, err := localLogicalClusterInformer.Cluster(logicalcluster.From(cr)).Lister().List(labels.Everything())
-			fmt.Printf("\n\n ### getAPIExportByCachedResource allLcs=%#v, err=%v #\n\n", allLcs, err)
 			lc, err := localLogicalClusterInformer.Cluster(logicalcluster.From(cr)).Lister().Get("cluster")
 			if err != nil {
 				return nil, err

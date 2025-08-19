@@ -155,7 +155,7 @@ func (r *endpointsReconciler) updateEndpoints(ctx context.Context,
 		}
 	}
 
-	shardURL, err := url.Parse(shard.Spec.VirtualWorkspaceURL)
+	vwURL, err := url.Parse(shard.Spec.VirtualWorkspaceURL)
 	if err != nil {
 		logger = logging.WithObject(logger, shard)
 		logger.Error(
@@ -167,22 +167,23 @@ func (r *endpointsReconciler) updateEndpoints(ctx context.Context,
 
 	// Formats the Replication VW URL like so:
 	//   <Shard URL>/services/replication/<CachedResource cluster>/<CachedResource name>
-	vwURL := path.Join(
-		shardURL.Path,
+	vwURL.Path = path.Join(
+		vwURL.Path,
 		virtualworkspacesoptions.DefaultRootPathPrefix,
 		replicationvw.VirtualWorkspaceName,
 		logicalcluster.From(cr).String(),
 		cr.Name,
 	)
+	completeVWAddr := vwURL.String()
 
 	for _, u := range slice.Status.CachedResourceEndpoints {
-		if u.URL == vwURL {
+		if u.URL == completeVWAddr {
 			// VW URL already in the endpoint slice, nothing to do.
 			return nil, nil
 		}
 	}
 
 	return &result{
-		url: vwURL,
+		url: completeVWAddr,
 	}, nil
 }

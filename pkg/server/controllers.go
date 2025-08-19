@@ -736,7 +736,7 @@ func (s *Server) installLogicalCluster(ctx context.Context, config *rest.Config)
 	})
 }
 
-func (s *Server) installAPIBindingController(ctx context.Context, config *rest.Config, ddsif *informer.DiscoveringDynamicSharedInformerFactory) error {
+func (s *Server) installAPIBindingController(ctx context.Context, config *rest.Config, cacheConfig *rest.Config, ddsif *informer.DiscoveringDynamicSharedInformerFactory) error {
 	// NOTE: keep `config` unaltered so there isn't cross-use between controllers installed here.
 	apiBindingConfig := rest.CopyConfig(config)
 	apiBindingConfig = rest.AddUserAgent(apiBindingConfig, apibinding.ControllerName)
@@ -751,7 +751,7 @@ func (s *Server) installAPIBindingController(ctx context.Context, config *rest.C
 		return err
 	}
 
-	dynamicClusterClient, err := kcpdynamic.NewForConfig(apiBindingConfig)
+	cacheDynamicClusterClient, err := kcpdynamic.NewForConfig(cacheDynamicConfig) // TODO <---
 	if err != nil {
 		return err
 	}
@@ -759,7 +759,7 @@ func (s *Server) installAPIBindingController(ctx context.Context, config *rest.C
 	c, err := apibinding.NewController(
 		crdClusterClient,
 		kcpClusterClient,
-		dynamicClusterClient,
+		cacheDynamicClusterClient,
 		s.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
 		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 		s.KcpSharedInformerFactory.Apis().V1alpha1().APIResourceSchemas(),

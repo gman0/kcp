@@ -388,10 +388,7 @@ func (s *Server) installControllers(ctx context.Context, controllerConfig *rest.
 		if err := s.installCachedResourceEndpointSliceController(ctx, controllerConfig); err != nil {
 			return err
 		}
-	}
-
-	if s.Options.Controllers.EnableAll || enabled.Has("cachedresourcendpointsliceurls") {
-		if err := s.installCachedResourceEndpointSliceURLsController(ctx, controllerConfig); err != nil {
+		if err := s.installCachedResourceEndpointSliceURLsController(ctx, s.ExternalLogicalClusterAdminConfig); err != nil {
 			return err
 		}
 	}
