@@ -255,7 +255,7 @@ func splitPath(path string) []string {
 func (s *Server) newApisHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pathParts := splitPath(r.URL.Path)
-		fmt.Printf("\nAAAA path=%v s.grEndpointMap=%#v ; s.groupInfos=%#v ; s.resourceInfos=%#v\n", pathParts, s.endpointsForGroupResource, s.groups, s.apiResourcesForGroupVersion)
+		// fmt.Printf("\nAAAA path=%v s.grEndpointMap=%#v ; s.groupInfos=%#v ; s.resourceInfos=%#v\n", pathParts, s.endpointsForGroupResource, s.groups, s.apiResourcesForGroupVersion)
 		switch len(pathParts) {
 		case 3:
 			s.handleAPIResourceList(w, r)
@@ -280,7 +280,6 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 
 	cluster := genericapirequest.ClusterFrom(ctx)
 	if cluster == nil {
-		fmt.Printf("\nAAAA path=%s handleAPIResourceList 1\n", r.URL.Path)
 		warning.AddWarning(ctx, "", "cluster missing in context")
 		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 		return
@@ -289,7 +288,7 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 	reqInfo, hasReqInfo := genericapirequest.RequestInfoFrom(ctx)
 	if !hasReqInfo {
 		warning.AddWarning(ctx, "", "request info missing in context")
-		fmt.Printf("\nAAAA path=%s handleResource 2\n", r.URL.Path)
+		// fmt.Printf("\nAAAA path=%s handleResource 2\n", r.URL.Path)
 		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 		return
 	}
@@ -309,10 +308,7 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("\nAAAA path=%s handleAPIResourceList adding res=%#v\n", r.URL.Path, res)
 			knownVersionedResources = append(knownVersionedResources, *res.DeepCopy())
 		}
-	} else {
-		fmt.Printf("\nAAAA path=%s handleAPIResourceList 3\n", r.URL.Path)
 	}
-	fmt.Printf("\nAAAA path=%s handleAPIResourceList 4\n", r.URL.Path)
 	s.lock.RUnlock()
 
 	if len(knownVersionedResources) == 0 {

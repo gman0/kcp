@@ -247,11 +247,6 @@ func InstallIndexers(
 			Local:  localKcpInformers.Cache().V1alpha1().CachedResources().Informer(),
 			Global: globalKcpInformers.Cache().V1alpha1().CachedResources().Informer(),
 		},
-		corev1alpha1.SchemeGroupVersion.WithResource("shards"): {
-			Kind:   "Shard",
-			Local:  localKcpInformers.Core().V1alpha1().Shards().Informer(),
-			Global: globalKcpInformers.Core().V1alpha1().Shards().Informer(),
-		},
 		cachev1alpha1.SchemeGroupVersion.WithResource("cachedresourceendpointslices"): {
 			Kind:   "CachedResourceEndpointSlice",
 			Local:  localKcpInformers.Cache().V1alpha1().CachedResourceEndpointSlices().Informer(),

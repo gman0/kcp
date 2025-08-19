@@ -473,8 +473,11 @@ func (s *Server) Run(ctx context.Context) error {
 		go s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().Run(hookContext.Done())
 		go s.KcpSharedInformerFactory.Apis().V1alpha1().APIExportEndpointSlices().Informer().Run(hookContext.Done())
 		go s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().Run(hookContext.Done())
+		go s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResources().Informer().Run(hookContext.Done())
+		go s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices().Informer().Run(hookContext.Done())
 		go s.KcpSharedInformerFactory.Core().V1alpha1().LogicalClusters().Informer().Run(hookContext.Done())
 		go s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResources().Informer().Run(hookContext.Done())
+		go s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices().Informer().Run(hookContext.Done())
 
 		logger.Info("starting APIExport, APIBinding and LogicalCluster informers")
 		if err := wait.PollUntilContextCancel(hookCtx, time.Millisecond*100, true, func(ctx context.Context) (bool, error) {
@@ -564,8 +567,16 @@ func (s *Server) Run(ctx context.Context) error {
 		s.KcpSharedInformerFactory.Start(hookCtx.Done())
 		s.CacheKcpSharedInformerFactory.Start(hookCtx.Done())
 
-		s.KcpSharedInformerFactory.WaitForCacheSync(hookCtx.Done())
-		s.CacheKcpSharedInformerFactory.WaitForCacheSync(hookCtx.Done())
+		localSynced := s.KcpSharedInformerFactory.WaitForCacheSync(hookCtx.Done())
+		for k, v := range localSynced {
+			fmt.Printf("!!! SYNCED LOCAL %s: %v\n", k, v)
+		}
+		fmt.Printf("!!! SYNCED ALL LOCAL\n")
+		globalSynced := s.CacheKcpSharedInformerFactory.WaitForCacheSync(hookCtx.Done())
+		for k, v := range globalSynced {
+			fmt.Printf("!!! SYNCED GLOBAL %s: %v\n", k, v)
+		}
+		fmt.Printf("!!! SYNCED ALL GLOBAL\n")
 
 		// create or update shard
 		shard := &corev1alpha1.Shard{

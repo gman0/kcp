@@ -149,7 +149,7 @@ func (r *endpointsReconciler) updateEndpoints(ctx context.Context,
 				remove: true,
 			}, nil
 		} else {
-			// We not in a partition, but we have consumers.
+			// We are not in a partition, but we have consumers.
 			// Do nothing, as we are on the way to be orphaned.
 			return nil, nil
 		}

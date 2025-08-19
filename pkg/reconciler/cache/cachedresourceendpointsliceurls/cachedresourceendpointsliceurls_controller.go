@@ -25,6 +25,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -65,7 +66,7 @@ func NewController(
 	globalShardClusterInformer corev1alpha1informers.ShardClusterInformer,
 	globalAPIExportClusterInformer apisv1alpha2informers.APIExportClusterInformer,
 	globalCachedResourcelusterInformer cachev1alpha1informers.CachedResourceClusterInformer,
-	globalLogicalClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
+	localLogicalClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
 	clusterClient kcpclientset.ClusterInterface,
 ) (*controller, error) {
 	c := &controller{
@@ -90,7 +91,9 @@ func NewController(
 			return obj, err
 		},
 		getAPIExportByCachedResource: func(cr *cachev1alpha1.CachedResource) (*apisv1alpha2.APIExport, error) {
-			lc, err := globalLogicalClusterInformer.Cluster(logicalcluster.From(cr)).Lister().Get("cluster")
+			allLcs, err := localLogicalClusterInformer.Cluster(logicalcluster.From(cr)).Lister().List(labels.Everything())
+			fmt.Printf("\n\n ### getAPIExportByCachedResource allLcs=%#v, err=%v #\n\n", allLcs, err)
+			lc, err := localLogicalClusterInformer.Cluster(logicalcluster.From(cr)).Lister().Get("cluster")
 			if err != nil {
 				return nil, err
 			}
@@ -295,6 +298,24 @@ func (c *controller) process(ctx context.Context, key string) (bool, error) {
 	}
 
 	return requeue, utilerrors.NewAggregate(errs)
+}
+
+func InstallIndexers(
+	localCachedResourceClusterInformer, globalCachedResourceClusterInformer cachev1alpha1informers.CachedResourceClusterInformer,
+	localCachedResourceEndpointSliceClusterInformer, globalCachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer,
+) {
+	indexers.AddIfNotPresentOrDie(localCachedResourceClusterInformer.Informer().GetIndexer(), cache.Indexers{
+		indexers.ByLogicalClusterPathAndName: indexers.IndexByLogicalClusterPathAndName,
+	})
+	indexers.AddIfNotPresentOrDie(globalCachedResourceClusterInformer.Informer().GetIndexer(), cache.Indexers{
+		indexers.ByLogicalClusterPathAndName: indexers.IndexByLogicalClusterPathAndName,
+	})
+	indexers.AddIfNotPresentOrDie(localCachedResourceEndpointSliceClusterInformer.Informer().GetIndexer(), cache.Indexers{
+		indexers.ByLogicalClusterPathAndName: indexers.IndexByLogicalClusterPathAndName,
+	})
+	indexers.AddIfNotPresentOrDie(globalCachedResourceEndpointSliceClusterInformer.Informer().GetIndexer(), cache.Indexers{
+		indexers.ByLogicalClusterPathAndName: indexers.IndexByLogicalClusterPathAndName,
+	})
 }
 
 func objOrTombstone[T runtime.Object](obj any) T {
