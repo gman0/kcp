@@ -511,7 +511,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 				storageVersions.Insert(existingCRD.Status.StoredVersions...)
 			}
 		} else if resourceSchema.Storage.Virtual != nil {
-			virtualResourceURL, err = getVirtualResourceURL(ctx, r.dynamicClusterClient, resourceSchema.Storage.Virtual)
+			virtualResourceURL, err = getVirtualResourceURL(ctx, r.cacheDynamicClusterClient, resourceSchema.Storage.Virtual)
 			if err != nil {
 				conditions.MarkFalse(
 					apiBinding,
