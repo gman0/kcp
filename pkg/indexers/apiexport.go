@@ -38,6 +38,8 @@ const (
 	APIExportByClaimedIdentities = "APIExportByClaimedIdentities"
 	// APIExportEndpointSliceByAPIExport is the indexer name for retrieving APIExportEndpointSlices by their APIExport's Reference Path and Name.
 	APIExportEndpointSliceByAPIExport = "APIExportEndpointSliceByAPIExport"
+
+	APIExportByVirtualResources = "APIExportByVirtualResources"
 )
 
 // IndexAPIExportByIdentity is an index function that indexes an APIExport by its identity hash.
@@ -96,4 +98,32 @@ func IndexAPIExportEndpointSliceByAPIExport(obj interface{}) ([]string, error) {
 	}
 
 	return result, nil
+}
+
+func IndexAPIExportByVirtualResources(obj interface{}) ([]string, error) {
+	apiExport, ok := obj.(*apisv1alpha2.APIExport)
+	if !ok {
+		return []string{}, fmt.Errorf("obj %T is not an APIExport", obj)
+	}
+
+	virtualResources := sets.New[string]()
+	for _, res := range apiExport.Spec.Resources {
+		if res.Storage.Virtual == nil {
+			continue
+		}
+		path := logicalcluster.NewPath(res.Storage.Virtual.Path)
+		if path.Empty() {
+			path = logicalcluster.From(apiExport).Path()
+		}
+		key := APIExportByVirtualResourcesKey(path, res.Storage.Virtual.Name)
+		virtualResources.Insert(key)
+	}
+
+	return sets.List[string](virtualResources), nil
+}
+
+func APIExportByVirtualResourcesKey(path logicalcluster.Path, name string) string {
+	key := path.Join(name).String()
+	fmt.Printf("\n ### APIExportByVirtualResourcesKey key=%s ###\n", key)
+	return key
 }

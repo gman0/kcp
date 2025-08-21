@@ -1926,6 +1926,7 @@ func (s *Server) addIndexersToInformers(_ context.Context) map[schema.GroupVersi
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResources(),
 		s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices(),
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices(),
+		s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 	)
 	return replication.InstallIndexers(
 		s.KcpSharedInformerFactory,

@@ -18,15 +18,12 @@ package cachedresourceendpointsliceurls
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"path"
 
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
 
-	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	virtualworkspacesoptions "github.com/kcp-dev/kcp/cmd/virtual-workspaces/options"
@@ -39,143 +36,118 @@ import (
 	cachev1alpha1apply "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/cache/v1alpha1"
 )
 
-type slicesReconciler struct {
-	getMyShard                                  func() (*corev1alpha1.Shard, error)
-	getCachedResource                           func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error)
-	listAPIBindingsByAPIExport                  func(apiexport *apisv1alpha2.APIExport) ([]*apisv1alpha2.APIBinding, error)
-	listAPIExportsByCachedResourceEndpointSlice func(slice *cachev1alpha1.CachedResourceEndpointSlice) ([]*apisv1alpha2.APIExport, error)
-	patchCachedResourceEndpointSlice            func(ctx context.Context, cluster logicalcluster.Path, patch *cachev1alpha1apply.CachedResourceEndpointSliceApplyConfiguration) error
-	shardName                                   string
-
-	getAPIExport                   func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
-	getCachedResourceEndpointSlice func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error)
-}
-
 type result struct {
 	url    string
 	remove bool
 }
 
-func (c *controller) reconcile(ctx context.Context, binding *apisv1alpha2.APIBinding) (bool, error) {
-	return slicesReconciler{
-		getMyShard:                       c.getMyShard,
-		listAPIBindingsByAPIExport:       c.listAPIBindingsByAPIExport,
-		patchCachedResourceEndpointSlice: c.patchCachedResourceEndpointSlice,
-		shardName:                        c.shardName,
-	}.reconcile(ctx, binding)
-}
-
-func (r slicesReconciler) reconcile(ctx context.Context, binding *apisv1alpha2.APIBinding) (bool, error) {
-	exportPath := logicalcluster.NewPath(binding.Spec.Reference.Export.Path)
-	if exportPath.Empty() {
-		exportPath = logicalcluster.From(binding).Path()
-	}
-	export, err := r.getAPIExport(exportPath, binding.Spec.Reference.Export.Name)
-	if err != nil {
-		return true, err
-	}
-
-	type sliceRef struct {
-		path logicalcluster.Path
-		name string
-	}
-	var slices []sliceRef
-
-	for _, exportedResource := range export.Spec.Resources {
-		virtualResource := exportedResource.Storage.Virtual
-		if virtualResource == nil {
-			continue
-		}
-
-		apiVersion, err := schema.ParseGroupVersion(virtualResource.APIVersion)
-		if err != nil {
-			return true, fmt.Errorf("failed to parse virtual resource apiVersion %q: %v", virtualResource.APIVersion, err)
-		}
-
-		if apiVersion.Group != cachev1alpha1.SchemeGroupVersion.Group {
-			continue
-		}
-		if virtualResource.Kind != "CachedResourceEndpointSlice" {
-			continue
-		}
-
-		slicePath := logicalcluster.NewPath(virtualResource.Path)
-		if slicePath.Empty() {
-			slicePath = logicalcluster.From(export).Path()
-		}
-		slices = append(slices, sliceRef{
-			path: slicePath,
-			name: virtualResource.Name,
-		})
-	}
-
-	if len(slices) > 0 {
-		names := make([]string, len(slices))
-		for i := range slices {
-			names[i] = fmt.Sprintf("%s|%s", slices[i].path, slices[i].name)
-		}
-		fmt.Printf("\n\n ### binding %s|%s has %d CachedResourceEndpointSlices: %v #\n", logicalcluster.From(binding), binding.Name, len(names), names)
-	} else {
-		fmt.Printf("\n\n ### binding %s|%s has no CachedResourceEndpointSlices #\n")
-	}
-
-	for _, sliceRef := range slices {
-		slice, err := r.getCachedResourceEndpointSlice(sliceRef.path, sliceRef.name)
-		if err != nil {
-			return true, err
-		}
-		retry, err := endpointsReconciler{}.reconcile(ctx, slice)
-		if err != nil {
-			return retry, err
-		}
-	}
-
-	return false, nil
+func (c *controller) reconcile(ctx context.Context, slice *cachev1alpha1.CachedResourceEndpointSlice) (bool, error) {
+	return endpointsReconciler{
+		listAPIExportsByCachedResourceEndpointSlice: c.listAPIExportsByCachedResourceEndpointSlice,
+		listAPIBindingsByAPIExports:                 c.listAPIBindingsByAPIExports,
+		getMyShard:                                  c.getMyShard,
+		getCachedResource:                           c.getCachedResource,
+		patchAPIExportEndpointSlice:                 c.patchAPIExportEndpointSlice,
+	}.reconcile(ctx, slice)
 }
 
 type endpointsReconciler struct {
+	listAPIExportsByCachedResourceEndpointSlice func(slice *cachev1alpha1.CachedResourceEndpointSlice) ([]*apisv1alpha2.APIExport, error)
+	listAPIBindingsByAPIExports                 func(exports []*apisv1alpha2.APIExport) ([]*apisv1alpha2.APIBinding, error)
+	getMyShard                                  func() (*corev1alpha1.Shard, error)
+	getCachedResource                           func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error)
+	patchAPIExportEndpointSlice                 func(ctx context.Context, cluster logicalcluster.Path, patch *cachev1alpha1apply.CachedResourceEndpointSliceApplyConfiguration) error
 }
 
 func (r endpointsReconciler) reconcile(ctx context.Context, slice *cachev1alpha1.CachedResourceEndpointSlice) (bool, error) {
+	for _, condition := range slice.Status.Conditions {
+		if !conditions.IsTrue(slice, condition.Type) {
+			return false, nil
+		}
+	}
 
+	rs, err := r.updateEndpoints(ctx, slice)
+	if err != nil {
+		return true, err
+	}
+	if rs == nil {
+		// No change, nothing to do.
+		return false, nil
+	}
+
+	// Patch the object
+	patch := cachev1alpha1apply.CachedResourceEndpointSlice(slice.Name)
+	if rs.remove {
+		patch.WithStatus(cachev1alpha1apply.CachedResourceEndpointSliceStatus())
+	} else {
+		patch.WithStatus(cachev1alpha1apply.CachedResourceEndpointSliceStatus().
+			WithCachedResourceEndpoints(cachev1alpha1apply.CachedResourceEndpoint().WithURL(rs.url)))
+	}
+	cluster := logicalcluster.From(slice)
+	err = r.patchAPIExportEndpointSlice(ctx, cluster.Path(), patch)
+	if err != nil {
+		return true, err
+	}
+	return false, nil
 }
 
-func (r *endpointsReconciler) updateEndpoints(ctx context.Context,
-	slice *cachev1alpha1.CachedResourceEndpointSlice,
-	bindings []*apisv1alpha2.APIBinding,
-	shard *corev1alpha1.Shard,
-	selector labels.Selector,
-) (*result, error) {
+func (r *endpointsReconciler) updateEndpoints(ctx context.Context, slice *cachev1alpha1.CachedResourceEndpointSlice) (*result, error) {
 	logger := klog.FromContext(ctx)
-	if shard.Spec.VirtualWorkspaceURL == "" {
+
+	thisShard, err := r.getMyShard()
+	if err != nil {
+		return nil, err
+	}
+
+	if thisShard.Spec.VirtualWorkspaceURL == "" {
+		// We don't have VW URLs, bail out.
 		return nil, nil
 	}
 
-	if selector.Matches(labels.Set(shard.Labels)) { // We are in a partition.
-		if len(bindings) == 0 { // We have no consumers.
-			return &result{
-				remove: true,
-			}, nil
-		}
-	} else { // We are not in a partition.
-		if len(bindings) == 0 { // We have no consumers, we can remove the endpoint.
-			return &result{
-				remove: true,
-			}, nil
-		} else {
-			// We are not in a partition, but we have consumers.
-			// Do nothing, as we are on the way to be orphaned.
-			return nil, nil
-		}
+	exports, err := r.listAPIExportsByCachedResourceEndpointSlice(slice)
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := r.listAPIBindingsByAPIExports(exports)
+	if err != nil {
+		return nil, err
 	}
 
-	vwURL, err := url.Parse(shard.Spec.VirtualWorkspaceURL)
+	if len(bindings) == 0 {
+		// We don't have any consumers, so clean up all endpoints.
+		return &result{
+			remove: true,
+		}, nil
+	}
+
+	shardSelector, err := labels.Parse(slice.Status.ShardSelector)
 	if err != nil {
-		logger = logging.WithObject(logger, shard)
+		return nil, err
+	}
+	if !shardSelector.Matches(labels.Set(thisShard.Labels)) {
+		// We don't belong in the partition, so do nothing.
+		return nil, nil
+	}
+
+	crPath := logicalcluster.NewPath(slice.Spec.CachedResource.Path)
+	if crPath.Empty() {
+		crPath = logicalcluster.From(slice).Path()
+	}
+	cr, err := r.getCachedResource(crPath, slice.Spec.CachedResource.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Construct the Replication VW URL and try to add it to the slice.
+
+	vwURL, err := url.Parse(thisShard.Spec.VirtualWorkspaceURL)
+	if err != nil {
+		logger = logging.WithObject(logger, thisShard)
 		logger.Error(
 			err, "error parsing shard.spec.virtualWorkspaceURL",
-			"VirtualWorkspaceURL", shard.Spec.VirtualWorkspaceURL,
+			"VirtualWorkspaceURL", thisShard.Spec.VirtualWorkspaceURL,
 		)
+		// Can't do much more...
 		return nil, nil
 	}
 

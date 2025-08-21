@@ -37,7 +37,6 @@ import (
 
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/logging"
-	apibindingsmap "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresourceendpointslice/apibindings"
 	"github.com/kcp-dev/kcp/pkg/reconciler/committer"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
@@ -142,8 +141,6 @@ type controller struct {
 
 	cachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer
 	commit                                     CommitFunc
-
-	apibindingsMapController *apibindingsmap.Controller
 }
 
 func (c *controller) enqueuePartition(obj *topologyv1alpha1.Partition, logger logr.Logger) {
