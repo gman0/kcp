@@ -618,7 +618,6 @@ func autoConvert_v1alpha2_BoundAPIResource_To_v1alpha1_BoundAPIResource(in *Boun
 	if err := Convert_v1alpha2_BoundAPIResourceSchema_To_v1alpha1_BoundAPIResourceSchema(&in.Schema, &out.Schema, s); err != nil {
 		return err
 	}
-	// WARNING: in.VirtualResourceURL requires manual conversion: does not exist in peer-type
 	out.StorageVersions = *(*[]string)(unsafe.Pointer(&in.StorageVersions))
 	return nil
 }

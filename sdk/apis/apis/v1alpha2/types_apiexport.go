@@ -194,12 +194,12 @@ type ResourceSchemaStorage struct {
 type ResourceSchemaStorageCRD struct{}
 
 type ResourceSchemaStorageVirtual struct {
-	metav1.TypeMeta `json:",inline"`
+	Group    string `json:"group"`
+	Version  string `json:"version"`
+	Resource string `json:"resource"`
 
-	Name string `json:"name"`
-
-	Path string `json:"path"`
-
+	Name              string                  `json:"name"`
+	Path              string                  `json:"path"`
 	IdentitySecretRef *corev1.SecretReference `json:"identitySecretRef"`
 
 	// Resource selector TBD.

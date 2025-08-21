@@ -727,8 +727,6 @@ spec:
                         type: string
                       type: array
                       x-kubernetes-list-type: set
-                    virtualResourceURL:
-                      type: string
                   required:
                   - group
                   - resource

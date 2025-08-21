@@ -244,9 +244,6 @@ type BoundAPIResource struct {
 	// +required
 	Schema BoundAPIResourceSchema `json:"schema"`
 
-	// +optional
-	VirtualResourceURL string `json:"virtualResourceURL,omitempty"`
-
 	// storageVersions lists all versions of a resource that were ever persisted. Tracking these
 	// versions allows a migration path for stored versions in etcd. The field is mutable
 	// so a migration controller can finish a migration to another version (ensuring

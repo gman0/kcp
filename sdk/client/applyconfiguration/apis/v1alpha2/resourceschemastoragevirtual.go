@@ -19,42 +19,47 @@ limitations under the License.
 package v1alpha2
 
 import (
-	corev1 "k8s.io/api/core/v1"
-
-	v1 "github.com/kcp-dev/kcp/sdk/client/applyconfiguration/meta/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 // ResourceSchemaStorageVirtualApplyConfiguration represents a declarative configuration of the ResourceSchemaStorageVirtual type for use
 // with apply.
 type ResourceSchemaStorageVirtualApplyConfiguration struct {
-	v1.TypeMetaApplyConfiguration `json:",inline"`
-	Name                          *string                 `json:"name,omitempty"`
-	Path                          *string                 `json:"path,omitempty"`
-	IdentitySecretRef             *corev1.SecretReference `json:"identitySecretRef,omitempty"`
+	Group             *string             `json:"group,omitempty"`
+	Version           *string             `json:"version,omitempty"`
+	Resource          *string             `json:"resource,omitempty"`
+	Name              *string             `json:"name,omitempty"`
+	Path              *string             `json:"path,omitempty"`
+	IdentitySecretRef *v1.SecretReference `json:"identitySecretRef,omitempty"`
 }
 
 // ResourceSchemaStorageVirtualApplyConfiguration constructs a declarative configuration of the ResourceSchemaStorageVirtual type for use with
 // apply.
 func ResourceSchemaStorageVirtual() *ResourceSchemaStorageVirtualApplyConfiguration {
-	b := &ResourceSchemaStorageVirtualApplyConfiguration{}
-	b.WithKind("ResourceSchemaStorageVirtual")
-	b.WithAPIVersion("apis.kcp.io/v1alpha2")
+	return &ResourceSchemaStorageVirtualApplyConfiguration{}
+}
+
+// WithGroup sets the Group field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Group field is set to the value of the last call.
+func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithGroup(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
+	b.Group = &value
 	return b
 }
 
-// WithKind sets the Kind field in the declarative configuration to the given value
+// WithVersion sets the Version field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Kind field is set to the value of the last call.
-func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithKind(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
-	b.TypeMetaApplyConfiguration.Kind = &value
+// If called multiple times, the Version field is set to the value of the last call.
+func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithVersion(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
+	b.Version = &value
 	return b
 }
 
-// WithAPIVersion sets the APIVersion field in the declarative configuration to the given value
+// WithResource sets the Resource field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the APIVersion field is set to the value of the last call.
-func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithAPIVersion(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
-	b.TypeMetaApplyConfiguration.APIVersion = &value
+// If called multiple times, the Resource field is set to the value of the last call.
+func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithResource(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
+	b.Resource = &value
 	return b
 }
 
@@ -77,7 +82,7 @@ func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithPath(value string) 
 // WithIdentitySecretRef sets the IdentitySecretRef field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the IdentitySecretRef field is set to the value of the last call.
-func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithIdentitySecretRef(value corev1.SecretReference) *ResourceSchemaStorageVirtualApplyConfiguration {
+func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithIdentitySecretRef(value v1.SecretReference) *ResourceSchemaStorageVirtualApplyConfiguration {
 	b.IdentitySecretRef = &value
 	return b
 }

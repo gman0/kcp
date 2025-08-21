@@ -1833,7 +1833,12 @@ func (s *Server) installVirtualResourcesAPIBindingController(ctx context.Context
 	apiBindingClusterInfomer := s.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings()
 
 	c, err := virtualresources.NewController(
+		s.Options.Extra.ShardName,
 		apiBindingClusterInfomer,
+		s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		s.CacheDynamicClient,
 		s.VirtualResources,
 	)
 	if err != nil {
@@ -1843,7 +1848,9 @@ func (s *Server) installVirtualResourcesAPIBindingController(ctx context.Context
 		Name: virtualresources.ControllerName,
 		Wait: func(ctx context.Context, s *Server) error {
 			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
-				return apiBindingClusterInfomer.Informer().HasSynced(), nil
+				return s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards().Informer().HasSynced() &&
+					s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced() &&
+					s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced(), nil
 			})
 		},
 		Runner: func(ctx context.Context) {

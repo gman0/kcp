@@ -30,7 +30,6 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apiserver"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -386,8 +385,6 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 		// Merge any current storage versions with new ones
 		storageVersions := sets.New[string]()
 
-		virtualResourceURL := ""
-
 		if resourceSchema.Storage.CRD != nil {
 			// Try to get the bound CRD
 			existingCRD, err := r.getCRD(SystemBoundCRDsClusterName, boundCRDName(sch))
@@ -511,7 +508,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 				storageVersions.Insert(existingCRD.Status.StoredVersions...)
 			}
 		} else if resourceSchema.Storage.Virtual != nil {
-			virtualResourceURL, err = getVirtualResourceURL(ctx, r.cacheDynamicClusterClient, resourceSchema.Storage.Virtual)
+			err = checkVirtualResource(ctx, r.cacheDynamicClusterClient, resourceSchema.Storage.Virtual)
 			if err != nil {
 				conditions.MarkFalse(
 					apiBinding,
@@ -523,7 +520,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 
 				return reconcileStatusContinue, fmt.Errorf(
 					"error getting endpoint slice %s.%s %s|%s for APIBinding %s|%s, APIExport %s|%s, APIResourceSchema %s|%s: %w",
-					resourceSchema.Storage.Virtual.Kind, resourceSchema.Storage.Virtual.APIVersion,
+					resourceSchema.Storage.Virtual.Resource, resourceSchema.Storage.Virtual.Group,
 					resourceSchema.Storage.Virtual.Path, resourceSchema.Storage.Virtual.Name,
 					logicalcluster.From(apiBinding), apiBinding.Name,
 					apiExportPath, apiExport.Name,
@@ -551,8 +548,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 				UID:          string(sch.UID),
 				IdentityHash: apiExport.Status.IdentityHash,
 			},
-			VirtualResourceURL: virtualResourceURL,
-			StorageVersions:    sortedStorageVersions,
+			StorageVersions: sortedStorageVersions,
 		}
 
 		found := false
@@ -621,55 +617,13 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 	return reconcileStatusContinue, nil
 }
 
-func extractURLsFromEndpointSlice(endpointSlice *unstructured.Unstructured) ([]string, error) {
-	endpoints, found, err := unstructured.NestedSlice(endpointSlice.Object, "status", "endpoints")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get status.endpoints: %w", err)
-	}
-	if !found {
-		return nil, fmt.Errorf("status.endpoints not found")
-	}
-
-	var urls []string
-	for i, ep := range endpoints {
-		endpointMap, ok := ep.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("endpoint at index %d is not an object", i)
-		}
-
-		url, found, err := unstructured.NestedString(endpointMap, "url")
-		if err != nil {
-			return nil, fmt.Errorf("failed to get url from endpoint at index %d: %w", i, err)
-		}
-		if !found {
-			return nil, fmt.Errorf("missing url in endpoint at index %d", i)
-		}
-
-		urls = append(urls, url)
-	}
-
-	return urls, nil
-}
-
-func getVirtualResourceURL(ctx context.Context, dynamicClusterClient kcpdynamic.ClusterInterface, virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual) (string, error) {
-	gvk := schema.FromAPIVersionAndKind(virtualStorage.APIVersion, virtualStorage.Kind)
-	endpointSlice, err := dynamicClusterClient.Cluster(logicalcluster.NewPath(virtualStorage.Path)).Resource(
-		schema.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: "cachedresourceendpointslices",
-		},
-	).Get(ctx, virtualStorage.Name, metav1.GetOptions{}, "status")
-	if err != nil {
-		return "", err
-	}
-
-	endpoints, err := extractURLsFromEndpointSlice(endpointSlice)
-	if err != nil {
-		return "", err
-	}
-
-	return endpoints[0], nil
+func checkVirtualResource(ctx context.Context, dynamicClusterClient kcpdynamic.ClusterInterface, virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual) error {
+	_, err := dynamicClusterClient.Cluster(logicalcluster.NewPath(virtualStorage.Path)).Resource(schema.GroupVersionResource{
+		Group:    virtualStorage.Group,
+		Version:  virtualStorage.Version,
+		Resource: virtualStorage.Resource,
+	}).Get(ctx, virtualStorage.Name, metav1.GetOptions{}, "status")
+	return err
 }
 
 func boundCRDName(schema *apisv1alpha1.APIResourceSchema) string {

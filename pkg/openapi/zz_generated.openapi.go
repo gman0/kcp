@@ -2435,12 +2435,6 @@ func schema_sdk_apis_apis_v1alpha2_BoundAPIResource(ref common.ReferenceCallback
 							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.BoundAPIResourceSchema"),
 						},
 					},
-					"virtualResourceURL": {
-						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
-						},
-					},
 					"storageVersions": {
 						VendorExtensible: spec.VendorExtensible{
 							Extensions: spec.Extensions{
@@ -2788,18 +2782,25 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref common.Refer
 			SchemaProps: spec.SchemaProps{
 				Type: []string{"object"},
 				Properties: map[string]spec.Schema{
-					"kind": {
+					"group": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
-							Type:        []string{"string"},
-							Format:      "",
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
 						},
 					},
-					"apiVersion": {
+					"version": {
 						SchemaProps: spec.SchemaProps{
-							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
-							Type:        []string{"string"},
-							Format:      "",
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
+						},
+					},
+					"resource": {
+						SchemaProps: spec.SchemaProps{
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
 						},
 					},
 					"name": {
@@ -2822,7 +2823,7 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref common.Refer
 						},
 					},
 				},
-				Required: []string{"name", "path", "identitySecretRef"},
+				Required: []string{"group", "version", "resource", "name", "path", "identitySecretRef"},
 			},
 		},
 		Dependencies: []string{

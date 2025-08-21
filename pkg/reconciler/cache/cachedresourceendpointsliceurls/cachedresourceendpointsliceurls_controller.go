@@ -216,10 +216,8 @@ func sliceRefFromResourceSchema(resource *apisv1alpha2.ResourceSchema) *sliceRef
 	}
 
 	virt := resource.Storage.Virtual
-	gvk := virt.TypeMeta.GroupVersionKind()
-
-	if gvk.Group != cachev1alpha1.SchemeGroupVersion.Group ||
-		gvk.Kind != "CachedResourceEndpointSlice" {
+	if virt.Group != cachev1alpha1.SchemeGroupVersion.Group ||
+		virt.Resource != "cachedresourceendpointslices" {
 		return nil
 	}
 
