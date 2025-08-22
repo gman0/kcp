@@ -107,6 +107,10 @@ func IndexAPIExportByVirtualResources(obj interface{}) ([]string, error) {
 		return []string{}, fmt.Errorf("obj %T is not an APIExport", obj)
 	}
 
+	if apiExport.Name == "cowboys-cr" {
+		fmt.Printf("### IndexAPIExportByVirtualResources apiexport=%#v #\n", apiExport)
+	}
+
 	virtualResources := sets.New[string]()
 
 	clusterPath := logicalcluster.NewPath(apiExport.GetAnnotations()[core.LogicalClusterPathAnnotationKey])
@@ -125,7 +129,10 @@ func IndexAPIExportByVirtualResources(obj interface{}) ([]string, error) {
 		insertKeys(res.Storage.Virtual.Name)
 	}
 
-	fmt.Printf("### IndexAPIExportByVirtualResources:%v\n", sets.List[string](virtualResources))
+	list := sets.List[string](virtualResources)
+	if len(list) > 0 {
+		fmt.Printf("### IndexAPIExportByVirtualResources:%v\n", list)
+	}
 
-	return sets.List[string](virtualResources), nil
+	return list, nil
 }

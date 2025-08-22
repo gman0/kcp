@@ -201,6 +201,9 @@ func NewController(
 }
 
 func (c *controller) enqueueAPIBinding(obj *apisv1alpha2.APIBinding, logger logr.Logger) {
+
+	fmt.Printf("### enqueueAPIBinding %s %s|%s\n", c.shardName, logicalcluster.From(obj), obj.Name)
+
 	exportPath := logicalcluster.NewPath(obj.Spec.Reference.Export.Path)
 	if exportPath.Empty() {
 		exportPath = logicalcluster.From(obj).Path()
@@ -216,7 +219,7 @@ func (c *controller) enqueueAPIBinding(obj *apisv1alpha2.APIBinding, logger logr
 	for _, resource := range export.Spec.Resources {
 		if resource.Storage.Virtual == nil ||
 			resource.Storage.Virtual.Group != cachev1alpha1.SchemeGroupVersion.Group ||
-			resource.Storage.Virtual.Resource != "cachedresourceendpointslice" {
+			resource.Storage.Virtual.Resource != "cachedresourceendpointslices" {
 			logger.V(4).Info("skipping APIBinding its referenced APIExport does not export CachedResourceEndpointSlice virtual resources")
 			continue
 		}

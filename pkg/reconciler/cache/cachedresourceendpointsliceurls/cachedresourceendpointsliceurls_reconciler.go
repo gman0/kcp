@@ -130,7 +130,6 @@ func (r *endpointsReconciler) updateEndpoints(ctx context.Context, slice *cachev
 
 	if len(bindings) == 0 {
 		fmt.Println("### endpointsReconciler.updateEndpoints 6")
-		return nil, fmt.Errorf("TODO")
 		// We don't have any consumers, so clean up all endpoints.
 		return &result{
 			remove: true,
