@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/klog/v2"
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
+	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	"github.com/kcp-dev/kcp/pkg/indexers"
@@ -163,14 +163,29 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	return true
 }
 
-func getEndpointSliceURLs(ctx context.Context, dynamicClusterClient kcpdynamic.ClusterInterface, virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual) ([]string, error) {
-	endpointSlice, err := dynamicClusterClient.Cluster(logicalcluster.NewPath(virtualStorage.Path)).Resource(schema.GroupVersionResource{
+func (c *Controller) getEndpointSliceURLs(ctx context.Context, cluster logicalcluster.Name, virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual) ([]string, error) {
+	list, err := c.dynamicClusterClient.Cluster(logicalcluster.NewPath(cluster.String())).Resource(schema.GroupVersionResource{
 		Group:    virtualStorage.Group,
 		Version:  virtualStorage.Version,
 		Resource: virtualStorage.Resource,
-	}).Get(ctx, virtualStorage.Name, metav1.GetOptions{}, "status")
+	}).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
+	}
+
+	var endpointSlice *unstructured.Unstructured
+	for i := range list.Items {
+		if list.Items[i].GetName() == virtualStorage.Name {
+			endpointSlice = &list.Items[i]
+			break
+		}
+	}
+
+	if endpointSlice == nil {
+		return nil, apierrors.NewNotFound(schema.GroupResource{
+			Group:    virtualStorage.Group,
+			Resource: virtualStorage.Resource,
+		}, virtualStorage.Name)
 	}
 
 	endpoints, found, err := unstructured.NestedSlice(endpointSlice.Object, "status", "endpoints")
@@ -269,7 +284,7 @@ func (c *Controller) process(ctx context.Context, key string) (bool, error) {
 			Resource: resource.Name,
 		}
 
-		endpointURLs, err := getEndpointSliceURLs(ctx, c.dynamicClusterClient, resource.Storage.Virtual)
+		endpointURLs, err := c.getEndpointSliceURLs(ctx, logicalcluster.From(export), resource.Storage.Virtual)
 		if err != nil {
 			return true, err
 		}

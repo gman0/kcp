@@ -26,6 +26,7 @@ import (
 
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
+	"github.com/kcp-dev/kcp/sdk/apis/core"
 )
 
 const (
@@ -107,23 +108,24 @@ func IndexAPIExportByVirtualResources(obj interface{}) ([]string, error) {
 	}
 
 	virtualResources := sets.New[string]()
+
+	clusterPath := logicalcluster.NewPath(apiExport.GetAnnotations()[core.LogicalClusterPathAnnotationKey])
+	clusterName := logicalcluster.From(apiExport).Path()
+	insertKeys := func(virtualResourceName string) {
+		virtualResources.Insert(clusterName.Join(virtualResourceName).String())
+		if !clusterPath.Empty() {
+			virtualResources.Insert(clusterPath.Join(virtualResourceName).String())
+		}
+	}
+
 	for _, res := range apiExport.Spec.Resources {
 		if res.Storage.Virtual == nil {
 			continue
 		}
-		path := logicalcluster.NewPath(res.Storage.Virtual.Path)
-		if path.Empty() {
-			path = logicalcluster.From(apiExport).Path()
-		}
-		key := APIExportByVirtualResourcesKey(path, res.Storage.Virtual.Name)
-		virtualResources.Insert(key)
+		insertKeys(res.Storage.Virtual.Name)
 	}
 
-	return sets.List[string](virtualResources), nil
-}
+	fmt.Printf("### IndexAPIExportByVirtualResources:%v\n", sets.List[string](virtualResources))
 
-func APIExportByVirtualResourcesKey(path logicalcluster.Path, name string) string {
-	key := path.Join(name).String()
-	fmt.Printf("\n ### APIExportByVirtualResourcesKey key=%s ###\n", key)
-	return key
+	return sets.List[string](virtualResources), nil
 }

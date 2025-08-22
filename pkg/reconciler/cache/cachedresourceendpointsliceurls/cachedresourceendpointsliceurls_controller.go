@@ -19,7 +19,6 @@ package cachedresourceendpointsliceurls
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -35,6 +34,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
+	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	"github.com/kcp-dev/kcp/pkg/indexers"
@@ -56,6 +56,7 @@ const (
 )
 
 func listAPIBindingsByAPIExport(apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer, export *apisv1alpha2.APIExport) ([]*apisv1alpha2.APIBinding, error) {
+	fmt.Printf("### listAPIBindingsByAPIExport %s|%s %s|%s 1\n", logicalcluster.From(export), export.Name)
 	// binding keys by full path
 	keys := sets.New[string]()
 	if path := logicalcluster.NewPath(export.Annotations[core.LogicalClusterPathAnnotationKey]); !path.Empty() {
@@ -63,6 +64,7 @@ func listAPIBindingsByAPIExport(apiBindingInformer apisv1alpha2informers.APIBind
 		if err != nil {
 			return nil, err
 		}
+		fmt.Printf("### listAPIBindingsByAPIExport %s|%s 2 pathKeys=%v\n", logicalcluster.From(export), export.Name, pathKeys)
 		keys.Insert(pathKeys...)
 	}
 
@@ -70,6 +72,7 @@ func listAPIBindingsByAPIExport(apiBindingInformer apisv1alpha2informers.APIBind
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("### listAPIBindingsByAPIExport %s|%s 3 clusterKeys=%v\n", logicalcluster.From(export), export.Name, clusterKeys)
 	keys.Insert(clusterKeys...)
 
 	bindings := make([]*apisv1alpha2.APIBinding, 0, keys.Len())
@@ -84,6 +87,7 @@ func listAPIBindingsByAPIExport(apiBindingInformer apisv1alpha2informers.APIBind
 		}
 		bindings = append(bindings, binding.(*apisv1alpha2.APIBinding))
 	}
+	fmt.Printf("### listAPIBindingsByAPIExport %s|%s 4 len(bindings)=%d\n", logicalcluster.From(export), export.Name, len(bindings))
 	return bindings, nil
 }
 
@@ -92,7 +96,7 @@ func NewController(
 	apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer,
 	localCachedResourceEndpointSliceClusterInformer, globalCachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer,
 	globalShardClusterInformer corev1alpha1informers.ShardClusterInformer,
-	globalAPIExportClusterInformer apisv1alpha2informers.APIExportClusterInformer,
+	localAPIExportClusterInformer, globalAPIExportClusterInformer apisv1alpha2informers.APIExportClusterInformer,
 	globalCachedResourcelusterInformer cachev1alpha1informers.CachedResourceClusterInformer,
 	globalLogicalClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
 	clusterClient kcpclientset.ClusterInterface,
@@ -111,30 +115,20 @@ func NewController(
 		getCachedResource: func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error) {
 			return indexers.ByPathAndName[*cachev1alpha1.CachedResource](cachev1alpha1.Resource("cachedresources"), globalCachedResourcelusterInformer.Informer().GetIndexer(), path, name)
 		},
-		getCachedResourceEndpointSlice: func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error) {
-			obj, err := indexers.ByPathAndNameWithFallback[*cachev1alpha1.CachedResourceEndpointSlice](cachev1alpha1.Resource("cachedresourceendpointslices"), localCachedResourceEndpointSliceClusterInformer.Informer().GetIndexer(), globalCachedResourceEndpointSliceClusterInformer.Informer().GetIndexer(), path, name)
+		getCachedResourceEndpointSlice: func(cluster logicalcluster.Name, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error) {
+			obj, err := indexers.ByPathAndNameWithFallback[*cachev1alpha1.CachedResourceEndpointSlice](cachev1alpha1.Resource("cachedresourceendpointslices"), localCachedResourceEndpointSliceClusterInformer.Informer().GetIndexer(), globalCachedResourceEndpointSliceClusterInformer.Informer().GetIndexer(), cluster.Path(), name)
 			if err != nil {
 				return nil, err
 			}
 			return obj, err
 		},
 		listAPIExportsByCachedResourceEndpointSlice: func(slice *cachev1alpha1.CachedResourceEndpointSlice) ([]*apisv1alpha2.APIExport, error) {
-			path := logicalcluster.NewPath(slice.Annotations[core.LogicalClusterPathAnnotationKey])
-			if path.Empty() {
-				return nil, fmt.Errorf("missing %s annotation on CachedResourceEndpointSlice %s|%s", core.LogicalClusterPathAnnotationKey, logicalcluster.From(slice), slice.Name)
-			}
-			items, err := globalAPIExportClusterInformer.Informer().GetIndexer().ByIndex(
-				indexers.APIExportByVirtualResources,
-				indexers.APIExportByVirtualResourcesKey(path, slice.Name),
-			)
+			apiExports, err := indexers.ByIndexWithFallback[*apisv1alpha2.APIExport](localAPIExportClusterInformer.Informer().GetIndexer(), globalAPIExportClusterInformer.Informer().GetIndexer(), indexers.APIExportByVirtualResources, logicalcluster.From(slice).Path().Join(slice.Name).String())
 			if err != nil {
 				return nil, err
 			}
-			exports := make([]*apisv1alpha2.APIExport, 0, len(items))
-			for _, item := range items {
-				exports = append(exports, item.(*apisv1alpha2.APIExport))
-			}
-			return exports, nil
+			fmt.Printf("### len(listAPIExportsByCachedResourceEndpointSlice)=%d \n", len(apiExports))
+			return apiExports, nil
 		},
 		listAPIBindingsByAPIExports: func(exports []*apisv1alpha2.APIExport) ([]*apisv1alpha2.APIBinding, error) {
 			var bindings []*apisv1alpha2.APIBinding
@@ -143,8 +137,9 @@ func NewController(
 				if err != nil {
 					return nil, err
 				}
-				bindingsForExport = append(bindingsForExport, bindingsForExport...)
+				bindings = append(bindings, bindingsForExport...)
 			}
+			fmt.Printf("### XXX len(listAPIBindingsByAPIExports)=%d \n", len(bindings))
 			return bindings, nil
 		},
 		patchCachedResourceEndpointSlice: func(ctx context.Context, cluster logicalcluster.Path, patch *cachev1alpha1apply.CachedResourceEndpointSliceApplyConfiguration) error {
@@ -205,53 +200,6 @@ func NewController(
 	return c, nil
 }
 
-type sliceRef struct {
-	path logicalcluster.Path
-	name string
-}
-
-func sliceRefFromResourceSchema(resource *apisv1alpha2.ResourceSchema) *sliceRef {
-	if resource.Storage.Virtual == nil {
-		return nil
-	}
-
-	virt := resource.Storage.Virtual
-	if virt.Group != cachev1alpha1.SchemeGroupVersion.Group ||
-		virt.Resource != "cachedresourceendpointslices" {
-		return nil
-	}
-
-	return &sliceRef{
-		path: logicalcluster.NewPath(virt.Path),
-		name: virt.Name,
-	}
-}
-
-func (r sliceRef) String() string {
-	return fmt.Sprintf("%s|%s", r.path, r.name)
-}
-
-func sliceRefFromKey(key string) (sliceRef, error) {
-	parts := strings.Split(key, "|")
-	if len(parts) != 2 {
-		return sliceRef{}, fmt.Errorf("failed to parse key %q", key)
-	}
-
-	path := logicalcluster.NewPath(parts[0])
-	if path.Empty() {
-		return sliceRef{}, fmt.Errorf("empty path in key %q", key)
-	}
-	name := parts[1]
-	if name == "" {
-		return sliceRef{}, fmt.Errorf("empty name in key %q", key)
-	}
-
-	return sliceRef{
-		path: path,
-		name: name,
-	}, nil
-}
-
 func (c *controller) enqueueAPIBinding(obj *apisv1alpha2.APIBinding, logger logr.Logger) {
 	exportPath := logicalcluster.NewPath(obj.Spec.Reference.Export.Path)
 	if exportPath.Empty() {
@@ -266,28 +214,26 @@ func (c *controller) enqueueAPIBinding(obj *apisv1alpha2.APIBinding, logger logr
 	logger = logging.WithObject(logger, obj)
 
 	for _, resource := range export.Spec.Resources {
-		ref := sliceRefFromResourceSchema(&resource)
-		if ref == nil {
+		if resource.Storage.Virtual == nil ||
+			resource.Storage.Virtual.Group != cachev1alpha1.SchemeGroupVersion.Group ||
+			resource.Storage.Virtual.Resource != "cachedresourceendpointslice" {
 			logger.V(4).Info("skipping APIBinding its referenced APIExport does not export CachedResourceEndpointSlice virtual resources")
 			continue
 		}
-		if ref.path.Empty() {
-			ref.path = logicalcluster.From(export).Path()
-		}
 
-		key := ref.String()
+		key := kcpcache.ToClusterAwareKey(logicalcluster.From(export).String(), "", resource.Storage.Virtual.Name)
 		logger.Info("queueing CachedResourceEndpointSlice because of APIBinding", "key", key) // V4
-
 		c.queue.Add(key)
 	}
 }
 
 func (c *controller) enqueueCachedResourceEndpointSlice(obj *cachev1alpha1.CachedResourceEndpointSlice, logger logr.Logger, logSuffix string) {
 	logger = logging.WithObject(logger, obj)
-	key := sliceRef{
-		path: logicalcluster.From(obj).Path(),
-		name: obj.Name,
-	}.String()
+	key, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(obj)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
 
 	logger.Info("queueing CachedResourceEndpointSlice", "key", key) // V4
 	c.queue.Add(key)
@@ -301,8 +247,8 @@ type controller struct {
 	listAPIBindingsByAPIExports                 func(exports []*apisv1alpha2.APIExport) ([]*apisv1alpha2.APIBinding, error)
 	getMyShard                                  func() (*corev1alpha1.Shard, error)
 	getCachedResource                           func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error)
+	getCachedResourceEndpointSlice              func(cluster logicalcluster.Name, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error)
 	patchAPIExportEndpointSlice                 func(ctx context.Context, cluster logicalcluster.Path, patch *cachev1alpha1apply.CachedResourceEndpointSliceApplyConfiguration) error
-	getCachedResourceEndpointSlice              func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error)
 	patchCachedResourceEndpointSlice            func(ctx context.Context, cluster logicalcluster.Path, patch *cachev1alpha1apply.CachedResourceEndpointSliceApplyConfiguration) error
 	getAPIExport                                func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
 }
@@ -359,12 +305,12 @@ func (c *controller) processNextWorkItem(ctx context.Context) bool {
 }
 
 func (c *controller) process(ctx context.Context, key string) (bool, error) {
-	ref, err := sliceRefFromKey(key)
+	cluster, _, name, err := kcpcache.SplitMetaClusterNamespaceKey(key)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return false, nil
 	}
-	obj, err := c.getCachedResourceEndpointSlice(ref.path, ref.name)
+	obj, err := c.getCachedResourceEndpointSlice(cluster, name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil // object deleted before we handled it
@@ -389,8 +335,11 @@ func (c *controller) process(ctx context.Context, key string) (bool, error) {
 func InstallIndexers(
 	localCachedResourceClusterInformer, globalCachedResourceClusterInformer cachev1alpha1informers.CachedResourceClusterInformer,
 	localCachedResourceEndpointSliceClusterInformer, globalCachedResourceEndpointSliceClusterInformer cachev1alpha1informers.CachedResourceEndpointSliceClusterInformer,
-	globalAPIExportClusterInformer apisv1alpha2informers.APIExportClusterInformer,
+	localAPIExportClusterInformer, globalAPIExportClusterInformer apisv1alpha2informers.APIExportClusterInformer,
 ) {
+	indexers.AddIfNotPresentOrDie(localAPIExportClusterInformer.Informer().GetIndexer(), cache.Indexers{
+		indexers.APIExportByVirtualResources: indexers.IndexAPIExportByVirtualResources,
+	})
 	indexers.AddIfNotPresentOrDie(globalAPIExportClusterInformer.Informer().GetIndexer(), cache.Indexers{
 		indexers.APIExportByVirtualResources: indexers.IndexAPIExportByVirtualResources,
 	})

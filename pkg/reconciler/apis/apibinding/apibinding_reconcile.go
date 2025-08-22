@@ -508,7 +508,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 				storageVersions.Insert(existingCRD.Status.StoredVersions...)
 			}
 		} else if resourceSchema.Storage.Virtual != nil {
-			err = checkVirtualResource(ctx, r.cacheDynamicClusterClient, resourceSchema.Storage.Virtual)
+			err = checkVirtualResource(ctx, r.cacheDynamicClusterClient, logicalcluster.From(apiExport), resourceSchema.Storage.Virtual)
 			if err != nil {
 				conditions.MarkFalse(
 					apiBinding,
@@ -521,7 +521,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 				return reconcileStatusContinue, fmt.Errorf(
 					"error getting endpoint slice %s.%s %s|%s for APIBinding %s|%s, APIExport %s|%s, APIResourceSchema %s|%s: %w",
 					resourceSchema.Storage.Virtual.Resource, resourceSchema.Storage.Virtual.Group,
-					resourceSchema.Storage.Virtual.Path, resourceSchema.Storage.Virtual.Name,
+					apiExportPath, resourceSchema.Storage.Virtual.Name,
 					logicalcluster.From(apiBinding), apiBinding.Name,
 					apiExportPath, apiExport.Name,
 					apiExportPath, resourceSchema.Schema,
@@ -617,13 +617,26 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 	return reconcileStatusContinue, nil
 }
 
-func checkVirtualResource(ctx context.Context, dynamicClusterClient kcpdynamic.ClusterInterface, virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual) error {
-	_, err := dynamicClusterClient.Cluster(logicalcluster.NewPath(virtualStorage.Path)).Resource(schema.GroupVersionResource{
+func checkVirtualResource(ctx context.Context, dynamicClusterClient kcpdynamic.ClusterInterface, cluster logicalcluster.Name, virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual) error {
+	list, err := dynamicClusterClient.Cluster(logicalcluster.NewPath(cluster.String())).Resource(schema.GroupVersionResource{
 		Group:    virtualStorage.Group,
 		Version:  virtualStorage.Version,
 		Resource: virtualStorage.Resource,
-	}).Get(ctx, virtualStorage.Name, metav1.GetOptions{}, "status")
-	return err
+	}).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	for i := range list.Items {
+		if list.Items[i].GetName() == virtualStorage.Name {
+			return nil
+		}
+	}
+
+	return apierrors.NewNotFound(schema.GroupResource{
+		Group:    virtualStorage.Group,
+		Resource: virtualStorage.Resource,
+	}, virtualStorage.Name)
 }
 
 func boundCRDName(schema *apisv1alpha1.APIResourceSchema) string {

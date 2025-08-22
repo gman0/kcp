@@ -1802,6 +1802,7 @@ func (s *Server) installCachedResourceEndpointSliceURLsController(_ context.Cont
 		s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices(),
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices(),
 		s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 		s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResources(),
 		s.KcpSharedInformerFactory.Core().V1alpha1().LogicalClusters(),
@@ -1816,8 +1817,10 @@ func (s *Server) installCachedResourceEndpointSliceURLsController(_ context.Cont
 		Wait: func(ctx context.Context, s *Server) error {
 			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
 				return s.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().HasSynced() &&
+					s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices().Informer().HasSynced() &&
 					s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices().Informer().HasSynced() &&
 					s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards().Informer().HasSynced() &&
+					s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced() &&
 					s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced() &&
 					s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResources().Informer().HasSynced() &&
 					s.KcpSharedInformerFactory.Core().V1alpha1().LogicalClusters().Informer().HasSynced(), nil
@@ -1933,6 +1936,7 @@ func (s *Server) addIndexersToInformers(_ context.Context) map[schema.GroupVersi
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResources(),
 		s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices(),
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices(),
+		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 		s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 	)
 	return replication.InstallIndexers(

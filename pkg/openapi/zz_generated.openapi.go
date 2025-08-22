@@ -2810,20 +2810,13 @@ func schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref common.Refer
 							Format:  "",
 						},
 					},
-					"path": {
-						SchemaProps: spec.SchemaProps{
-							Default: "",
-							Type:    []string{"string"},
-							Format:  "",
-						},
-					},
 					"identitySecretRef": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("k8s.io/api/core/v1.SecretReference"),
 						},
 					},
 				},
-				Required: []string{"group", "version", "resource", "name", "path", "identitySecretRef"},
+				Required: []string{"group", "version", "resource", "name", "identitySecretRef"},
 			},
 		},
 		Dependencies: []string{

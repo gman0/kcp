@@ -235,7 +235,7 @@ func BuildVirtualWorkspace(
 					fmt.Printf("\n\n<> ResourceSchemaStorage %#v <>\n\n", resSchStorage)
 
 					if resSchStorage.Virtual != nil {
-						endpointsSlices, err := kcpClusterClient.Cluster(logicalcluster.NewPath(resSchStorage.Virtual.Path)).CacheV1alpha1().CachedResourceEndpointSlices().List(ctx, metav1.ListOptions{})
+						endpointsSlices, err := kcpClusterClient.Cluster(logicalcluster.From(apiResourceSchema).Path()).CacheV1alpha1().CachedResourceEndpointSlices().List(ctx, metav1.ListOptions{})
 						if err != nil {
 							cancelFn()
 							return nil, fmt.Errorf("<><> error listing cachedresourceendpointslices: %v", err)

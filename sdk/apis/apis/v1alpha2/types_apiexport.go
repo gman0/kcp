@@ -199,7 +199,6 @@ type ResourceSchemaStorageVirtual struct {
 	Resource string `json:"resource"`
 
 	Name              string                  `json:"name"`
-	Path              string                  `json:"path"`
 	IdentitySecretRef *corev1.SecretReference `json:"identitySecretRef"`
 
 	// Resource selector TBD.

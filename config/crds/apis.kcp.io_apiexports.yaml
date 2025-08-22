@@ -535,8 +535,6 @@ spec:
                               x-kubernetes-map-type: atomic
                             name:
                               type: string
-                            path:
-                              type: string
                             resource:
                               type: string
                             version:
@@ -545,7 +543,6 @@ spec:
                           - group
                           - identitySecretRef
                           - name
-                          - path
                           - resource
                           - version
                           type: object

@@ -29,7 +29,6 @@ type ResourceSchemaStorageVirtualApplyConfiguration struct {
 	Version           *string             `json:"version,omitempty"`
 	Resource          *string             `json:"resource,omitempty"`
 	Name              *string             `json:"name,omitempty"`
-	Path              *string             `json:"path,omitempty"`
 	IdentitySecretRef *v1.SecretReference `json:"identitySecretRef,omitempty"`
 }
 
@@ -68,14 +67,6 @@ func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithResource(value stri
 // If called multiple times, the Name field is set to the value of the last call.
 func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithName(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
 	b.Name = &value
-	return b
-}
-
-// WithPath sets the Path field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Path field is set to the value of the last call.
-func (b *ResourceSchemaStorageVirtualApplyConfiguration) WithPath(value string) *ResourceSchemaStorageVirtualApplyConfiguration {
-	b.Path = &value
 	return b
 }
 
