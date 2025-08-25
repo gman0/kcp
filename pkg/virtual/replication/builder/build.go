@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -52,15 +53,31 @@ import (
 	replicationauthorizer "github.com/kcp-dev/kcp/pkg/virtual/replication/authorizer"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
+	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
+	"github.com/kcp-dev/kcp/sdk/apis/core"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
-	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
+
+func IndexByLogicalClusterPathAndName(obj interface{}) ([]string, error) {
+	metaObj, ok := obj.(metav1.Object)
+	if !ok {
+		return []string{}, fmt.Errorf("obj is supposed to be a metav1.Object, but is %T", obj)
+	}
+	fmt.Printf("### Replication VW: IndexByLogicalClusterPathAndName got %s\n", logicalcluster.From(metaObj).Path().Join(metaObj.GetName()).String())
+	if path, found := metaObj.GetAnnotations()[core.LogicalClusterPathAnnotationKey]; found {
+		return []string{
+			logicalcluster.NewPath(path).Join(metaObj.GetName()).String(),
+			logicalcluster.From(metaObj).Path().Join(metaObj.GetName()).String(),
+		}, nil
+	}
+
+	return []string{logicalcluster.From(metaObj).Path().Join(metaObj.GetName()).String()}, nil
+}
 
 func BuildVirtualWorkspace(
 	cfg *rest.Config,
 	rootPathPrefix string,
-	kcpClusterClient kcpclientset.ClusterInterface,
 	dynamicClusterClient kcpdynamic.ClusterInterface,
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
 	localKcpInformers kcpinformers.SharedInformerFactory,
@@ -115,12 +132,30 @@ func BuildVirtualWorkspace(
 			if err := mainConfig.AddPostStartHook(replication.VirtualWorkspaceName, func(hookContext genericapiserver.PostStartHookContext) error {
 				defer close(readyCh)
 
+				// CachedResources indexers.
+
 				indexers.AddIfNotPresentOrDie(
 					globalKcpInformers.Cache().V1alpha1().CachedObjects().Informer().GetIndexer(),
 					cache.Indexers{
 						cachedresourcesreplication.ByGVRAndLogicalClusterAndNamespace: cachedresourcesreplication.IndexByGVRAndLogicalClusterAndNamespace,
 					},
 				)
+
+				indexers.AddIfNotPresentOrDie(
+					globalKcpInformers.Cache().V1alpha1().CachedResources().Informer().GetIndexer(),
+					cache.Indexers{
+						indexers.ByLogicalClusterPathAndName: IndexByLogicalClusterPathAndName,
+					},
+				)
+				indexers.AddIfNotPresentOrDie(
+					localKcpInformers.Cache().V1alpha1().CachedResources().Informer().GetIndexer(),
+					cache.Indexers{
+						indexers.ByLogicalClusterPathAndName: IndexByLogicalClusterPathAndName,
+					},
+				)
+
+				// APIExport indexers.
+
 				indexers.AddIfNotPresentOrDie(
 					globalKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 					cache.Indexers{
@@ -134,8 +169,11 @@ func BuildVirtualWorkspace(
 					},
 				)
 
+				// Wait for caches to be synced.
+
 				for name, informer := range map[string]cache.SharedIndexInformer{
-					"cachedresources":    globalKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
+					"cachedobjects":      globalKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
+					"cachedresources":    globalKcpInformers.Cache().V1alpha1().CachedResources().Informer(),
 					"apiexports":         globalKcpInformers.Apis().V1alpha2().APIExports().Informer(),
 					"apiresourceschemas": globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Informer(),
 				} {
@@ -145,14 +183,25 @@ func BuildVirtualWorkspace(
 					}
 				}
 
+				/*for name, informer := range map[string]cache.SharedIndexInformer{
+					"cachedresources":    localKcpInformers.Cache().V1alpha1().CachedObjects().Informer(),
+					"apiexports":         localKcpInformers.Apis().V1alpha2().APIExports().Informer(),
+					"apiresourceschemas": localKcpInformers.Apis().V1alpha1().APIResourceSchemas().Informer(),
+				} {
+					if !cache.WaitForNamedCacheSync(name, hookContext.Done(), informer.HasSynced) {
+						klog.Background().Error(nil, "informer not synced")
+						return nil
+					}
+				}*/
+
 				return nil
 			}); err != nil {
 				return nil, err
 			}
 
 			return &singleResourceAPIDefinitionSetProvider{
-				localKcpInformers: localKcpInformers,
-				kcpClusterClient:  kcpClusterClient,
+				localKcpInformers:  localKcpInformers,
+				globalKcpInformers: globalKcpInformers,
 
 				getLogicalCluster: func(cluster logicalcluster.Name, name string) (*corev1alpha1.LogicalCluster, error) {
 					return localKcpInformers.Core().V1alpha1().LogicalClusters().Cluster(cluster).Lister().Get(name)
@@ -174,6 +223,22 @@ func BuildVirtualWorkspace(
 
 				getAPIResourceSchemaByName: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					return globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Cluster(cluster).Lister().Get(name)
+				},
+
+				getCachedResourceByPath: func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error) {
+
+					allCachedResources, err := globalKcpInformers.Cache().V1alpha1().CachedResources().Lister().List(labels.Everything())
+					fmt.Printf("### all CachedResources %v, err=%v\n", allCachedResources, err)
+
+					allAPIExports, err := globalKcpInformers.Apis().V1alpha2().APIExports().Lister().List(labels.Everything())
+					fmt.Printf("### all APIExports%v, err=%v\n", allAPIExports, err)
+
+					return indexers.ByPathAndName[*cachev1alpha1.CachedResource](
+						cachev1alpha1.Resource("cachedresources"),
+						globalKcpInformers.Cache().V1alpha1().CachedResources().Informer().GetIndexer(),
+						path,
+						name,
+					)
 				},
 
 				config:               mainConfig,
@@ -274,12 +339,13 @@ type singleResourceAPIDefinitionSetProvider struct {
 	dynamicClusterClient kcpdynamic.ClusterInterface
 	storageProvider      func(ctx context.Context, dynamicClusterClientFunc forwardingregistry.DynamicClusterClientFunc, sch *apisv1alpha1.APIResourceSchema, version string) (apiserver.RestProviderFunc, error)
 
-	kcpClusterClient  kcpclientset.ClusterInterface
-	localKcpInformers kcpinformers.SharedInformerFactory
+	localKcpInformers  kcpinformers.SharedInformerFactory
+	globalKcpInformers kcpinformers.SharedInformerFactory
 
 	getLogicalCluster          func(cluster logicalcluster.Name, name string) (*corev1alpha1.LogicalCluster, error)
 	getAPIBinding              func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
 	getAPIExportByPath         func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+	getCachedResourceByPath    func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error)
 	getAPIResourceSchemaByName func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
 }
 
@@ -366,10 +432,9 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		return a.dynamicClusterClient, nil
 	}
 
-	cachedResource, err := a.kcpClusterClient.CacheV1alpha1().CachedResources().Cluster(parsedKey.CachedResourceCluster.Path()).
-		Get(ctx, parsedKey.CachedResourceName, metav1.GetOptions{})
+	cachedResource, err := a.getCachedResourceByPath(parsedKey.CachedResourceCluster.Path(), parsedKey.CachedResourceName)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("XXX: %v", err)
 	}
 
 	wrappedGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)

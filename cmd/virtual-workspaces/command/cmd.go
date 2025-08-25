@@ -151,6 +151,7 @@ func Run(ctx context.Context, o *options.Options) error {
 
 	// Start the CachedObjects informer against the cache server.
 	_ = cacheKcpInformers.Cache().V1alpha1().CachedObjects().Informer()
+	_ = cacheKcpInformers.Cache().V1alpha1().CachedResources().Informer()
 
 	// create apiserver
 	scheme := runtime.NewScheme()

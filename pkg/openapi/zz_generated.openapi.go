@@ -90,6 +90,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ResourceSchemaStorageVirtual":                schema_sdk_apis_apis_v1alpha2_ResourceSchemaStorageVirtual(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ResourceSelector":                            schema_sdk_apis_apis_v1alpha2_ResourceSelector(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.VirtualWorkspace":                            schema_sdk_apis_apis_v1alpha2_VirtualWorkspace(ref),
+		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedAPIResourceSchema":                    schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedObject":                               schema_sdk_apis_cache_v1alpha1_CachedObject(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedObjectList":                           schema_sdk_apis_cache_v1alpha1_CachedObjectList(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedObjectSpec":                           schema_sdk_apis_cache_v1alpha1_CachedObjectSpec(ref),
@@ -2871,6 +2872,43 @@ func schema_sdk_apis_apis_v1alpha2_VirtualWorkspace(ref common.ReferenceCallback
 	}
 }
 
+func schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "name is the bound APIResourceSchema name.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"UID": {
+						SchemaProps: spec.SchemaProps{
+							Description: "UID is the UID of the APIResourceSchema that is bound to this API.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"identityHash": {
+						SchemaProps: spec.SchemaProps{
+							Description: "identityHash is the hash of the API identity that this schema is bound to. The API identity determines the etcd prefix used to persist the object. Different identity means that the objects are effectively served and stored under a distinct resource. A CRD of the same GroupVersionResource uses a different identity and hence a separate etcd prefix.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"name", "UID", "identityHash"},
+			},
+		},
+	}
+}
+
 func schema_sdk_apis_cache_v1alpha1_CachedObject(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -3387,6 +3425,12 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceStatus(ref common.ReferenceCal
 							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.ResourceCount"),
 						},
 					},
+					"resourceSchema": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Refers to the APIResourceSchema of the cached resource.",
+							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedAPIResourceSchema"),
+						},
+					},
 					"phase": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Phase of the workspace (Initializing, Ready, Unavailable).",
@@ -3412,7 +3456,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceStatus(ref common.ReferenceCal
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.ResourceCount", "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1.Condition"},
+			"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedAPIResourceSchema", "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.ResourceCount", "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1.Condition"},
 	}
 }
 

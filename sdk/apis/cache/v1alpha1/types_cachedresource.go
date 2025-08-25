@@ -195,6 +195,10 @@ type CachedResourceStatus struct {
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
 
+	// Refers to the APIResourceSchema of the cached resource.
+	// +optional
+	Schema *CachedAPIResourceSchema `json:"resourceSchema,omitempty"`
+
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//
 	// +kubebuilder:default=Initializing
@@ -203,6 +207,30 @@ type CachedResourceStatus struct {
 	// Current processing state of the Workspace.
 	// +optional
 	Conditions conditionsv1alpha1.Conditions `json:"conditions,omitempty"`
+}
+
+type CachedAPIResourceSchema struct {
+	// name is the bound APIResourceSchema name.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// UID is the UID of the APIResourceSchema that is bound to this API.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	UID string `json:"UID"`
+
+	// identityHash is the hash of the API identity that this schema is bound to.
+	// The API identity determines the etcd prefix used to persist the object.
+	// Different identity means that the objects are effectively served and stored
+	// under a distinct resource. A CRD of the same GroupVersionResource uses a
+	// different identity and hence a separate etcd prefix.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	IdentityHash string `json:"identityHash"`
 }
 
 // ResourceCount is the number of resources that match the label selector
