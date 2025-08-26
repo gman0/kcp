@@ -20,27 +20,17 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 
-	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	conditionsv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
-
-	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
-	replicationcontroller "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
-	"github.com/kcp-dev/kcp/pkg/reconciler/dynamicrestmapper"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	conditionsv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
 	"github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/util/conditions"
-	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
-	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
 type resourceSchema struct {
@@ -51,16 +41,26 @@ type resourceSchema struct {
 }
 
 func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
+	fmt.Printf("### CachedResource.resourceSchema.reconcile 1\n")
+
+	if !cachedResource.DeletionTimestamp.IsZero() {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 2\n")
+		return reconcileStatusContinue, nil
+	}
+	if cachedResource.Status.Phase != cachev1alpha1.CachedResourcePhaseInitializing {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 3\n")
+		return reconcileStatusContinue, nil
+	}
+
 	gr := schema.GroupResource{
 		Group:    cachedResource.Spec.Group,
 		Resource: cachedResource.Spec.Resource,
 	}
 	clusterName := logicalcluster.From(cachedResource)
 
-	cachedResource.Status.Phase = cachev1alpha1.CachedResourcePhaseInitializing
-
 	lc, err := r.getLogicalCluster(clusterName)
 	if err != nil {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 4\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -76,6 +76,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	boundResources, err := apibinding.GetResourceBindings(lc)
 	if err != nil {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 5\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -86,11 +87,12 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			"cluster",
 			err,
 		)
-		return reconcileStatusContinue, err
+		return reconcileStatusStop, err
 	}
 
 	lock, resourceFound := boundResources[gr.String()]
 	if !resourceFound {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 6\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -99,10 +101,11 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			"Resource lock for %s not ready",
 			gr.String(),
 		)
-		return reconcileStatusContinue, err
+		return reconcileStatusStop, nil
 	}
 
 	if lock.Name == "" {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 7\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -111,11 +114,12 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			"Resource %s is not backed by an APIResourceSchema",
 			gr.String(),
 		)
-		return reconcileStatusContinue, nil
+		return reconcileStatusStop, nil
 	}
 
 	apiBinding, err := r.getAPIBinding(clusterName, lock.Name)
-	if !resourceFound {
+	if err != nil {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 8\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -126,11 +130,12 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			lock.Name,
 			err,
 		)
-		return reconcileStatusContinue, err
+		return reconcileStatusStopAndRequeue, err
 	}
 
 	apiExport, err := r.getAPIExport(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
 	if err != nil {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 9\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -143,7 +148,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			lock.Name,
 			err,
 		)
-		return reconcileStatusContinue, err
+		return reconcileStatusStopAndRequeue, err
 	}
 
 	var schemaName string
@@ -158,6 +163,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 		schemaName = res.Schema
 	}
 	if schemaName == "" {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 10\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -168,11 +174,12 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			apiBinding.Spec.Reference.Export.Name,
 			clusterName,
 		)
-		return reconcileStatusContinue, err
+		return reconcileStatusStop, err
 	}
 
 	apiResourceSchema, err := r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
 	if err != nil {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 11\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -183,15 +190,28 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			schemaName,
 			err,
 		)
-		return reconcileStatusContinue, err
+		return reconcileStatusStopAndRequeue, err
 	}
 
-	cachedResource.Status.Schema = &cachev1alpha1.CachedAPIResourceSchema{
+	newSchema := &cachev1alpha1.CachedAPIResourceSchema{
 		Name:         schemaName,
 		UID:          string(apiResourceSchema.UID),
 		Cluster:      logicalcluster.From(apiExport).String(),
 		IdentityHash: apiExport.Status.IdentityHash,
 	}
 
-	return reconcileStatusContinue, nil
+	if cachedResource.Status.Schema != nil &&
+		newSchema.Name == cachedResource.Status.Schema.Name &&
+		newSchema.Cluster == cachedResource.Status.Schema.Cluster &&
+		newSchema.UID == cachedResource.Status.Schema.UID &&
+		newSchema.IdentityHash == cachedResource.Status.Schema.IdentityHash {
+		fmt.Printf("### CachedResource.resourceSchema.reconcile 12\n")
+		return reconcileStatusContinue, nil
+	}
+
+	fmt.Printf("### CachedResource.resourceSchema.reconcile 13 expected=%#v got=%#v\n", newSchema, cachedResource.Status.Schema)
+
+	cachedResource.Status.Schema = newSchema
+
+	return reconcileStatusStopAndRequeue, nil
 }

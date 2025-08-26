@@ -2894,6 +2894,14 @@ func schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref common.Reference
 							Format:      "",
 						},
 					},
+					"cluster": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Cluster name of the APIResourceSchema.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"identityHash": {
 						SchemaProps: spec.SchemaProps{
 							Description: "identityHash is the hash of the API identity that this schema is bound to. The API identity determines the etcd prefix used to persist the object. Different identity means that the objects are effectively served and stored under a distinct resource. A CRD of the same GroupVersionResource uses a different identity and hence a separate etcd prefix.",
@@ -2903,7 +2911,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref common.Reference
 						},
 					},
 				},
-				Required: []string{"name", "UID", "identityHash"},
+				Required: []string{"name", "UID", "cluster", "identityHash"},
 			},
 		},
 	}

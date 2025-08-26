@@ -224,6 +224,10 @@ spec:
                       to this API.
                     minLength: 1
                     type: string
+                  cluster:
+                    description: Cluster name of the APIResourceSchema.
+                    minLength: 1
+                    type: string
                   identityHash:
                     description: |-
                       identityHash is the hash of the API identity that this schema is bound to.
@@ -239,6 +243,7 @@ spec:
                     type: string
                 required:
                 - UID
+                - cluster
                 - identityHash
                 - name
                 type: object

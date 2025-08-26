@@ -2,7 +2,7 @@ apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
   creationTimestamp: null
-  name: v250825-64ce4da2b.cachedresources.cache.kcp.io
+  name: v250826-32b5c0247.cachedresources.cache.kcp.io
 spec:
   group: cache.kcp.io
   names:
@@ -221,6 +221,10 @@ spec:
                     to this API.
                   minLength: 1
                   type: string
+                cluster:
+                  description: Cluster name of the APIResourceSchema.
+                  minLength: 1
+                  type: string
                 identityHash:
                   description: |-
                     identityHash is the hash of the API identity that this schema is bound to.
@@ -236,6 +240,7 @@ spec:
                   type: string
               required:
               - UID
+              - cluster
               - identityHash
               - name
               type: object

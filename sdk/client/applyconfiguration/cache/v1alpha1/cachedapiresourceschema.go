@@ -23,6 +23,7 @@ package v1alpha1
 type CachedAPIResourceSchemaApplyConfiguration struct {
 	Name         *string `json:"name,omitempty"`
 	UID          *string `json:"UID,omitempty"`
+	Cluster      *string `json:"cluster,omitempty"`
 	IdentityHash *string `json:"identityHash,omitempty"`
 }
 
@@ -45,6 +46,14 @@ func (b *CachedAPIResourceSchemaApplyConfiguration) WithName(value string) *Cach
 // If called multiple times, the UID field is set to the value of the last call.
 func (b *CachedAPIResourceSchemaApplyConfiguration) WithUID(value string) *CachedAPIResourceSchemaApplyConfiguration {
 	b.UID = &value
+	return b
+}
+
+// WithCluster sets the Cluster field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Cluster field is set to the value of the last call.
+func (b *CachedAPIResourceSchemaApplyConfiguration) WithCluster(value string) *CachedAPIResourceSchemaApplyConfiguration {
+	b.Cluster = &value
 	return b
 }
 
