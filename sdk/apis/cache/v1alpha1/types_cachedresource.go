@@ -216,27 +216,11 @@ type CachedAPIResourceSchema struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 
-	// UID is the UID of the APIResourceSchema that is bound to this API.
-	//
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	UID string `json:"UID"`
-
-	// Cluster name of the APIResourceSchema.
+	// cluster is the cluster name of the APIResourceSchema.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	Cluster string `json:"cluster"`
-
-	// identityHash is the hash of the API identity that this schema is bound to.
-	// The API identity determines the etcd prefix used to persist the object.
-	// Different identity means that the objects are effectively served and stored
-	// under a distinct resource. A CRD of the same GroupVersionResource uses a
-	// different identity and hence a separate etcd prefix.
-	//
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	IdentityHash string `json:"identityHash"`
 }
 
 // ResourceCount is the number of resources that match the label selector

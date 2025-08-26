@@ -2,7 +2,7 @@ apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
   creationTimestamp: null
-  name: v250826-32b5c0247.cachedresources.cache.kcp.io
+  name: v250826-966ad80c7.cachedresources.cache.kcp.io
 spec:
   group: cache.kcp.io
   names:
@@ -216,22 +216,8 @@ spec:
             resourceSchema:
               description: Refers to the APIResourceSchema of the cached resource.
               properties:
-                UID:
-                  description: UID is the UID of the APIResourceSchema that is bound
-                    to this API.
-                  minLength: 1
-                  type: string
                 cluster:
-                  description: Cluster name of the APIResourceSchema.
-                  minLength: 1
-                  type: string
-                identityHash:
-                  description: |-
-                    identityHash is the hash of the API identity that this schema is bound to.
-                    The API identity determines the etcd prefix used to persist the object.
-                    Different identity means that the objects are effectively served and stored
-                    under a distinct resource. A CRD of the same GroupVersionResource uses a
-                    different identity and hence a separate etcd prefix.
+                  description: cluster is the cluster name of the APIResourceSchema.
                   minLength: 1
                   type: string
                 name:
@@ -239,9 +225,7 @@ spec:
                   minLength: 1
                   type: string
               required:
-              - UID
               - cluster
-              - identityHash
               - name
               type: object
           type: object

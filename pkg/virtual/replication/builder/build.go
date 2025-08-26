@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -226,13 +225,6 @@ func BuildVirtualWorkspace(
 				},
 
 				getCachedResourceByPath: func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error) {
-
-					allCachedResources, err := globalKcpInformers.Cache().V1alpha1().CachedResources().Lister().List(labels.Everything())
-					fmt.Printf("### all CachedResources %v, err=%v\n", allCachedResources, err)
-
-					allAPIExports, err := globalKcpInformers.Apis().V1alpha2().APIExports().Lister().List(labels.Everything())
-					fmt.Printf("### all APIExports%v, err=%v\n", allAPIExports, err)
-
 					return indexers.ByPathAndName[*cachev1alpha1.CachedResource](
 						cachev1alpha1.Resource("cachedresources"),
 						globalKcpInformers.Cache().V1alpha1().CachedResources().Informer().GetIndexer(),
@@ -376,7 +368,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 
 	cachedResource, err := a.getCachedResourceByPath(parsedKey.CachedResourceCluster.Path(), parsedKey.CachedResourceName)
 	if err != nil {
-		return nil, false, fmt.Errorf("XXX: %v", err)
+		return nil, false, err
 	}
 
 	if !conditions.IsTrue(cachedResource, cachev1alpha1.CachedResourceValid) {

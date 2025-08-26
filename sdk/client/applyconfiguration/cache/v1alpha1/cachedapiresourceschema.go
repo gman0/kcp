@@ -21,10 +21,8 @@ package v1alpha1
 // CachedAPIResourceSchemaApplyConfiguration represents a declarative configuration of the CachedAPIResourceSchema type for use
 // with apply.
 type CachedAPIResourceSchemaApplyConfiguration struct {
-	Name         *string `json:"name,omitempty"`
-	UID          *string `json:"UID,omitempty"`
-	Cluster      *string `json:"cluster,omitempty"`
-	IdentityHash *string `json:"identityHash,omitempty"`
+	Name    *string `json:"name,omitempty"`
+	Cluster *string `json:"cluster,omitempty"`
 }
 
 // CachedAPIResourceSchemaApplyConfiguration constructs a declarative configuration of the CachedAPIResourceSchema type for use with
@@ -41,26 +39,10 @@ func (b *CachedAPIResourceSchemaApplyConfiguration) WithName(value string) *Cach
 	return b
 }
 
-// WithUID sets the UID field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the UID field is set to the value of the last call.
-func (b *CachedAPIResourceSchemaApplyConfiguration) WithUID(value string) *CachedAPIResourceSchemaApplyConfiguration {
-	b.UID = &value
-	return b
-}
-
 // WithCluster sets the Cluster field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Cluster field is set to the value of the last call.
 func (b *CachedAPIResourceSchemaApplyConfiguration) WithCluster(value string) *CachedAPIResourceSchemaApplyConfiguration {
 	b.Cluster = &value
-	return b
-}
-
-// WithIdentityHash sets the IdentityHash field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the IdentityHash field is set to the value of the last call.
-func (b *CachedAPIResourceSchemaApplyConfiguration) WithIdentityHash(value string) *CachedAPIResourceSchemaApplyConfiguration {
-	b.IdentityHash = &value
 	return b
 }

@@ -18,6 +18,7 @@ package cachedresources
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -44,6 +45,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if !cachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}
+	fmt.Printf("### resourceSchema Phase=%s\n", cachedResource.Status.Phase)
 	if cachedResource.Status.Phase != cachev1alpha1.CachedResourcePhaseInitializing {
 		return reconcileStatusContinue, nil
 	}
@@ -166,7 +168,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 		return reconcileStatusStop, err
 	}
 
-	apiResourceSchema, err := r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
+	_, err = r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
 	if err != nil {
 		conditions.MarkFalse(
 			cachedResource,
@@ -182,15 +184,12 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	}
 
 	newSchema := &cachev1alpha1.CachedAPIResourceSchema{
-		Name:         schemaName,
-		UID:          string(apiResourceSchema.UID),
-		Cluster:      logicalcluster.From(apiExport).String(),
-		IdentityHash: apiExport.Status.IdentityHash,
+		Name:    schemaName,
+		Cluster: logicalcluster.From(apiExport).String(),
 	}
 
 	if reflect.DeepEqual(newSchema, cachedResource.Status.Schema) {
 		return reconcileStatusContinue, nil
-
 	}
 
 	cachedResource.Status.Schema = newSchema
