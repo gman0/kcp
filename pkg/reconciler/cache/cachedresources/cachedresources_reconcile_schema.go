@@ -18,7 +18,6 @@ package cachedresources
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,7 +44,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if !cachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}
-	fmt.Printf("### resourceSchema Phase=%s\n", cachedResource.Status.Phase)
 	if cachedResource.Status.Phase != cachev1alpha1.CachedResourcePhaseInitializing {
 		return reconcileStatusContinue, nil
 	}
@@ -93,7 +91,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			cachev1alpha1.CachedResourceValid,
 			cachev1alpha1.APIResourceSchemaInvalidReason,
 			conditionsv1alpha1.ConditionSeverityError,
-			"Resource lock for %s not ready",
+			"API %s not ready",
 			gr.String(),
 		)
 		return reconcileStatusStop, nil
@@ -105,7 +103,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			cachev1alpha1.CachedResourceValid,
 			cachev1alpha1.APIResourceSchemaInvalidReason,
 			conditionsv1alpha1.ConditionSeverityError,
-			"Resource %s is not backed by an APIResourceSchema",
+			"Resource %s is not backed by an APIResourceSchema. Please contact the APIExport owner to resolve.",
 			gr.String(),
 		)
 		return reconcileStatusStop, nil
@@ -160,10 +158,10 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			cachev1alpha1.CachedResourceValid,
 			cachev1alpha1.APIResourceSchemaInvalidReason,
 			conditionsv1alpha1.ConditionSeverityError,
-			"No APIResourceSchema for %s resource in APIExport %s|%s: %v",
+			"No valid %s resource in APIExport %s|%s. Please contact the APIExport owner to resolve.",
+			gr.String(),
 			apiBinding.Spec.Reference.Export.Path,
 			apiBinding.Spec.Reference.Export.Name,
-			clusterName,
 		)
 		return reconcileStatusStop, err
 	}

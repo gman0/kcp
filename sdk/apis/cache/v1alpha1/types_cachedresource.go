@@ -210,7 +210,7 @@ type CachedResourceStatus struct {
 }
 
 type CachedAPIResourceSchema struct {
-	// name is the bound APIResourceSchema name.
+	// name is the APIResourceSchema name of the cached resource.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
