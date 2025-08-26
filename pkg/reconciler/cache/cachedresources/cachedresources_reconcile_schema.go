@@ -18,7 +18,7 @@ package cachedresources
 
 import (
 	"context"
-	"fmt"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -41,14 +41,10 @@ type resourceSchema struct {
 }
 
 func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
-	fmt.Printf("### CachedResource.resourceSchema.reconcile 1\n")
-
 	if !cachedResource.DeletionTimestamp.IsZero() {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 2\n")
 		return reconcileStatusContinue, nil
 	}
 	if cachedResource.Status.Phase != cachev1alpha1.CachedResourcePhaseInitializing {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 3\n")
 		return reconcileStatusContinue, nil
 	}
 
@@ -60,7 +56,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	lc, err := r.getLogicalCluster(clusterName)
 	if err != nil {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 4\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -76,7 +71,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	boundResources, err := apibinding.GetResourceBindings(lc)
 	if err != nil {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 5\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -92,7 +86,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	lock, resourceFound := boundResources[gr.String()]
 	if !resourceFound {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 6\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -105,7 +98,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	}
 
 	if lock.Name == "" {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 7\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -119,7 +111,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	apiBinding, err := r.getAPIBinding(clusterName, lock.Name)
 	if err != nil {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 8\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -135,7 +126,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	apiExport, err := r.getAPIExport(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
 	if err != nil {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 9\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -163,7 +153,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 		schemaName = res.Schema
 	}
 	if schemaName == "" {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 10\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -179,7 +168,6 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	apiResourceSchema, err := r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
 	if err != nil {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 11\n")
 		conditions.MarkFalse(
 			cachedResource,
 			cachev1alpha1.CachedResourceValid,
@@ -200,16 +188,10 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 		IdentityHash: apiExport.Status.IdentityHash,
 	}
 
-	if cachedResource.Status.Schema != nil &&
-		newSchema.Name == cachedResource.Status.Schema.Name &&
-		newSchema.Cluster == cachedResource.Status.Schema.Cluster &&
-		newSchema.UID == cachedResource.Status.Schema.UID &&
-		newSchema.IdentityHash == cachedResource.Status.Schema.IdentityHash {
-		fmt.Printf("### CachedResource.resourceSchema.reconcile 12\n")
+	if reflect.DeepEqual(newSchema, cachedResource.Status.Schema) {
 		return reconcileStatusContinue, nil
-	}
 
-	fmt.Printf("### CachedResource.resourceSchema.reconcile 13 expected=%#v got=%#v\n", newSchema, cachedResource.Status.Schema)
+	}
 
 	cachedResource.Status.Schema = newSchema
 

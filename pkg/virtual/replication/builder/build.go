@@ -40,7 +40,6 @@ import (
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	cachedresourcesreplication "github.com/kcp-dev/kcp/pkg/reconciler/cache/cachedresources/replication"
-	"github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework"
 	virtualworkspacesdynamic "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/apidefinition"
@@ -56,6 +55,7 @@ import (
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
 	"github.com/kcp-dev/kcp/sdk/apis/core"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	"github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/util/conditions"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
@@ -221,7 +221,7 @@ func BuildVirtualWorkspace(
 					)
 				},
 
-				getAPIResourceSchemaByName: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					return globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Cluster(cluster).Lister().Get(name)
 				},
 
@@ -342,11 +342,11 @@ type singleResourceAPIDefinitionSetProvider struct {
 	localKcpInformers  kcpinformers.SharedInformerFactory
 	globalKcpInformers kcpinformers.SharedInformerFactory
 
-	getLogicalCluster          func(cluster logicalcluster.Name, name string) (*corev1alpha1.LogicalCluster, error)
-	getAPIBinding              func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
-	getAPIExportByPath         func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
-	getCachedResourceByPath    func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error)
-	getAPIResourceSchemaByName func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	getLogicalCluster       func(cluster logicalcluster.Name, name string) (*corev1alpha1.LogicalCluster, error)
+	getAPIBinding           func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
+	getAPIExportByPath      func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+	getCachedResourceByPath func(path logicalcluster.Path, name string) (*cachev1alpha1.CachedResource, error)
+	getAPIResourceSchema    func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
 }
 
 func getResourceBindingsAnnJSON(lc *corev1alpha1.LogicalCluster) string {
@@ -364,64 +364,6 @@ func getResourceBindingsAnnJSON(lc *corev1alpha1.LogicalCluster) string {
 	return ann
 }
 
-func (a *singleResourceAPIDefinitionSetProvider) getAPIResourceSchema(
-	ctx context.Context,
-	clusterName logicalcluster.Name,
-	gvr schema.GroupVersionResource,
-) (*apisv1alpha1.APIResourceSchema, error) {
-	if gvr.Group == "" {
-		// Assume built-in types.
-		return builtin.GetBuiltInAPISchema(apisv1alpha1.GroupResource{Group: "", Resource: gvr.Resource})
-	}
-
-	lc, err := a.getLogicalCluster(clusterName, "cluster")
-	if err != nil {
-		return nil, err
-	}
-	resBindingsAnnStr := getResourceBindingsAnnJSON(lc)
-	resBindingsAnn, err := apibinding.UnmarshalResourceBindingsAnnotation(resBindingsAnnStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse annotation on LogicalCluster %s|%s: %v", clusterName, "cluster", err)
-	}
-
-	bindingName := ""
-	for gr, v := range resBindingsAnn {
-		if v.CRD {
-			continue
-		}
-		if gr == gvr.GroupResource().String() {
-			bindingName = v.Name
-		}
-	}
-
-	if bindingName == "" {
-		return nil, fmt.Errorf("no binding for %s found in workspace %s", gvr.GroupResource().String(), clusterName)
-	}
-
-	apiBinding, err := a.getAPIBinding(clusterName, bindingName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get APIBinding %s|%s", bindingName, clusterName)
-	}
-
-	apiExport, err := a.getAPIExportByPath(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get APIExport %s|%s referenced by APIBinding %s|%s: %v",
-			apiBinding.Spec.Reference.Export.Path, apiBinding.Spec.Reference.Export.Name,
-			clusterName, bindingName, err,
-		)
-	}
-	apiExportClusterName := logicalcluster.From(apiExport)
-
-	schName := ""
-	for _, exportResource := range apiExport.Spec.Resources {
-		if exportResource.Group == gvr.Group && exportResource.Name == gvr.Resource {
-			schName = exportResource.Schema
-		}
-	}
-
-	return a.getAPIResourceSchemaByName(apiExportClusterName, schName)
-}
-
 func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context.Context, key dynamiccontext.APIDomainKey) (apis apidefinition.APIDefinitionSet, apisExist bool, err error) {
 	parsedKey, err := apidomainkey.Parse(key)
 	if err != nil {
@@ -437,8 +379,12 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		return nil, false, fmt.Errorf("XXX: %v", err)
 	}
 
+	if !conditions.IsTrue(cachedResource, cachev1alpha1.CachedResourceValid) {
+		return nil, false, fmt.Errorf("cached resource not ready")
+	}
+
 	wrappedGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
-	wrappedSch, err := a.getAPIResourceSchema(ctx, parsedKey.CachedResourceCluster, wrappedGVR)
+	wrappedSch, err := a.getAPIResourceSchema(logicalcluster.Name(cachedResource.Status.Schema.Cluster), cachedResource.Status.Schema.Name)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get schema for wrapped object in CachedResource %s|%s: %v", parsedKey.CachedResourceCluster, parsedKey.CachedResourceName, err)
 	}
