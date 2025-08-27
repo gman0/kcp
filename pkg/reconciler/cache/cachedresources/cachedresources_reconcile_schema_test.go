@@ -47,7 +47,7 @@ func TestReconcileSchema(t *testing.T) {
 		expectedPhase      cachev1alpha1.CachedResourcePhaseType
 		expectedSchema     *cachev1alpha1.CachedAPIResourceSchema
 	}{
-		"has deletion timestamp": {
+		"has deletion timestamp and should skip": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					DeletionTimestamp: &metav1.Time{},
@@ -56,7 +56,7 @@ func TestReconcileSchema(t *testing.T) {
 			reconciler:     &resourceSchema{},
 			expectedStatus: reconcileStatusContinue,
 		},
-		"has Ready phase": {
+		"has Ready phase and should skip": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				Status: cachev1alpha1.CachedResourceStatus{
 					Phase: cachev1alpha1.CachedResourcePhaseReady,
@@ -408,7 +408,9 @@ func TestReconcileSchema(t *testing.T) {
 								{
 									Group:   "wildwest.dev",
 									Name:    "cowboys",
-									Storage: apisv1alpha2.ResourceSchemaStorage{},
+									Storage: apisv1alpha2.ResourceSchemaStorage{
+										// CRD is nil, and so this resource should be skipped.
+									},
 								},
 							},
 						},
@@ -727,22 +729,28 @@ func TestReconcileSchema(t *testing.T) {
 	for testName, tt := range tests {
 		t.Run(testName, func(t *testing.T) {
 			status, err := tt.reconciler.reconcile(context.Background(), tt.CachedResource)
-			for i := range tt.expectedConditions {
-				tt.expectedConditions[i].LastTransitionTime = metav1.Time{}
-			}
-			for i := range tt.CachedResource.Status.Conditions {
-				tt.CachedResource.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-			}
+
+			resetLastTransitionTime(tt.expectedConditions)
+			resetLastTransitionTime(tt.CachedResource.Status.Conditions)
+
 			if tt.expectedErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tt.expectedErr.Error(), err.Error())
 			} else {
 				require.NoError(t, err)
 			}
+
 			require.Equal(t, tt.expectedStatus, status)
 			require.Equal(t, tt.expectedPhase, tt.CachedResource.Status.Phase)
 			require.Equal(t, tt.expectedConditions, tt.CachedResource.Status.Conditions)
 			require.Equal(t, tt.expectedSchema, tt.CachedResource.Status.Schema)
 		})
+	}
+}
+
+func resetLastTransitionTime(conditions conditionsv1alpha1.Conditions) {
+	// We don't care about LastTransitionTime.
+	for i := range conditions {
+		conditions[i].LastTransitionTime = metav1.Time{}
 	}
 }
