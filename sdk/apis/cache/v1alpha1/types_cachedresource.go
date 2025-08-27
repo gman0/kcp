@@ -136,6 +136,15 @@ const (
 
 	SchemaNotReadyReason = "SchemaNotReady"
 	SchemaInvalidReason  = "SchemaInvalid"
+
+	// CachedResourceInvalidReferenceReason is a reason for the CachedResourceValid condition of APIBinding that the referenced
+	// CachedResource reference is invalid.
+	CachedResourceInvalidReferenceReason = "CachedResourceInvalidReference"
+	// CachedResourceNotFoundReason is a reason for the CachedResourceValid condition that the referenced CachedResource is not found.
+	CachedResourceNotFoundReason = "CachedResourceNotFound"
+
+	// InternalErrorReason is a reason used by multiple conditions that something went wrong.
+	InternalErrorReason = "InternalError"
 )
 
 // These are valid reasons of published resource.
