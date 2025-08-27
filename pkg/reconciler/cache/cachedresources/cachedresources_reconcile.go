@@ -99,7 +99,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 			dynRESTMapper:                  c.dynRESTMapper,
 			cacheKcpInformers:              c.cacheKcpInformers,
 			discoveringDynamicKcpInformers: c.discoveringDynamicKcpInformers,
-			callback:                       c.enqueue,
+			callback:                       func(obj interface{}) { c.enqueueCachedResource(objOrTombstone[*cachev1alpha1.CachedResource](obj), "") },
 			controllerRegistry:             c.controllerRegistry,
 		},
 	}

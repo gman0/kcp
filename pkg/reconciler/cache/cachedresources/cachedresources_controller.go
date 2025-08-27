@@ -23,8 +23,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -33,6 +36,7 @@ import (
 	"k8s.io/klog/v2"
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
+	kcpapiextensionsv1informers "github.com/kcp-dev/client-go/apiextensions/informers/apiextensions/v1"
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpcorev1informers "github.com/kcp-dev/client-go/informers/core/v1"
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
@@ -96,6 +100,7 @@ func NewController(
 	globalAPIExportInformer apisv1alpha2informers.APIExportClusterInformer,
 	apiResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
 	globalAPIResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
+	crdInformer kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer,
 ) (*Controller, error) {
 	c := &Controller{
 		shardName: shardName,
@@ -174,12 +179,37 @@ func NewController(
 	}
 
 	_, _ = cachedResourceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { c.enqueue(obj) },
-		UpdateFunc: func(_, obj interface{}) { c.enqueue(obj) },
-		DeleteFunc: func(obj interface{}) { c.enqueue(obj) },
+		AddFunc: func(obj interface{}) { c.enqueueCachedResource(objOrTombstone[*cachev1alpha1.CachedResource](obj), "") },
+		UpdateFunc: func(_, obj interface{}) {
+			c.enqueueCachedResource(objOrTombstone[*cachev1alpha1.CachedResource](obj), "")
+		},
+		DeleteFunc: func(obj interface{}) { c.enqueueCachedResource(objOrTombstone[*cachev1alpha1.CachedResource](obj), "") },
 	})
 
+	_, _ = logicalClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { c.enqueueLogicalCluster(objOrTombstone[*corev1alpha1.LogicalCluster](obj)) },
+		UpdateFunc: func(_, obj interface{}) { c.enqueueLogicalCluster(objOrTombstone[*corev1alpha1.LogicalCluster](obj)) },
+		DeleteFunc: func(obj interface{}) { c.enqueueLogicalCluster(objOrTombstone[*corev1alpha1.LogicalCluster](obj)) },
+	})
+
+	_, _ = crdInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{})
+
 	return c, nil
+}
+
+func objOrTombstone[T runtime.Object](obj any) T {
+	if t, ok := obj.(T); ok {
+		return t
+	}
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		if t, ok := tombstone.Obj.(T); ok {
+			return t
+		}
+
+		panic(fmt.Errorf("tombstone %T is not a %T", tombstone, new(T)))
+	}
+
+	panic(fmt.Errorf("%T is not a %T", obj, new(T)))
 }
 
 type CachedResourceResource = committer.Resource[*cachev1alpha1.CachedResourceSpec, *cachev1alpha1.CachedResourceStatus]
@@ -227,14 +257,40 @@ type Controller struct {
 	started bool
 }
 
-func (c *Controller) enqueue(obj interface{}) {
-	key, err := kcpcache.MetaClusterNamespaceKeyFunc(obj)
+func (c *Controller) enqueueLogicalCluster(lc *corev1alpha1.LogicalCluster) {
+	cachedResources, err := c.CachedResourceLister.Cluster(logicalcluster.From(lc)).List(labels.Everything())
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	for _, cr := range cachedResources {
+		c.enqueueCachedResource(cr, " because of LogicalCluster update")
+	}
+}
+
+func (c *Controller) enqueueCRD(crd *apiextensionsv1.CustomResourceDefinition) {
+	cachedResources, err := c.CachedResourceLister.Cluster(logicalcluster.From(crd)).List(labels.Everything())
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	fmt.Printf("### CachedResource.Controller.enqueueCRD with %d cluster\n", len(cachedResources))
+
+	for _, cr := range cachedResources {
+		c.enqueueCachedResource(cr, " because of CustomResourceDefinition update")
+	}
+}
+
+func (c *Controller) enqueueCachedResource(cachedResource *cachev1alpha1.CachedResource, logSuffix string) {
+	key, err := kcpcache.MetaClusterNamespaceKeyFunc(cachedResource)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}
 	logger := logging.WithQueueKey(logging.WithReconciler(klog.Background(), ControllerName), key)
-	logger.V(4).Info("queueing CachedResource")
+	logger.V(4).Info("queueing CachedResource%s", logSuffix)
 	c.queue.Add(key)
 }
 

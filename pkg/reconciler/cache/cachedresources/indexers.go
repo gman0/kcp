@@ -17,6 +17,9 @@ limitations under the License.
 package cachedresources
 
 import (
+	"fmt"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/kcp-dev/logicalcluster/v3"
@@ -27,6 +30,8 @@ import (
 const (
 	// ByGVRAndLogicalCluster is the name for the index that indexes by an object's gvr and logical cluster.
 	ByGVRAndLogicalCluster = "kcp-byGVRAndLogicalCluster"
+
+	crdByLogicalClusterAndGR = "crdByLogicalClusterAndGR"
 )
 
 // IndexByShardAndLogicalClusterAndNamespace is an index function that indexes by an object's gvr and logical cluster.
@@ -52,4 +57,13 @@ func GVRAndLogicalClusterKey(gvr schema.GroupVersionResource, cluster logicalclu
 		key += "|" + cluster.String()
 	}
 	return key
+}
+
+func indexCrdByLogicalClusterAndGR(obj interface{}) ([]string, error) {
+	crd := obj.(*apiextensionsv1.CustomResourceDefinition)
+	return []string{crdByLogicalClusterAndGRKey(logicalcluster.From(crd), crd)}, nil
+}
+
+func crdByLogicalClusterAndGRKey(cluster logicalcluster.Name, crd *apiextensionsv1.CustomResourceDefinition) string {
+	return fmt.Sprintf("%s|%s.%s", cluster, crd.Spec.Group, crd.Spec.Names.Plural)
 }
