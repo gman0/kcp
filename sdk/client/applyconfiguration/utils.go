@@ -154,6 +154,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apisv1alpha2.VirtualWorkspaceApplyConfiguration{}
 
 		// Group=cache.kcp.io, Version=v1alpha1
+	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedAPIResourceSchema"):
+		return &applyconfigurationcachev1alpha1.CachedAPIResourceSchemaApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedObject"):
 		return &applyconfigurationcachev1alpha1.CachedObjectApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedObjectSpec"):

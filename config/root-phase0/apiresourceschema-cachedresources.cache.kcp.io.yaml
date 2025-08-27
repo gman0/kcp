@@ -2,7 +2,7 @@ apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
   creationTimestamp: null
-  name: v250523-2b8c1d3c5.cachedresources.cache.kcp.io
+  name: v250827-e23e1b842.cachedresources.cache.kcp.io
 spec:
   group: cache.kcp.io
   names:
@@ -212,6 +212,22 @@ spec:
               required:
               - cache
               - local
+              type: object
+            resourceSchema:
+              description: Schema refers to the APIResourceSchema of the cached resource.
+              properties:
+                cluster:
+                  description: cluster is the cluster name where the APIResourceSchema
+                    is defined.
+                  minLength: 1
+                  type: string
+                name:
+                  description: name is the APIResourceSchema name.
+                  minLength: 1
+                  type: string
+              required:
+              - cluster
+              - name
               type: object
           type: object
       required:

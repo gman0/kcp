@@ -130,6 +130,12 @@ const (
 
 	IdentityGenerationFailedReason   = "IdentityGenerationFailed"
 	IdentityVerificationFailedReason = "IdentityVerificationFailed"
+
+	// CachedAPIResourceSchemaValid represents status of the APIResourceSchema reference.
+	CachedAPIResourceSchemaValid conditionsv1alpha1.ConditionType = "APIResourceSchemaValid"
+
+	SchemaNotReadyReason = "SchemaNotReady"
+	SchemaInvalidReason  = "SchemaInvalid"
 )
 
 // These are valid reasons of published resource.
@@ -149,6 +155,10 @@ type CachedResourceStatus struct {
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
 
+	// Schema refers to the APIResourceSchema of the cached resource.
+	// +optional
+	Schema *CachedAPIResourceSchema `json:"resourceSchema,omitempty"`
+
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//
 	// +kubebuilder:default=Initializing
@@ -157,6 +167,22 @@ type CachedResourceStatus struct {
 	// Current processing state of the Workspace.
 	// +optional
 	Conditions conditionsv1alpha1.Conditions `json:"conditions,omitempty"`
+}
+
+// CachedAPIResourceSchema is a reference to the APIResourceSchema
+// by name and cluster name.
+type CachedAPIResourceSchema struct {
+	// name is the APIResourceSchema name.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// cluster is the cluster name where the APIResourceSchema is defined.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Cluster string `json:"cluster"`
 }
 
 // ResourceCount is the number of resources that match the label selector
