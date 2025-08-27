@@ -12,7 +12,7 @@ spec:
       crd: {}
   - group: cache.kcp.io
     name: cachedresources
-    schema: v250827-e23e1b842.cachedresources.cache.kcp.io
+    schema: v250827-e75ce37b0.cachedresources.cache.kcp.io
     storage:
       crd: {}
 status: {}

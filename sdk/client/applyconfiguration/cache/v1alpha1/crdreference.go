@@ -18,23 +18,23 @@ limitations under the License.
 
 package v1alpha1
 
-// CachedAPIResourceSchemaApplyConfiguration represents a declarative configuration of the CachedAPIResourceSchema type for use
+// CRDReferenceApplyConfiguration represents a declarative configuration of the CRDReference type for use
 // with apply.
-type CachedAPIResourceSchemaApplyConfiguration struct {
+type CRDReferenceApplyConfiguration struct {
 	Name    *string `json:"name,omitempty"`
 	Cluster *string `json:"cluster,omitempty"`
 }
 
-// CachedAPIResourceSchemaApplyConfiguration constructs a declarative configuration of the CachedAPIResourceSchema type for use with
+// CRDReferenceApplyConfiguration constructs a declarative configuration of the CRDReference type for use with
 // apply.
-func CachedAPIResourceSchema() *CachedAPIResourceSchemaApplyConfiguration {
-	return &CachedAPIResourceSchemaApplyConfiguration{}
+func CRDReference() *CRDReferenceApplyConfiguration {
+	return &CRDReferenceApplyConfiguration{}
 }
 
 // WithName sets the Name field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Name field is set to the value of the last call.
-func (b *CachedAPIResourceSchemaApplyConfiguration) WithName(value string) *CachedAPIResourceSchemaApplyConfiguration {
+func (b *CRDReferenceApplyConfiguration) WithName(value string) *CRDReferenceApplyConfiguration {
 	b.Name = &value
 	return b
 }
@@ -42,7 +42,7 @@ func (b *CachedAPIResourceSchemaApplyConfiguration) WithName(value string) *Cach
 // WithCluster sets the Cluster field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Cluster field is set to the value of the last call.
-func (b *CachedAPIResourceSchemaApplyConfiguration) WithCluster(value string) *CachedAPIResourceSchemaApplyConfiguration {
+func (b *CRDReferenceApplyConfiguration) WithCluster(value string) *CRDReferenceApplyConfiguration {
 	b.Cluster = &value
 	return b
 }

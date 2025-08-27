@@ -154,8 +154,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apisv1alpha2.VirtualWorkspaceApplyConfiguration{}
 
 		// Group=cache.kcp.io, Version=v1alpha1
-	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedAPIResourceSchema"):
-		return &applyconfigurationcachev1alpha1.CachedAPIResourceSchemaApplyConfiguration{}
+	case cachev1alpha1.SchemeGroupVersion.WithKind("APIResourceSchemaReference"):
+		return &applyconfigurationcachev1alpha1.APIResourceSchemaReferenceApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedObject"):
 		return &applyconfigurationcachev1alpha1.CachedObjectApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedObjectSpec"):
@@ -172,10 +172,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationcachev1alpha1.CachedResourceEndpointSliceStatusApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedResourceReference"):
 		return &applyconfigurationcachev1alpha1.CachedResourceReferenceApplyConfiguration{}
+	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedResourceSchema"):
+		return &applyconfigurationcachev1alpha1.CachedResourceSchemaApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedResourceSpec"):
 		return &applyconfigurationcachev1alpha1.CachedResourceSpecApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("CachedResourceStatus"):
 		return &applyconfigurationcachev1alpha1.CachedResourceStatusApplyConfiguration{}
+	case cachev1alpha1.SchemeGroupVersion.WithKind("CRDReference"):
+		return &applyconfigurationcachev1alpha1.CRDReferenceApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("GroupVersionResource"):
 		return &applyconfigurationcachev1alpha1.GroupVersionResourceApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("Identity"):

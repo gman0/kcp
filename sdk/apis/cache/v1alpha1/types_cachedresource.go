@@ -131,8 +131,8 @@ const (
 	IdentityGenerationFailedReason   = "IdentityGenerationFailed"
 	IdentityVerificationFailedReason = "IdentityVerificationFailed"
 
-	// CachedAPIResourceSchemaValid represents status of the APIResourceSchema reference.
-	CachedAPIResourceSchemaValid conditionsv1alpha1.ConditionType = "APIResourceSchemaValid"
+	// CachedSchemaValid represents status of the schema reference.
+	CachedSchemaValid conditionsv1alpha1.ConditionType = "CachedSchemaValid"
 
 	SchemaNotReadyReason = "SchemaNotReady"
 	SchemaInvalidReason  = "SchemaInvalid"
@@ -157,7 +157,7 @@ type CachedResourceStatus struct {
 
 	// Schema refers to the APIResourceSchema of the cached resource.
 	// +optional
-	Schema *CachedAPIResourceSchema `json:"resourceSchema,omitempty"`
+	Schema *CachedResourceSchema `json:"resourceSchema,omitempty"`
 
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//
@@ -169,9 +169,16 @@ type CachedResourceStatus struct {
 	Conditions conditionsv1alpha1.Conditions `json:"conditions,omitempty"`
 }
 
-// CachedAPIResourceSchema is a reference to the APIResourceSchema
+// CachedResourceSchema holds the reference to the schema resource.
 // by name and cluster name.
-type CachedAPIResourceSchema struct {
+type CachedResourceSchema struct {
+	// +optional
+	APIResourceSchema *APIResourceSchemaReference `json:"apiResourceSchema,omitempty"`
+	// +optional
+	CRD *CRDReference `json:"crd,omitempty"`
+}
+
+type APIResourceSchemaReference struct {
 	// name is the APIResourceSchema name.
 	//
 	// +required
@@ -179,6 +186,20 @@ type CachedAPIResourceSchema struct {
 	Name string `json:"name"`
 
 	// cluster is the cluster name where the APIResourceSchema is defined.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Cluster string `json:"cluster"`
+}
+
+type CRDReference struct {
+	// name is the CRD name.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// cluster is the cluster name where the CRD is defined.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1

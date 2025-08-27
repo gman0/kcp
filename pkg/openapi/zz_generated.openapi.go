@@ -92,7 +92,8 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ResourceSelector":                            schema_sdk_apis_apis_v1alpha2_ResourceSelector(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.ScopedPermissionClaim":                       schema_sdk_apis_apis_v1alpha2_ScopedPermissionClaim(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2.VirtualWorkspace":                            schema_sdk_apis_apis_v1alpha2_VirtualWorkspace(ref),
-		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedAPIResourceSchema":                    schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref),
+		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.APIResourceSchemaReference":                 schema_sdk_apis_cache_v1alpha1_APIResourceSchemaReference(ref),
+		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CRDReference":                               schema_sdk_apis_cache_v1alpha1_CRDReference(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedObject":                               schema_sdk_apis_cache_v1alpha1_CachedObject(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedObjectList":                           schema_sdk_apis_cache_v1alpha1_CachedObjectList(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedObjectSpec":                           schema_sdk_apis_cache_v1alpha1_CachedObjectSpec(ref),
@@ -104,6 +105,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceEndpointSliceStatus":          schema_sdk_apis_cache_v1alpha1_CachedResourceEndpointSliceStatus(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceList":                         schema_sdk_apis_cache_v1alpha1_CachedResourceList(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceReference":                    schema_sdk_apis_cache_v1alpha1_CachedResourceReference(ref),
+		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceSchema":                       schema_sdk_apis_cache_v1alpha1_CachedResourceSchema(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceSpec":                         schema_sdk_apis_cache_v1alpha1_CachedResourceSpec(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceStatus":                       schema_sdk_apis_cache_v1alpha1_CachedResourceStatus(ref),
 		"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.GroupVersionResource":                       schema_sdk_apis_cache_v1alpha1_GroupVersionResource(ref),
@@ -2957,12 +2959,11 @@ func schema_sdk_apis_apis_v1alpha2_VirtualWorkspace(ref common.ReferenceCallback
 	}
 }
 
-func schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_sdk_apis_cache_v1alpha1_APIResourceSchemaReference(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "CachedAPIResourceSchema is a reference to the APIResourceSchema by name and cluster name.",
-				Type:        []string{"object"},
+				Type: []string{"object"},
 				Properties: map[string]spec.Schema{
 					"name": {
 						SchemaProps: spec.SchemaProps{
@@ -2975,6 +2976,35 @@ func schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref common.Reference
 					"cluster": {
 						SchemaProps: spec.SchemaProps{
 							Description: "cluster is the cluster name where the APIResourceSchema is defined.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"name", "cluster"},
+			},
+		},
+	}
+}
+
+func schema_sdk_apis_cache_v1alpha1_CRDReference(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "name is the CRD name.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"cluster": {
+						SchemaProps: spec.SchemaProps{
+							Description: "cluster is the cluster name where the CRD is defined.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3398,6 +3428,31 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceReference(ref common.Reference
 	}
 }
 
+func schema_sdk_apis_cache_v1alpha1_CachedResourceSchema(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "CachedResourceSchema holds the reference to the schema resource. by name and cluster name.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"apiResourceSchema": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.APIResourceSchemaReference"),
+						},
+					},
+					"crd": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CRDReference"),
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.APIResourceSchemaReference", "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CRDReference"},
+	}
+}
+
 func schema_sdk_apis_cache_v1alpha1_CachedResourceSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -3471,7 +3526,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceStatus(ref common.ReferenceCal
 					"resourceSchema": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Schema refers to the APIResourceSchema of the cached resource.",
-							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedAPIResourceSchema"),
+							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceSchema"),
 						},
 					},
 					"phase": {
@@ -3499,7 +3554,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceStatus(ref common.ReferenceCal
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedAPIResourceSchema", "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.ResourceCount", "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1.Condition"},
+			"github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceSchema", "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.ResourceCount", "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1.Condition"},
 	}
 }
 

@@ -220,18 +220,36 @@ spec:
                 description: Schema refers to the APIResourceSchema of the cached
                   resource.
                 properties:
-                  cluster:
-                    description: cluster is the cluster name where the APIResourceSchema
-                      is defined.
-                    minLength: 1
-                    type: string
-                  name:
-                    description: name is the APIResourceSchema name.
-                    minLength: 1
-                    type: string
-                required:
-                - cluster
-                - name
+                  apiResourceSchema:
+                    properties:
+                      cluster:
+                        description: cluster is the cluster name where the APIResourceSchema
+                          is defined.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: name is the APIResourceSchema name.
+                        minLength: 1
+                        type: string
+                    required:
+                    - cluster
+                    - name
+                    type: object
+                  crd:
+                    properties:
+                      cluster:
+                        description: cluster is the cluster name where the CRD is
+                          defined.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: name is the CRD name.
+                        minLength: 1
+                        type: string
+                    required:
+                    - cluster
+                    - name
+                    type: object
                 type: object
             type: object
         required:

@@ -26,11 +26,11 @@ import (
 // CachedResourceStatusApplyConfiguration represents a declarative configuration of the CachedResourceStatus type for use
 // with apply.
 type CachedResourceStatusApplyConfiguration struct {
-	IdentityHash   *string                                    `json:"identityHash,omitempty"`
-	ResourceCounts *ResourceCountApplyConfiguration           `json:"resourceCounts,omitempty"`
-	Schema         *CachedAPIResourceSchemaApplyConfiguration `json:"resourceSchema,omitempty"`
-	Phase          *cachev1alpha1.CachedResourcePhaseType     `json:"phase,omitempty"`
-	Conditions     *conditionsv1alpha1.Conditions             `json:"conditions,omitempty"`
+	IdentityHash   *string                                 `json:"identityHash,omitempty"`
+	ResourceCounts *ResourceCountApplyConfiguration        `json:"resourceCounts,omitempty"`
+	Schema         *CachedResourceSchemaApplyConfiguration `json:"resourceSchema,omitempty"`
+	Phase          *cachev1alpha1.CachedResourcePhaseType  `json:"phase,omitempty"`
+	Conditions     *conditionsv1alpha1.Conditions          `json:"conditions,omitempty"`
 }
 
 // CachedResourceStatusApplyConfiguration constructs a declarative configuration of the CachedResourceStatus type for use with
@@ -58,7 +58,7 @@ func (b *CachedResourceStatusApplyConfiguration) WithResourceCounts(value *Resou
 // WithSchema sets the Schema field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Schema field is set to the value of the last call.
-func (b *CachedResourceStatusApplyConfiguration) WithSchema(value *CachedAPIResourceSchemaApplyConfiguration) *CachedResourceStatusApplyConfiguration {
+func (b *CachedResourceStatusApplyConfiguration) WithSchema(value *CachedResourceSchemaApplyConfiguration) *CachedResourceStatusApplyConfiguration {
 	b.Schema = value
 	return b
 }
