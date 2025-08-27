@@ -85,8 +85,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    apierrors.NewNotFound(corev1alpha1.Resource("logicalclusters"), "cluster"),
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaNotReadyReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					"Error getting LogicalCluster cluster|cluster: %v",
 					apierrors.NewNotFound(corev1alpha1.Resource("logicalclusters"), "cluster"),
@@ -116,8 +116,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    fmt.Errorf("failed to unmarshal ResourceBindings annotation: invalid character 'x' looking for beginning of value"),
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaNotReadyReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					"Error reading bound resources on LogicalCluster cluster|cluster: failed to unmarshal ResourceBindings annotation: invalid character 'x' looking for beginning of value",
 				),
@@ -153,8 +153,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    nil,
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaNotReadyReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					"API cowboys.wildwest.dev not ready",
 				),
@@ -190,8 +190,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    nil,
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaInvalidReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					"Resource cowboys.wildwest.dev is not backed by an APIResourceSchema. Please contact the APIExport owner to resolve.",
 				),
@@ -230,8 +230,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    apierrors.NewNotFound(apisv1alpha2.Resource("apibindings"), "cowboys-apibinding"),
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaNotReadyReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					`Error getting APIBinding cluster|cowboys-apibinding: apibindings.apis.kcp.io "cowboys-apibinding" not found`,
 				),
@@ -285,8 +285,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    apierrors.NewNotFound(apisv1alpha2.Resource("apiexports"), "cowboys-apiexport"),
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaNotReadyReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					`Error getting APIExport provider|cowboys-apiexport for APIBinding cluster|cowboys-apibinding: apiexports.apis.kcp.io "cowboys-apiexport" not found`,
 				),
@@ -352,8 +352,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    nil,
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaInvalidReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					`No valid cowboys.wildwest.dev resource in APIExport provider|cowboys-apiexport. Please contact the APIExport owner to resolve.`,
 				),
@@ -422,8 +422,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    nil,
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaInvalidReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					`No valid cowboys.wildwest.dev resource in APIExport provider|cowboys-apiexport. Please contact the APIExport owner to resolve.`,
 				),
@@ -496,8 +496,8 @@ func TestReconcileSchema(t *testing.T) {
 			expectedErr:    apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), "today.cowboys.wildwest.dev"),
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
-					cachev1alpha1.CachedResourceValid,
-					cachev1alpha1.APIResourceSchemaInvalidReason,
+					cachev1alpha1.CachedAPIResourceSchemaValid,
+					cachev1alpha1.SchemaNotReadyReason,
 					conditionsv1alpha1.ConditionSeverityError,
 					`Error getting APIResourceSchema provider|today.cowboys.wildwest.dev: apiresourceschemas.apis.kcp.io "today.cowboys.wildwest.dev" not found`,
 				),
@@ -565,10 +565,12 @@ func TestReconcileSchema(t *testing.T) {
 					return &apisv1alpha1.APIResourceSchema{}, nil
 				},
 			},
-			expectedStatus:     reconcileStatusStopAndRequeue,
-			expectedPhase:      cachev1alpha1.CachedResourcePhaseInitializing,
-			expectedErr:        nil,
-			expectedConditions: nil,
+			expectedStatus: reconcileStatusStopAndRequeue,
+			expectedPhase:  cachev1alpha1.CachedResourcePhaseInitializing,
+			expectedErr:    nil,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.TrueCondition(cachev1alpha1.CachedAPIResourceSchemaValid),
+			},
 			expectedSchema: &cachev1alpha1.CachedAPIResourceSchema{
 				Name:    "today.cowboys.wildwest.dev",
 				Cluster: "provider",
@@ -640,10 +642,12 @@ func TestReconcileSchema(t *testing.T) {
 					return &apisv1alpha1.APIResourceSchema{}, nil
 				},
 			},
-			expectedStatus:     reconcileStatusStopAndRequeue,
-			expectedPhase:      cachev1alpha1.CachedResourcePhaseInitializing,
-			expectedErr:        nil,
-			expectedConditions: nil,
+			expectedStatus: reconcileStatusStopAndRequeue,
+			expectedPhase:  cachev1alpha1.CachedResourcePhaseInitializing,
+			expectedErr:    nil,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.TrueCondition(cachev1alpha1.CachedAPIResourceSchemaValid),
+			},
 			expectedSchema: &cachev1alpha1.CachedAPIResourceSchema{
 				Name:    "today.cowboys.wildwest.dev",
 				Cluster: "provider",
@@ -659,6 +663,9 @@ func TestReconcileSchema(t *testing.T) {
 					Schema: &cachev1alpha1.CachedAPIResourceSchema{
 						Name:    "today.cowboys.wildwest.dev",
 						Cluster: "provider",
+					},
+					Conditions: []conditionsv1alpha1.Condition{
+						*conditions.TrueCondition(cachev1alpha1.CachedAPIResourceSchemaValid),
 					},
 				},
 				Spec: cachev1alpha1.CachedResourceSpec{
@@ -715,10 +722,12 @@ func TestReconcileSchema(t *testing.T) {
 					return &apisv1alpha1.APIResourceSchema{}, nil
 				},
 			},
-			expectedStatus:     reconcileStatusContinue,
-			expectedPhase:      cachev1alpha1.CachedResourcePhaseInitializing,
-			expectedErr:        nil,
-			expectedConditions: nil,
+			expectedStatus: reconcileStatusContinue,
+			expectedPhase:  cachev1alpha1.CachedResourcePhaseInitializing,
+			expectedErr:    nil,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.TrueCondition(cachev1alpha1.CachedAPIResourceSchemaValid),
+			},
 			expectedSchema: &cachev1alpha1.CachedAPIResourceSchema{
 				Name:    "today.cowboys.wildwest.dev",
 				Cluster: "provider",

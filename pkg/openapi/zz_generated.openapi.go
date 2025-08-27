@@ -2880,7 +2880,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedAPIResourceSchema(ref common.Reference
 				Properties: map[string]spec.Schema{
 					"name": {
 						SchemaProps: spec.SchemaProps{
-							Description: "name is the bound APIResourceSchema name.",
+							Description: "name is the APIResourceSchema name of the cached resource.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",

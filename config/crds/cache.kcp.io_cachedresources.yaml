@@ -224,7 +224,8 @@ spec:
                     minLength: 1
                     type: string
                   name:
-                    description: name is the bound APIResourceSchema name.
+                    description: name is the APIResourceSchema name of the cached
+                      resource.
                     minLength: 1
                     type: string
                 required:

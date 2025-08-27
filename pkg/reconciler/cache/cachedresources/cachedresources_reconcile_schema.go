@@ -58,8 +58,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if err != nil {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaNotReadyReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"Error getting LogicalCluster %s|%s: %v",
 			clusterName,
@@ -73,8 +73,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if err != nil {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaNotReadyReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"Error reading bound resources on LogicalCluster %s|%s: %v",
 			clusterName,
@@ -88,8 +88,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if !resourceFound {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaNotReadyReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"API %s not ready",
 			gr.String(),
@@ -100,8 +100,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if lock.Name == "" {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaInvalidReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"Resource %s is not backed by an APIResourceSchema. Please contact the APIExport owner to resolve.",
 			gr.String(),
@@ -113,8 +113,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if err != nil {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaNotReadyReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"Error getting APIBinding %s|%s: %v",
 			clusterName,
@@ -128,8 +128,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if err != nil {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaNotReadyReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"Error getting APIExport %s|%s for APIBinding %s|%s: %v",
 			apiBinding.Spec.Reference.Export.Path,
@@ -155,8 +155,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if schemaName == "" {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaInvalidReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"No valid %s resource in APIExport %s|%s. Please contact the APIExport owner to resolve.",
 			gr.String(),
@@ -170,8 +170,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if err != nil {
 		conditions.MarkFalse(
 			cachedResource,
-			cachev1alpha1.CachedResourceValid,
-			cachev1alpha1.APIResourceSchemaInvalidReason,
+			cachev1alpha1.CachedAPIResourceSchemaValid,
+			cachev1alpha1.SchemaNotReadyReason,
 			conditionsv1alpha1.ConditionSeverityError,
 			"Error getting APIResourceSchema %s|%s: %v",
 			apiBinding.Spec.Reference.Export.Path,
@@ -191,6 +191,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	}
 
 	cachedResource.Status.Schema = newSchema
+	conditions.MarkTrue(cachedResource, cachev1alpha1.CachedAPIResourceSchemaValid)
 
 	return reconcileStatusStopAndRequeue, nil
 }
