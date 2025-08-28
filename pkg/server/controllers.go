@@ -1711,6 +1711,10 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 	if err != nil {
 		return err
 	}
+	crdClusterClient, err := kcpapiextensionsclientset.NewForConfig(workspaceConfig)
+	if err != nil {
+		return err
+	}
 
 	cachedResourceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResources()
 	cachedResourceEndpointSliceInformer := s.KcpSharedInformerFactory.Cache().V1alpha1().CachedResourceEndpointSlices()
@@ -1724,11 +1728,13 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 		s.Options.Extra.ShardName,
 		kcpClusterClient,
 		s.KcpCacheClusterClient,
+		crdClusterClient,
 		dynamicClient,
 		s.CacheDynamicClient,
 		s.KubeClusterClient,
 		s.KubeSharedInformerFactory.Core().V1().Namespaces(),
 		s.KubeSharedInformerFactory.Core().V1().Secrets(),
+		s.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
 		s.DynRESTMapper,
 		s.DiscoveringDynamicSharedInformerFactory,
 		s.CacheKcpSharedInformerFactory,

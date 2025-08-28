@@ -18,31 +18,35 @@ limitations under the License.
 
 package v1alpha1
 
-// CachedResourceSchemaApplyConfiguration represents a declarative configuration of the CachedResourceSchema type for use
+import (
+	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
+)
+
+// CachedResourceSchemaSourceApplyConfiguration represents a declarative configuration of the CachedResourceSchemaSource type for use
 // with apply.
-type CachedResourceSchemaApplyConfiguration struct {
-	APIResourceSchema *APIResourceSchemaReferenceApplyConfiguration `json:"apiResourceSchema,omitempty"`
-	CRD               *CRDReferenceApplyConfiguration               `json:"crd,omitempty"`
+type CachedResourceSchemaSourceApplyConfiguration struct {
+	APIResourceSchema *cachev1alpha1.APIResourceSchemaSource `json:"apiResourceSchema,omitempty"`
+	CRD               *CRDSchemaSourceApplyConfiguration     `json:"crd,omitempty"`
 }
 
-// CachedResourceSchemaApplyConfiguration constructs a declarative configuration of the CachedResourceSchema type for use with
+// CachedResourceSchemaSourceApplyConfiguration constructs a declarative configuration of the CachedResourceSchemaSource type for use with
 // apply.
-func CachedResourceSchema() *CachedResourceSchemaApplyConfiguration {
-	return &CachedResourceSchemaApplyConfiguration{}
+func CachedResourceSchemaSource() *CachedResourceSchemaSourceApplyConfiguration {
+	return &CachedResourceSchemaSourceApplyConfiguration{}
 }
 
 // WithAPIResourceSchema sets the APIResourceSchema field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the APIResourceSchema field is set to the value of the last call.
-func (b *CachedResourceSchemaApplyConfiguration) WithAPIResourceSchema(value *APIResourceSchemaReferenceApplyConfiguration) *CachedResourceSchemaApplyConfiguration {
-	b.APIResourceSchema = value
+func (b *CachedResourceSchemaSourceApplyConfiguration) WithAPIResourceSchema(value cachev1alpha1.APIResourceSchemaSource) *CachedResourceSchemaSourceApplyConfiguration {
+	b.APIResourceSchema = &value
 	return b
 }
 
 // WithCRD sets the CRD field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the CRD field is set to the value of the last call.
-func (b *CachedResourceSchemaApplyConfiguration) WithCRD(value *CRDReferenceApplyConfiguration) *CachedResourceSchemaApplyConfiguration {
+func (b *CachedResourceSchemaSourceApplyConfiguration) WithCRD(value *CRDSchemaSourceApplyConfiguration) *CachedResourceSchemaSourceApplyConfiguration {
 	b.CRD = value
 	return b
 }

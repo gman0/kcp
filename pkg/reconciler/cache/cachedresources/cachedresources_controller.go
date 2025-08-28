@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/klog/v2"
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
+	kcpapiextensionsclientset "github.com/kcp-dev/client-go/apiextensions/client"
 	kcpapiextensionsv1informers "github.com/kcp-dev/client-go/apiextensions/informers/apiextensions/v1"
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpcorev1informers "github.com/kcp-dev/client-go/informers/core/v1"
@@ -79,12 +81,14 @@ func NewController(
 	shardName string,
 	kcpClusterClient kcpclientset.ClusterInterface,
 	kcpCacheClient kcpclientset.ClusterInterface,
+	crdClusterClient kcpapiextensionsclientset.ClusterInterface,
 	dynamicClient kcpdynamic.ClusterInterface,
 	cacheDynamicClient kcpdynamic.ClusterInterface,
 
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
 	namespaceInformer kcpcorev1informers.NamespaceClusterInformer,
 	secretInformer kcpcorev1informers.SecretClusterInformer,
+	crdInformer kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer,
 
 	dynRESTMapper *dynamicrestmapper.DynamicRESTMapper,
 
@@ -100,7 +104,6 @@ func NewController(
 	globalAPIExportInformer apisv1alpha2informers.APIExportClusterInformer,
 	apiResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
 	globalAPIResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
-	crdInformer kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer,
 ) (*Controller, error) {
 	c := &Controller{
 		shardName: shardName,
@@ -174,6 +177,46 @@ func NewController(
 			return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](apisv1alpha2.Resource("apiexports"), apiExportInformer.Informer().GetIndexer(), globalAPIExportInformer.Informer().GetIndexer(), path, name)
 		},
 		getAPIResourceSchema: informer.NewScopedGetterWithFallback[*apisv1alpha1.APIResourceSchema, apisv1alpha1listers.APIResourceSchemaLister](apiResourceSchemaInformer.Lister(), globalAPIResourceSchemaInformer.Lister()),
+
+		listCRDsByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error) {
+			crds, err := crdInformer.Cluster(cluster).Lister().List(labels.Everything())
+			if err != nil {
+				return nil, err
+			}
+
+			var crdsWithGR []*apiextensionsv1.CustomResourceDefinition
+			for _, crd := range crds {
+				if crd.Spec.Group == gr.Group && crd.Spec.Names.Plural == gr.Resource {
+					crdsWithGR = append(crdsWithGR, crd)
+				}
+			}
+			return crdsWithGR, nil
+		},
+
+		getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
+			crd, err := crdInformer.Lister().Cluster(cluster).Get(name)
+			if err == nil {
+				return crd, nil
+			}
+
+			// In case the lister is slow to catch up, try a live read
+			crd, err = crdClusterClient.Cluster(cluster.Path()).ApiextensionsV1().CustomResourceDefinitions().Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return nil, err
+			}
+
+			return crd, nil
+		},
+
+		createCachedAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
+			_, err := kcpCacheClient.Cluster(cluster.Path()).ApisV1alpha1().APIResourceSchemas().Create(ctx, sch, metav1.CreateOptions{})
+			return err
+		},
+
+		updateCreateAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
+			_, err := kcpCacheClient.Cluster(cluster.Path()).ApisV1alpha1().APIResourceSchemas().Update(ctx, sch, metav1.UpdateOptions{})
+			return err
+		},
 
 		controllerRegistry: newRegistry(),
 	}
@@ -251,6 +294,12 @@ type Controller struct {
 	getAPIBinding        func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
 	getAPIExport         func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
 	getAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	listCRDsByGR         func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error)
+
+	getCRD func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
+
+	createCachedAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
+	updateCreateAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
 
 	controllerRegistry *controllerRegistry
 

@@ -18,11 +18,14 @@ package cachedresources
 
 import (
 	"context"
-	"reflect"
+	"fmt"
 
+	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
@@ -36,11 +39,19 @@ import (
 )
 
 type resourceSchema struct {
-	getLogicalCluster    func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
-	getAPIBinding        func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
-	getAPIExport         func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+	getLogicalCluster func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
+	getAPIBinding     func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
+	getAPIExport      func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+
 	getAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
-	listCRDsByGR         func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error)
+	getCRD               func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
+
+	createCachedAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
+	updateCreateAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
+}
+
+func CachedAPIResourceSchemaName(cachedResourceUID types.UID) string {
+	return fmt.Sprintf("%s.cachedresources.kcp.io", cachedResourceUID)
 }
 
 func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
@@ -50,6 +61,10 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if cachedResource.Status.Phase != cachev1alpha1.CachedResourcePhaseInitializing {
 		return reconcileStatusContinue, nil
 	}
+	if cachedResource.Status.ResourceSchemaSource == nil {
+		return reconcileStatusStopAndRequeue, nil
+	}
+	logger := klog.FromContext(ctx)
 
 	gvr := schema.GroupVersionResource{
 		Group:    cachedResource.Spec.Group,
@@ -58,162 +73,137 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	}
 	cluster := logicalcluster.From(cachedResource)
 
-	res, err := r.tryAPIResourceSchema(gvr.GroupResource(), cluster)
-	if res.selected {
-		if err != nil {
-			conditions.Set(cachedResource, res.cond)
-			return res.status, err
-		}
-
-		if reflect.DeepEqual(res.resSch, cachedResource.Status.Schema) {
-			return reconcileStatusContinue, nil
-		}
-
-		cachedResource.Status.Schema = res.resSch
-		conditions.MarkTrue(cachedResource, cachev1alpha1.CachedSchemaValid)
-
-		return reconcileStatusStopAndRequeue, nil
-	}
-
-	if err != nil && !apierrors.IsNotFound(err) {
+	_, err := r.getAPIResourceSchema(cluster, CachedAPIResourceSchemaName(cachedResource.UID))
+	cachedSchemaNotFound := apierrors.IsNotFound(err)
+	if err != nil && !cachedSchemaNotFound {
+		logger.Error(err, "failed to get cached APIResourceSchema")
 		return reconcileStatusStopAndRequeue, err
 	}
 
-	res, err = r.tryCRD(gvr.GroupResource(), cluster)
-	if res.selected {
+	if cachedResource.Status.ResourceSchemaSource.APIResourceSchema != nil {
+		if cachedSchemaNotFound {
+			// We need to create it.
+
+			sourceSchema, err := r.getSourceAPIResourceSchema(cluster, gvr.GroupResource())
+			if err != nil {
+				return reconcileStatusStopAndRequeue, err
+			}
+			if sourceSchema == nil || !validateAPIResourceSchema(sourceSchema, gvr) {
+				// The schema failed validation. We'll mark the schema as not ready
+				// and kick it out of the queue.
+				conditions.MarkFalse(
+					cachedResource,
+					cachev1alpha1.CachedResourceSchemaSourceValid,
+					cachev1alpha1.SchemaNotReadyReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					"API not ready",
+				)
+				return reconcileStatusStop, nil
+			}
+
+			if err = r.createCachedAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
+				return reconcileStatusContinue, nil
+			}
+			return reconcileStatusStopAndRequeue, err
+		}
+
+		// The cached APIResoureSchema already exists.
+		// No need to check for updates because it is immutable.
+		return reconcileStatusContinue, nil
+	}
+
+	if cachedResource.Status.ResourceSchemaSource.CRD != nil {
+		crd, err := r.getCRD(ctx, cluster, cachedResource.Status.ResourceSchemaSource.CRD.Name)
 		if err != nil {
-			conditions.Set(cachedResource, res.cond)
-			return res.status, err
+			logger.Error(err, "failed to get CRD")
+			if apierrors.IsNotFound(err) {
+				// Nothing we can do. We'll retry once we have the CRD available.
+				return reconcileStatusStop, nil
+			}
+			return reconcileStatusStopAndRequeue, err
 		}
 
-		if reflect.DeepEqual(res.resSch, cachedResource.Status.Schema) {
-			return reconcileStatusContinue, nil
+		if !validateCRD(crd, gvr) {
+			// The schema failed validation. We'll mark the schema as not ready
+			// and kick it out of the queue.
+			conditions.MarkFalse(
+				cachedResource,
+				cachev1alpha1.CachedResourceSchemaSourceValid,
+				cachev1alpha1.SchemaNotReadyReason,
+				conditionsv1alpha1.ConditionSeverityError,
+				"API not ready",
+			)
+			return reconcileStatusStop, nil
 		}
 
-		cachedResource.Status.Schema = res.resSch
-		conditions.MarkTrue(cachedResource, cachev1alpha1.CachedSchemaValid)
+		if cachedSchemaNotFound || crd.ObjectMeta.ResourceVersion != cachedResource.Status.ResourceSchemaSource.CRD.ResourceVersion {
+			// Either the cached schema doesn't exist, or it needs updating.
 
-		return reconcileStatusStopAndRequeue, nil
+			sourceSchema, err := apisv1alpha1.CRDToAPIResourceSchema(crd, "prefix")
+			if err != nil {
+				return reconcileStatusStopAndRequeue, err
+			}
+			sourceSchema.Name = CachedAPIResourceSchemaName(cachedResource.UID)
+
+			if cachedSchemaNotFound {
+				if err = r.createCachedAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
+					return reconcileStatusStopAndRequeue, err
+				}
+			} else {
+				if err = r.updateCreateAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
+					return reconcileStatusStopAndRequeue, err
+				}
+			}
+
+			cachedResource.Status.ResourceSchemaSource.CRD.ResourceVersion = crd.ObjectMeta.ResourceVersion
+			return reconcileStatusStopAndRequeue, nil
+		}
+
+		return reconcileStatusContinue, nil
 	}
 
-	if err != nil && !apierrors.IsNotFound(err) {
-		return reconcileStatusStopAndRequeue, err
-	}
-
-	// If we're here, no schema provider was chosen. We'll wait for to be triggered again.
+	// This should never happen!
 
 	conditions.MarkFalse(
 		cachedResource,
-		cachev1alpha1.CachedSchemaValid,
-		cachev1alpha1.SchemaNotReadyReason,
+		cachev1alpha1.CachedResourceSchemaSourceValid,
+		cachev1alpha1.SchemaInvalidReason,
 		conditionsv1alpha1.ConditionSeverityError,
-		"API %s not ready",
-		gvr.String(),
+		"resourceSchemaSource is invalid",
 	)
+	cachedResource.Status.ResourceSchemaSource = nil
 
-	return reconcileStatusStop, nil
+	return reconcileStatusStopAndRequeue, nil
 }
 
-type detectedSchema struct {
-	selected bool
-	status   reconcileStatus
-	cond     *conditionsv1alpha1.Condition
-	resSch   *cachev1alpha1.CachedResourceSchema
-}
-
-func (r *resourceSchema) tryAPIResourceSchema(gr schema.GroupResource, cluster logicalcluster.Name) (detectedSchema, error) {
+func (r *resourceSchema) getSourceAPIResourceSchema(cluster logicalcluster.Name, gr schema.GroupResource) (*apisv1alpha1.APIResourceSchema, error) {
 	lc, err := r.getLogicalCluster(cluster)
 	if err != nil {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Error getting LogicalCluster %s|%s: %v",
-				cluster,
-				"cluster",
-				err,
-			),
-			status: reconcileStatusStopAndRequeue,
-		}, err
+		return nil, err
 	}
 
 	boundResources, err := apibinding.GetResourceBindings(lc)
 	if err != nil {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Error reading bound resources on LogicalCluster %s|%s: %v",
-				cluster,
-				"cluster",
-				err,
-			),
-			status: reconcileStatusStopAndRequeue,
-		}, err
+		return nil, err
 	}
 
 	lock, resourceFound := boundResources[gr.String()]
 	if !resourceFound {
-		return detectedSchema{
-			selected: true,
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"API %s not ready",
-				gr.String(),
-			),
-			status: reconcileStatusStop,
-		}, nil
+		return nil, nil
 	}
 
 	if lock.Name == "" {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaInvalidReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Resource %s is not backed by an APIResourceSchema. Please contact the APIExport owner to resolve.",
-				gr.String(),
-			),
-			status: reconcileStatusStop,
-		}, nil
+		return nil, nil
 	}
 
 	apiBinding, err := r.getAPIBinding(cluster, lock.Name)
 	if err != nil {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Error getting APIBinding %s|%s: %v",
-				cluster,
-				lock.Name,
-				err,
-			),
-			status: reconcileStatusStopAndRequeue,
-		}, err
+		return nil, err
 	}
 
 	apiExport, err := r.getAPIExport(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
 	if err != nil {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Error getting APIExport %s|%s for APIBinding %s|%s: %v",
-				apiBinding.Spec.Reference.Export.Path,
-				apiBinding.Spec.Reference.Export.Name,
-				cluster,
-				lock.Name,
-				err,
-			),
-			status: reconcileStatusStopAndRequeue,
-		}, err
+		return nil, err
 	}
 
 	var schemaName string
@@ -224,84 +214,38 @@ func (r *resourceSchema) tryAPIResourceSchema(gr schema.GroupResource, cluster l
 		if res.Storage.CRD == nil {
 			continue
 		}
-
 		schemaName = res.Schema
 	}
 	if schemaName == "" {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaInvalidReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"No valid %s resource in APIExport %s|%s. Please contact the APIExport owner to resolve.",
-				gr.String(),
-				apiBinding.Spec.Reference.Export.Path,
-				apiBinding.Spec.Reference.Export.Name,
-			),
-			status: reconcileStatusStop,
-		}, nil
+		return nil, nil
 	}
 
-	_, err = r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
-	if err != nil {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Error getting APIResourceSchema %s|%s: %v",
-				apiBinding.Spec.Reference.Export.Path,
-				schemaName,
-				err,
-			),
-			status: reconcileStatusStop,
-		}, err
-	}
-
-	return detectedSchema{
-		selected: true,
-		resSch: &cachev1alpha1.CachedResourceSchema{
-			APIResourceSchema: &cachev1alpha1.APIResourceSchemaReference{
-				Name:    schemaName,
-				Cluster: cluster.String(),
-			},
-		},
-		status: reconcileStatusStopAndRequeue,
-	}, nil
+	return r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
 }
 
-func (r *resourceSchema) tryCRD(gr schema.GroupResource, cluster logicalcluster.Name) (detectedSchema, error) {
-	crds, err := r.listCRDsByGR(cluster, gr)
-	if err != nil {
-		return detectedSchema{
-			cond: conditions.FalseCondition(
-				cachev1alpha1.CachedSchemaValid,
-				cachev1alpha1.SchemaNotReadyReason,
-				conditionsv1alpha1.ConditionSeverityError,
-				"Error listing CRDs in %s: %v",
-				cluster,
-				err,
-			),
-			status: reconcileStatusStopAndRequeue,
-		}, err
+func validateAPIResourceSchema(sch *apisv1alpha1.APIResourceSchema, gvr schema.GroupVersionResource) bool {
+	if sch.Spec.Group != gvr.Group || sch.Spec.Names.Plural != gvr.Resource {
+		return false
 	}
-
-	if len(crds) == 0 {
-		return detectedSchema{}, nil
+	for i := range sch.Spec.Versions {
+		if sch.Spec.Versions[i].Name == gvr.Version {
+			return true
+		}
 	}
-	if len(crds) > 1 {
-		return detectedSchema{}, nil
+	return false
+}
+
+func validateCRD(crd *apiextensionsv1.CustomResourceDefinition, gvr schema.GroupVersionResource) bool {
+	if crd.Spec.Group != gvr.Group || crd.Spec.Names.Plural != gvr.Resource {
+		return false
 	}
-
-	crd := crds[0]
-
-	return detectedSchema{
-		selected: true,
-		resSch: &cachev1alpha1.CachedResourceSchema{
-			CRD: &cachev1alpha1.CRDReference{
-				Cluster: cluster.String(),
-				Name:    crd.Name,
-			},
-		},
-	}, nil
+	if apiextensionshelpers.IsCRDConditionFalse(crd, apiextensionsv1.Established) {
+		return false
+	}
+	for _, storedVersion := range crd.Status.StoredVersions {
+		if storedVersion == gvr.Version {
+			return true
+		}
+	}
+	return false
 }

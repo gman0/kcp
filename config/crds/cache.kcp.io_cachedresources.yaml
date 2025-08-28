@@ -216,38 +216,26 @@ spec:
                 - cache
                 - local
                 type: object
-              resourceSchema:
+              resourceSchemaSource:
                 description: Schema refers to the APIResourceSchema of the cached
                   resource.
                 properties:
                   apiResourceSchema:
-                    properties:
-                      cluster:
-                        description: cluster is the cluster name where the APIResourceSchema
-                          is defined.
-                        minLength: 1
-                        type: string
-                      name:
-                        description: name is the APIResourceSchema name.
-                        minLength: 1
-                        type: string
-                    required:
-                    - cluster
-                    - name
+                    description: APIResourceSchema defines an APIResourceSchema as
+                      the source of the schema.
                     type: object
                   crd:
+                    description: CRD defines a CRD as the source of the schema.
                     properties:
-                      cluster:
-                        description: cluster is the cluster name where the CRD is
-                          defined.
-                        minLength: 1
-                        type: string
                       name:
                         description: name is the CRD name.
                         minLength: 1
                         type: string
+                      resourceVersion:
+                        description: ResourceVersion is the version of the source
+                          CRD object.
+                        type: string
                     required:
-                    - cluster
                     - name
                     type: object
                 type: object
