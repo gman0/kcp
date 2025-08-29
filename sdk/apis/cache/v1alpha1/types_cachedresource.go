@@ -190,23 +190,26 @@ type CachedResourceSchemaSource struct {
 }
 
 type APIResourceSchemaSource struct {
+	// ClusterName is the name of the cluster where the APIResourceSchema is defined.
+	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	ClusterName string `json:"clusterName"`
 
+	// Name is the APIResourceSchema name.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 }
 
 type CRDSchemaSource struct {
-	// name is the CRD name.
+	// Name is the CRD name.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 
-	// ResourceVersion is the version of the source CRD object.
+	// ResourceVersion is the resource version of the source CRD object.
 	//
 	// +optional
 	ResourceVersion string `json:"resourceVersion"`

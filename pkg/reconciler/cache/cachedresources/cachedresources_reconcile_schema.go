@@ -102,18 +102,21 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			sch := sourceSchema.DeepCopy()
 			sch.Name = CachedAPIResourceSchemaName(cachedResource.UID)
 			sch.Annotations = nil
+			sch.ResourceVersion = ""
 
 			if err = r.createCachedAPIResourceSchema(ctx, logicalcluster.From(cachedResource), sch); err != nil {
 				logger.Error(err, "failed to create the cached APIResourceSchema")
-				conditions.MarkFalse(
-					cachedResource,
-					cachev1alpha1.CachedResourceSourceSchemaReplicated,
-					cachev1alpha1.SourceSchemaReplicatedFailedReason,
-					conditionsv1alpha1.ConditionSeverityError,
-					"Failed to store schema: %v",
-					err,
-				)
-				return reconcileStatusStopAndRequeue, err
+				if !apierrors.IsAlreadyExists(err) {
+					conditions.MarkFalse(
+						cachedResource,
+						cachev1alpha1.CachedResourceSourceSchemaReplicated,
+						cachev1alpha1.SourceSchemaReplicatedFailedReason,
+						conditionsv1alpha1.ConditionSeverityError,
+						"Failed to store schema: %v",
+						err,
+					)
+					return reconcileStatusStopAndRequeue, err
+				}
 			}
 
 			conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSourceSchemaReplicated)
@@ -183,15 +186,17 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			if cachedSchemaNotFound {
 				if err = r.createCachedAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
 					logger.Error(err, "failed to create the cached APIResourceSchema")
-					conditions.MarkFalse(
-						cachedResource,
-						cachev1alpha1.CachedResourceSourceSchemaReplicated,
-						cachev1alpha1.SourceSchemaReplicatedFailedReason,
-						conditionsv1alpha1.ConditionSeverityError,
-						"Failed to store cached schema: %v",
-						err,
-					)
-					return reconcileStatusStopAndRequeue, err
+					if !apierrors.IsAlreadyExists(err) {
+						conditions.MarkFalse(
+							cachedResource,
+							cachev1alpha1.CachedResourceSourceSchemaReplicated,
+							cachev1alpha1.SourceSchemaReplicatedFailedReason,
+							conditionsv1alpha1.ConditionSeverityError,
+							"Failed to store cached schema: %v",
+							err,
+						)
+						return reconcileStatusStopAndRequeue, err
+					}
 				}
 			} else {
 				if err = r.updateCreateAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {

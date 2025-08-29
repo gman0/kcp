@@ -69,15 +69,12 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 			getAPIResourceSchema: c.getAPIResourceSchema,
 			listCRDsByGR:         c.listCRDsByGR,
 		},
-		/*&resourceSchema{
-			getLogicalCluster:             c.getLogicalCluster,
-			getAPIBinding:                 c.getAPIBinding,
-			getAPIExport:                  c.getAPIExport,
+		&resourceSchema{
 			getAPIResourceSchema:          c.getAPIResourceSchema,
 			getCRD:                        c.getCRD,
 			createCachedAPIResourceSchema: c.createCachedAPIResourceSchema,
 			updateCreateAPIResourceSchema: c.updateCreateAPIResourceSchema,
-		},*/
+		},
 		&identity{
 			ensureSecretNamespaceExists:      c.ensureSecretNamespaceExists,
 			getSecret:                        c.getSecret,
