@@ -54,6 +54,9 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 		return reconcileStatusContinue, nil
 	}
 
+	cachedResource.Status.ResourceSchemaSource = nil
+	conditions.Delete(cachedResource, cachev1alpha1.CachedResourceSourceSchemaReplicated)
+
 	gvr := schema.GroupVersionResource{
 		Group:    cachedResource.Spec.Group,
 		Version:  cachedResource.Spec.Version,
@@ -76,43 +79,115 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 		return reconcileStatusStopAndRequeue, err
 	}
 
+	notReadyCond := conditions.FalseCondition(
+		cachev1alpha1.CachedResourceSchemaSourceValid,
+		cachev1alpha1.SchemaSourceNotReadyReason,
+		conditionsv1alpha1.ConditionSeverityError,
+		"API not ready.",
+	)
+
 	if bindingLock, found := boundResources[gvr.GroupResource().String()]; found {
 		if bindingLock.Name != "" {
 			// This resource's schema originates from an APIResourceSchema
 			// because we have an associated APIBinding.
 
-			conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid)
-			cachedResource.Status.ResourceSchemaSource = &cachev1alpha1.CachedResourceSchemaSource{
-				APIResourceSchema: &cachev1alpha1.APIResourceSchemaSource{},
+			apiBinding, err := r.getAPIBinding(cluster, bindingLock.Name)
+			if err != nil {
+				return reconcileStatusStopAndRequeue, err
 			}
 
-			return reconcileStatusStopAndRequeue, nil
+			apiExport, err := r.getAPIExport(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
+			if err != nil {
+				return reconcileStatusStopAndRequeue, err
+			}
+
+			var schemaName string
+			for _, res := range apiExport.Spec.Resources {
+				if res.Group != gvr.Group || res.Name != gvr.Resource {
+					continue
+				}
+				if res.Storage.CRD == nil {
+					conditions.MarkFalse(
+						cachedResource,
+						cachev1alpha1.CachedResourceSchemaSourceValid,
+						cachev1alpha1.SchemaSourceInvalidReason,
+						conditionsv1alpha1.ConditionSeverityError,
+						"Schema %s in APIExport %s:%s is incompatible. Please contact the APIExport owner to resolve.",
+						res.Schema,
+						apiBinding.Spec.Reference.Export.Path,
+						apiBinding.Spec.Reference.Export.Name,
+					)
+					return reconcileStatusStop, nil
+				}
+				schemaName = res.Schema
+				break
+			}
+
+			if schemaName == "" {
+				// The LogicalCluster is holding a lock for a GR that is
+				// not defined in the associated APIExport???
+				conditions.MarkFalse(
+					cachedResource,
+					cachev1alpha1.CachedResourceSchemaSourceValid,
+					cachev1alpha1.SchemaSourceInvalidReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					"No valid schema available in APIExport %s:%s. Please contact the APIExport owner to resolve.",
+					apiBinding.Spec.Reference.Export.Path,
+					apiBinding.Spec.Reference.Export.Name,
+				)
+				return reconcileStatusStop, nil
+			}
+
+			sourceSchema, err := r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
+			if err != nil {
+				return reconcileStatusStopAndRequeue, err
+			}
+
+			var hasRequestedVersion bool
+			for i := range sourceSchema.Spec.Versions {
+				if sourceSchema.Spec.Versions[i].Name == gvr.Version {
+					hasRequestedVersion = true
+					break
+				}
+			}
+
+			if !hasRequestedVersion {
+				conditions.MarkFalse(
+					cachedResource,
+					cachev1alpha1.CachedResourceSchemaSourceValid,
+					cachev1alpha1.SchemaSourceInvalidReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					"Schema %s in APIExport %s:%s does not define the requested resource version. Please contact the APIExport owner to resolve.",
+					schemaName,
+					apiBinding.Spec.Reference.Export.Path,
+					apiBinding.Spec.Reference.Export.Name,
+				)
+			}
+
+			conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid)
+			cachedResource.Status.ResourceSchemaSource = &cachev1alpha1.CachedResourceSchemaSource{
+				APIResourceSchema: &cachev1alpha1.APIResourceSchemaSource{
+					ClusterName: logicalcluster.From(sourceSchema).String(),
+					Name:        sourceSchema.Name,
+				},
+			}
+			return reconcileStatusContinue, nil
 		} else if bindingLock.CRD {
 			// The resource is backed by a CRD. Fall through to find that CRD.
 		} else {
 			// This should never happen! Neither APIBinding or CRD are present in the binding lock.
-			// We can drop this item from the queue (reconcileStatusStop). We'll try again once the LogicalCluster is updated.
+			// We can drop this item from the queue (reconcileStatusStop). We'll try again once the LogicalCluster annotation is updated.
 
 			logger.Error(nil, "failed to process bindings annotation on LogicalCluster",
 				"LogicalCluster", fmt.Sprintf("%s|%s", cluster, corev1alpha1.LogicalClusterName),
 				"annotationKey", apibinding.ResourceBindingsAnnotationKey,
 				"annotation", lc.Annotations[apibinding.ResourceBindingsAnnotationKey])
-
+			conditions.Set(cachedResource, notReadyCond)
 			return reconcileStatusStop, nil
 		}
 	}
 
 	// It's probably a CRD.
-
-	setNotReadyCond := func() {
-		conditions.MarkFalse(
-			cachedResource,
-			cachev1alpha1.CachedResourceSchemaSourceValid,
-			cachev1alpha1.SchemaNotReadyReason,
-			conditionsv1alpha1.ConditionSeverityError,
-			"API not ready",
-		)
-	}
 
 	crds, err := r.listCRDsByGR(cluster, gvr.GroupResource())
 	if err != nil {
@@ -120,38 +195,44 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 	}
 
 	if len(crds) != 1 {
-		// Zero or >1 is bad news.
-		setNotReadyCond()
+		// Zero means there is nothing serving this GR at the moment, and >1 is impossible.
+		conditions.Set(cachedResource, notReadyCond)
 		return reconcileStatusStop, nil
 	}
 
 	crd := crds[0]
 
 	if apiextensionshelpers.IsCRDConditionFalse(crd, apiextensionsv1.Established) {
-		setNotReadyCond()
+		conditions.Set(cachedResource, notReadyCond)
 		return reconcileStatusStop, nil
 	}
 
-	var hasVersion bool
+	var hasRequestedVersion bool
 	for _, version := range crd.Status.StoredVersions {
 		if version == gvr.Version {
-			hasVersion = true
+			hasRequestedVersion = true
 			break
 		}
 	}
-	if !hasVersion {
-		setNotReadyCond()
+	if !hasRequestedVersion {
+		conditions.MarkFalse(
+			cachedResource,
+			cachev1alpha1.CachedResourceSchemaSourceValid,
+			cachev1alpha1.SchemaSourceInvalidReason,
+			conditionsv1alpha1.ConditionSeverityError,
+			"CRD %s does not define the requested resource version.",
+			crd.Name,
+		)
 		return reconcileStatusStop, nil
 	}
 
 	// It's definitely a CRD!
 
+	conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid)
 	cachedResource.Status.ResourceSchemaSource = &cachev1alpha1.CachedResourceSchemaSource{
 		CRD: &cachev1alpha1.CRDSchemaSource{
 			Name: crd.Name,
 		},
 	}
-	conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid)
-
 	return reconcileStatusStopAndRequeue, nil
 }

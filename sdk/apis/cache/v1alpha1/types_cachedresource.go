@@ -130,12 +130,20 @@ const (
 
 	IdentityGenerationFailedReason   = "IdentityGenerationFailed"
 	IdentityVerificationFailedReason = "IdentityVerificationFailed"
+)
 
+const (
 	// CachedResourceSchemaSourceValid represents status of the schema reference.
 	CachedResourceSchemaSourceValid conditionsv1alpha1.ConditionType = "CachedResourceSchemaSourceValid"
 
-	SchemaNotReadyReason = "SchemaNotReady"
-	SchemaInvalidReason  = "SchemaInvalid"
+	SchemaSourceNotReadyReason = "SchemaSourceNotReadyReason"
+	SchemaSourceInvalidReason  = "SchemaSourceInvalid"
+)
+
+const (
+	CachedResourceSourceSchemaReplicated conditionsv1alpha1.ConditionType = "CachedResourceSourceSchemaReplicated"
+
+	SourceSchemaReplicatedFailedReason = "SourceSchemaReplicatedFailedReason"
 )
 
 // These are valid reasons of published resource.
@@ -181,7 +189,15 @@ type CachedResourceSchemaSource struct {
 	CRD *CRDSchemaSource `json:"crd,omitempty"`
 }
 
-type APIResourceSchemaSource struct{}
+type APIResourceSchemaSource struct {
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ClusterName string `json:"clusterName"`
+
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
 
 type CRDSchemaSource struct {
 	// name is the CRD name.

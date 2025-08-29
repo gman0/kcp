@@ -18,15 +18,11 @@ limitations under the License.
 
 package v1alpha1
 
-import (
-	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-)
-
 // CachedResourceSchemaSourceApplyConfiguration represents a declarative configuration of the CachedResourceSchemaSource type for use
 // with apply.
 type CachedResourceSchemaSourceApplyConfiguration struct {
-	APIResourceSchema *cachev1alpha1.APIResourceSchemaSource `json:"apiResourceSchema,omitempty"`
-	CRD               *CRDSchemaSourceApplyConfiguration     `json:"crd,omitempty"`
+	APIResourceSchema *APIResourceSchemaSourceApplyConfiguration `json:"apiResourceSchema,omitempty"`
+	CRD               *CRDSchemaSourceApplyConfiguration         `json:"crd,omitempty"`
 }
 
 // CachedResourceSchemaSourceApplyConfiguration constructs a declarative configuration of the CachedResourceSchemaSource type for use with
@@ -38,8 +34,8 @@ func CachedResourceSchemaSource() *CachedResourceSchemaSourceApplyConfiguration 
 // WithAPIResourceSchema sets the APIResourceSchema field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the APIResourceSchema field is set to the value of the last call.
-func (b *CachedResourceSchemaSourceApplyConfiguration) WithAPIResourceSchema(value cachev1alpha1.APIResourceSchemaSource) *CachedResourceSchemaSourceApplyConfiguration {
-	b.APIResourceSchema = &value
+func (b *CachedResourceSchemaSourceApplyConfiguration) WithAPIResourceSchema(value *APIResourceSchemaSourceApplyConfiguration) *CachedResourceSchemaSourceApplyConfiguration {
+	b.APIResourceSchema = value
 	return b
 }
 

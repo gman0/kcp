@@ -2964,6 +2964,23 @@ func schema_sdk_apis_cache_v1alpha1_APIResourceSchemaSource(ref common.Reference
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"clusterName": {
+						SchemaProps: spec.SchemaProps{
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
+						},
+					},
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
+						},
+					},
+				},
+				Required: []string{"clusterName", "name"},
 			},
 		},
 	}

@@ -29,20 +29,13 @@ import (
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
-	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
-	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	conditionsv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/apis/conditions/v1alpha1"
 	"github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/util/conditions"
 )
 
 type resourceSchema struct {
-	getLogicalCluster func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
-	getAPIBinding     func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
-	getAPIExport      func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
-
 	getAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
 	getCRD               func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
 
@@ -51,17 +44,14 @@ type resourceSchema struct {
 }
 
 func CachedAPIResourceSchemaName(cachedResourceUID types.UID) string {
-	return fmt.Sprintf("%s.cachedresources.kcp.io", cachedResourceUID)
+	return fmt.Sprintf("%s.cachedresources.cache.kcp.io", cachedResourceUID)
 }
 
 func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
 	if !cachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}
-	if cachedResource.Status.Phase != cachev1alpha1.CachedResourcePhaseInitializing {
-		return reconcileStatusContinue, nil
-	}
-	if cachedResource.Status.ResourceSchemaSource == nil {
+	if conditions.IsFalse(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid) {
 		return reconcileStatusStopAndRequeue, nil
 	}
 	logger := klog.FromContext(ctx)
@@ -84,27 +74,50 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 		if cachedSchemaNotFound {
 			// We need to create it.
 
-			sourceSchema, err := r.getSourceAPIResourceSchema(cluster, gvr.GroupResource())
+			sourceSchema, err := r.getAPIResourceSchema(logicalcluster.Name(cachedResource.Status.ResourceSchemaSource.APIResourceSchema.ClusterName), cachedResource.Status.ResourceSchemaSource.APIResourceSchema.Name)
 			if err != nil {
+				logger.Error(err, "failed to get source APIResourceSchema")
+				conditions.MarkFalse(
+					cachedResource,
+					cachev1alpha1.CachedResourceSourceSchemaReplicated,
+					cachev1alpha1.SourceSchemaReplicatedFailedReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					"Failed to get source APIResourceSchema: %v",
+					err,
+				)
 				return reconcileStatusStopAndRequeue, err
 			}
-			if sourceSchema == nil || !validateAPIResourceSchema(sourceSchema, gvr) {
-				// The schema failed validation. We'll mark the schema as not ready
-				// and kick it out of the queue.
+
+			if !validateAPIResourceSchemaForGVR(sourceSchema, gvr) {
 				conditions.MarkFalse(
 					cachedResource,
 					cachev1alpha1.CachedResourceSchemaSourceValid,
-					cachev1alpha1.SchemaNotReadyReason,
+					cachev1alpha1.SchemaSourceInvalidReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					"API not ready",
+					"Schema is not valid. Please contact the APIExport owner to resolve.",
 				)
 				return reconcileStatusStop, nil
 			}
 
-			if err = r.createCachedAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
-				return reconcileStatusContinue, nil
+			sch := sourceSchema.DeepCopy()
+			sch.Name = CachedAPIResourceSchemaName(cachedResource.UID)
+			sch.Annotations = nil
+
+			if err = r.createCachedAPIResourceSchema(ctx, logicalcluster.From(cachedResource), sch); err != nil {
+				logger.Error(err, "failed to create the cached APIResourceSchema")
+				conditions.MarkFalse(
+					cachedResource,
+					cachev1alpha1.CachedResourceSourceSchemaReplicated,
+					cachev1alpha1.SourceSchemaReplicatedFailedReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					"Failed to store schema: %v",
+					err,
+				)
+				return reconcileStatusStopAndRequeue, err
 			}
-			return reconcileStatusStopAndRequeue, err
+
+			conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSourceSchemaReplicated)
+			return reconcileStatusStopAndRequeue, nil
 		}
 
 		// The cached APIResoureSchema already exists.
@@ -115,23 +128,37 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	if cachedResource.Status.ResourceSchemaSource.CRD != nil {
 		crd, err := r.getCRD(ctx, cluster, cachedResource.Status.ResourceSchemaSource.CRD.Name)
 		if err != nil {
-			logger.Error(err, "failed to get CRD")
-			if apierrors.IsNotFound(err) {
-				// Nothing we can do. We'll retry once we have the CRD available.
-				return reconcileStatusStop, nil
-			}
+			logger.Error(err, "failed to get source CRD")
+			conditions.MarkFalse(
+				cachedResource,
+				cachev1alpha1.CachedResourceSourceSchemaReplicated,
+				cachev1alpha1.SourceSchemaReplicatedFailedReason,
+				conditionsv1alpha1.ConditionSeverityError,
+				"Failed to get source CRD: %v",
+				err,
+			)
 			return reconcileStatusStopAndRequeue, err
 		}
 
-		if !validateCRD(crd, gvr) {
-			// The schema failed validation. We'll mark the schema as not ready
-			// and kick it out of the queue.
+		if apiextensionshelpers.IsCRDConditionFalse(crd, apiextensionsv1.Established) {
 			conditions.MarkFalse(
 				cachedResource,
 				cachev1alpha1.CachedResourceSchemaSourceValid,
-				cachev1alpha1.SchemaNotReadyReason,
+				cachev1alpha1.SchemaSourceNotReadyReason,
 				conditionsv1alpha1.ConditionSeverityError,
-				"API not ready",
+				"API not ready.",
+			)
+			return reconcileStatusStop, nil
+		}
+
+		if !validateCRDForGVR(crd, gvr) {
+			conditions.MarkFalse(
+				cachedResource,
+				cachev1alpha1.CachedResourceSchemaSourceValid,
+				cachev1alpha1.SchemaSourceInvalidReason,
+				conditionsv1alpha1.ConditionSeverityError,
+				"CRD %s does not define the requested resource version.",
+				crd.Name,
 			)
 			return reconcileStatusStop, nil
 		}
@@ -141,20 +168,47 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 			sourceSchema, err := apisv1alpha1.CRDToAPIResourceSchema(crd, "prefix")
 			if err != nil {
+				logger.Error(err, "failed to convert CRD to APIResourceSchema")
+				conditions.MarkFalse(
+					cachedResource,
+					cachev1alpha1.CachedResourceSourceSchemaReplicated,
+					cachev1alpha1.SourceSchemaReplicatedFailedReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					"Internal error while processing source CRD.",
+				)
 				return reconcileStatusStopAndRequeue, err
 			}
 			sourceSchema.Name = CachedAPIResourceSchemaName(cachedResource.UID)
 
 			if cachedSchemaNotFound {
 				if err = r.createCachedAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
+					logger.Error(err, "failed to create the cached APIResourceSchema")
+					conditions.MarkFalse(
+						cachedResource,
+						cachev1alpha1.CachedResourceSourceSchemaReplicated,
+						cachev1alpha1.SourceSchemaReplicatedFailedReason,
+						conditionsv1alpha1.ConditionSeverityError,
+						"Failed to store schema: %v",
+						err,
+					)
 					return reconcileStatusStopAndRequeue, err
 				}
 			} else {
 				if err = r.updateCreateAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {
+					logger.Error(err, "failed to update the cached APIResourceSchema")
+					conditions.MarkFalse(
+						cachedResource,
+						cachev1alpha1.CachedResourceSourceSchemaReplicated,
+						cachev1alpha1.SourceSchemaReplicatedFailedReason,
+						conditionsv1alpha1.ConditionSeverityError,
+						"Failed to update schema: %v",
+						err,
+					)
 					return reconcileStatusStopAndRequeue, err
 				}
 			}
 
+			conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSourceSchemaReplicated)
 			cachedResource.Status.ResourceSchemaSource.CRD.ResourceVersion = crd.ObjectMeta.ResourceVersion
 			return reconcileStatusStopAndRequeue, nil
 		}
@@ -167,63 +221,16 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	conditions.MarkFalse(
 		cachedResource,
 		cachev1alpha1.CachedResourceSchemaSourceValid,
-		cachev1alpha1.SchemaInvalidReason,
+		cachev1alpha1.SchemaSourceNotReadyReason,
 		conditionsv1alpha1.ConditionSeverityError,
-		"resourceSchemaSource is invalid",
+		"API not ready.",
 	)
 	cachedResource.Status.ResourceSchemaSource = nil
 
 	return reconcileStatusStopAndRequeue, nil
 }
 
-func (r *resourceSchema) getSourceAPIResourceSchema(cluster logicalcluster.Name, gr schema.GroupResource) (*apisv1alpha1.APIResourceSchema, error) {
-	lc, err := r.getLogicalCluster(cluster)
-	if err != nil {
-		return nil, err
-	}
-
-	boundResources, err := apibinding.GetResourceBindings(lc)
-	if err != nil {
-		return nil, err
-	}
-
-	lock, resourceFound := boundResources[gr.String()]
-	if !resourceFound {
-		return nil, nil
-	}
-
-	if lock.Name == "" {
-		return nil, nil
-	}
-
-	apiBinding, err := r.getAPIBinding(cluster, lock.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	apiExport, err := r.getAPIExport(logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path), apiBinding.Spec.Reference.Export.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var schemaName string
-	for _, res := range apiExport.Spec.Resources {
-		if res.Group != gr.Group || res.Name != gr.Resource {
-			continue
-		}
-		if res.Storage.CRD == nil {
-			continue
-		}
-		schemaName = res.Schema
-	}
-	if schemaName == "" {
-		return nil, nil
-	}
-
-	return r.getAPIResourceSchema(logicalcluster.From(apiExport), schemaName)
-}
-
-func validateAPIResourceSchema(sch *apisv1alpha1.APIResourceSchema, gvr schema.GroupVersionResource) bool {
+func validateAPIResourceSchemaForGVR(sch *apisv1alpha1.APIResourceSchema, gvr schema.GroupVersionResource) bool {
 	if sch.Spec.Group != gvr.Group || sch.Spec.Names.Plural != gvr.Resource {
 		return false
 	}
@@ -235,15 +242,12 @@ func validateAPIResourceSchema(sch *apisv1alpha1.APIResourceSchema, gvr schema.G
 	return false
 }
 
-func validateCRD(crd *apiextensionsv1.CustomResourceDefinition, gvr schema.GroupVersionResource) bool {
+func validateCRDForGVR(crd *apiextensionsv1.CustomResourceDefinition, gvr schema.GroupVersionResource) bool {
 	if crd.Spec.Group != gvr.Group || crd.Spec.Names.Plural != gvr.Resource {
 		return false
 	}
-	if apiextensionshelpers.IsCRDConditionFalse(crd, apiextensionsv1.Established) {
-		return false
-	}
-	for _, storedVersion := range crd.Status.StoredVersions {
-		if storedVersion == gvr.Version {
+	for _, version := range crd.Status.StoredVersions {
+		if version == gvr.Version {
 			return true
 		}
 	}
