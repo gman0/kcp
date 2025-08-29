@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
@@ -323,21 +322,14 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 		return nil, false, err
 	}
 
+	fmt.Printf("\n\nXXX GetAPIDefinitionSet cachedResource.UID=%s\n\n", cachedResource.UID)
+
 	if !conditions.IsTrue(cachedResource, cachev1alpha1.CachedResourceValid) {
 		return nil, false, fmt.Errorf("CachedResource %s|%s not ready", parsedKey.CachedResourceCluster, parsedKey.CachedResourceName)
 	}
 
-	wrappedSchName, err := cachedresources.CachedAPIResourceSchemaName(cachedResource)
-	if err != nil {
-		return nil, false, fmt.Errorf("CachedResource %s|%s not ready", parsedKey.CachedResourceCluster, parsedKey.CachedResourceName)
-	}
-
-	schemas, err := a.globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Cluster(logicalcluster.From(cachedResource)).Lister().List(labels.Everything())
-
-	fmt.Printf("\n\nXXX schemas=%v err=%v\n\n", schemas, err)
-
 	wrappedGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
-	wrappedSch, err := a.getAPIResourceSchema(logicalcluster.From(cachedResource), wrappedSchName)
+	wrappedSch, err := a.getAPIResourceSchema(logicalcluster.From(cachedResource), cachedresources.CachedAPIResourceSchemaName(cachedResource, wrappedGVR.GroupResource()))
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get schema for wrapped object in CachedResource %s|%s: %v", parsedKey.CachedResourceCluster, parsedKey.CachedResourceName, err)
 	}

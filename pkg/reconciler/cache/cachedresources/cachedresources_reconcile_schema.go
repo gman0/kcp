@@ -42,11 +42,8 @@ type resourceSchema struct {
 	updateCreateAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
 }
 
-func CachedAPIResourceSchemaName(cachedResource *cachev1alpha1.CachedResource) (string, error) {
-	if cachedResource.Status.IdentityHash == "" {
-		return "", fmt.Errorf("missing identity")
-	}
-	return fmt.Sprintf("%s.%s.cachedresources.cache.kcp.io", cachedResource.Status.IdentityHash, cachedResource.Name), nil
+func CachedAPIResourceSchemaName(cachedResource *cachev1alpha1.CachedResource, gr schema.GroupResource) string {
+	return fmt.Sprintf("%s.%s", cachedResource.Name, gr.String())
 }
 
 func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
@@ -65,13 +62,9 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	}
 	cluster := logicalcluster.From(cachedResource)
 
-	cachedSchemaName, err := CachedAPIResourceSchemaName(cachedResource)
-	if err != nil {
-		logger.Error(err, "failed to get generate APIResourceSchema name")
-		return reconcileStatusStopAndRequeue, err
-	}
-
-	_, err = r.getAPIResourceSchema(cluster, cachedSchemaName)
+	cachedSchemaName := CachedAPIResourceSchemaName(cachedResource, gvr.GroupResource())
+	fmt.Printf("\n\nXXX resourceSchema cachedResource.UID=%s\n\n", cachedResource.UID)
+	_, err := r.getAPIResourceSchema(cluster, cachedSchemaName)
 	cachedSchemaNotFound := apierrors.IsNotFound(err)
 	if err != nil && !cachedSchemaNotFound {
 		logger.Error(err, "failed to get cached APIResourceSchema")
