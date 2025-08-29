@@ -24,7 +24,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/logicalcluster/v3"
@@ -43,8 +42,11 @@ type resourceSchema struct {
 	updateCreateAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
 }
 
-func CachedAPIResourceSchemaName(cachedResourceUID types.UID) string {
-	return fmt.Sprintf("%s.cachedresources.cache.kcp.io", cachedResourceUID)
+func CachedAPIResourceSchemaName(cachedResource *cachev1alpha1.CachedResource) (string, error) {
+	if cachedResource.Status.IdentityHash == "" {
+		return "", fmt.Errorf("missing identity")
+	}
+	return fmt.Sprintf("%s.%s.cachedresources.cache.kcp.io", cachedResource.Status.IdentityHash, cachedResource.Name), nil
 }
 
 func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
@@ -63,7 +65,13 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	}
 	cluster := logicalcluster.From(cachedResource)
 
-	_, err := r.getAPIResourceSchema(cluster, CachedAPIResourceSchemaName(cachedResource.UID))
+	cachedSchemaName, err := CachedAPIResourceSchemaName(cachedResource)
+	if err != nil {
+		logger.Error(err, "failed to get generate APIResourceSchema name")
+		return reconcileStatusStopAndRequeue, err
+	}
+
+	_, err = r.getAPIResourceSchema(cluster, cachedSchemaName)
 	cachedSchemaNotFound := apierrors.IsNotFound(err)
 	if err != nil && !cachedSchemaNotFound {
 		logger.Error(err, "failed to get cached APIResourceSchema")
@@ -100,7 +108,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			}
 
 			sch := sourceSchema.DeepCopy()
-			sch.Name = CachedAPIResourceSchemaName(cachedResource.UID)
+			sch.Name = cachedSchemaName
 			sch.Annotations = nil
 			sch.ResourceVersion = ""
 
@@ -181,7 +189,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 				)
 				return reconcileStatusStopAndRequeue, err
 			}
-			sourceSchema.Name = CachedAPIResourceSchemaName(cachedResource.UID)
+			sourceSchema.Name = cachedSchemaName
 
 			if cachedSchemaNotFound {
 				if err = r.createCachedAPIResourceSchema(ctx, cluster, sourceSchema); err != nil {

@@ -92,10 +92,17 @@ func TestReconcileSchema(t *testing.T) {
 
 		"APIResourceSchemaSource with cached schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+				},
 				Status: cachev1alpha1.CachedResourceStatus{
 					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
 						APIResourceSchema: &cachev1alpha1.APIResourceSchemaSource{},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -107,6 +114,12 @@ func TestReconcileSchema(t *testing.T) {
 		},
 		"APIResourceSchemaSource with missing cached schema and missing source schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+				},
 				Status: cachev1alpha1.CachedResourceStatus{
 					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
 						APIResourceSchema: &cachev1alpha1.APIResourceSchemaSource{
@@ -114,6 +127,7 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "missing-cowboys-schema",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -134,6 +148,12 @@ func TestReconcileSchema(t *testing.T) {
 		},
 		"APIResourceSchemaSource with missing cached schema and invalid source schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
 						Group:    "wildwest.dev",
@@ -148,6 +168,7 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "today.cowboys.wildwest.dev",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -187,6 +208,12 @@ func TestReconcileSchema(t *testing.T) {
 		},
 		"APIResourceSchemaSource with missing cached schema and failing create": {
 			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
 						Group:    "wildwest.dev",
@@ -201,6 +228,7 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "today.cowboys.wildwest.dev",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -244,6 +272,12 @@ func TestReconcileSchema(t *testing.T) {
 		},
 		"APIResourceSchemaSource with missing cached schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
 						Group:    "wildwest.dev",
@@ -258,6 +292,7 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "today.cowboys.wildwest.dev",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -302,10 +337,10 @@ func TestReconcileSchema(t *testing.T) {
 		"CRDSchemaSource with up-to-date cached schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
-					UID: "123-cachedresource-uid",
 				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
@@ -321,6 +356,7 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "latest",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -365,7 +401,7 @@ func TestReconcileSchema(t *testing.T) {
 							},
 						},
 						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							CachedAPIResourceSchemaName("123-cachedresource-uid"): &apisv1alpha1.APIResourceSchema{},
+							"123-identity-hash.cowboys-cr.cachedresources.cache.kcp.io": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
 					if sch := m[cluster][name]; sch != nil {
@@ -379,10 +415,10 @@ func TestReconcileSchema(t *testing.T) {
 		"CRDSchemaSource with missing cached schema fails": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
-					UID: "123-cachedresource-uid",
 				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
@@ -398,6 +434,7 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "latest",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -465,10 +502,10 @@ func TestReconcileSchema(t *testing.T) {
 		"CRDSchemaSource with missing cached schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
-					UID: "123-cachedresource-uid",
 				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
@@ -484,6 +521,7 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "latest",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -545,10 +583,10 @@ func TestReconcileSchema(t *testing.T) {
 		"CRDSchemaSource with out-of-date cached schema fails": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
-					UID: "123-cachedresource-uid",
 				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
@@ -564,6 +602,7 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "old",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -608,7 +647,7 @@ func TestReconcileSchema(t *testing.T) {
 							},
 						},
 						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							CachedAPIResourceSchemaName("123-cachedresource-uid"): &apisv1alpha1.APIResourceSchema{},
+							"123-identity-hash.cowboys-cr.cachedresources.cache.kcp.io": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
 					if sch := m[cluster][name]; sch != nil {
@@ -634,10 +673,10 @@ func TestReconcileSchema(t *testing.T) {
 		"CRDSchemaSource with out-of-date cached schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "cowboys-cr",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
-					UID: "123-cachedresource-uid",
 				},
 				Spec: cachev1alpha1.CachedResourceSpec{
 					GroupVersionResource: cachev1alpha1.GroupVersionResource{
@@ -653,6 +692,7 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "old",
 						},
 					},
+					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -697,7 +737,7 @@ func TestReconcileSchema(t *testing.T) {
 							},
 						},
 						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							CachedAPIResourceSchemaName("123-cachedresource-uid"): &apisv1alpha1.APIResourceSchema{},
+							"123-identity-hash.cowboys-cr.cachedresources.cache.kcp.io": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
 					if sch := m[cluster][name]; sch != nil {

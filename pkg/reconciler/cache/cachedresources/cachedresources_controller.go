@@ -211,7 +211,8 @@ func NewController(
 		},
 
 		createCachedAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
-			_, err := kcpCacheClient.Cluster(cluster.Path()).ApisV1alpha1().APIResourceSchemas().Create(ctx, sch, metav1.CreateOptions{})
+			sch, err := kcpCacheClient.Cluster(cluster.Path()).ApisV1alpha1().APIResourceSchemas().Create(ctx, sch, metav1.CreateOptions{})
+			fmt.Printf("\n\nXXX createCachedAPIResourceSchema sch=%#v err=%v\n\n", sch, err)
 			return err
 		},
 
