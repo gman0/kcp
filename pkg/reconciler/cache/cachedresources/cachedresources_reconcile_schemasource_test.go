@@ -49,6 +49,10 @@ func TestReconcileSchemaSource(t *testing.T) {
 		expectedConditions conditionsv1alpha1.Conditions
 		expectedSchemaSrc  *cachev1alpha1.CachedResourceSchemaSource
 	}{
+		//
+		// Common
+		//
+
 		"has deletion timestamp and should skip": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
@@ -108,6 +112,11 @@ func TestReconcileSchemaSource(t *testing.T) {
 			},
 			expectedSchemaSrc: nil,
 		},
+
+		//
+		// APIResourceSchemaSource
+		//
+
 		"APIResourceSchemaSource with missing resource": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				Spec: cachev1alpha1.CachedResourceSpec{
@@ -311,6 +320,11 @@ func TestReconcileSchemaSource(t *testing.T) {
 				},
 			},
 		},
+
+		//
+		// CRDSchemaSource
+		//
+
 		"CRDSchemaSource but version is missing": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				Spec: cachev1alpha1.CachedResourceSpec{
