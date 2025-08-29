@@ -188,7 +188,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 						cachev1alpha1.CachedResourceSourceSchemaReplicated,
 						cachev1alpha1.SourceSchemaReplicatedFailedReason,
 						conditionsv1alpha1.ConditionSeverityError,
-						"Failed to store schema: %v",
+						"Failed to store cached schema: %v",
 						err,
 					)
 					return reconcileStatusStopAndRequeue, err
@@ -201,7 +201,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 						cachev1alpha1.CachedResourceSourceSchemaReplicated,
 						cachev1alpha1.SourceSchemaReplicatedFailedReason,
 						conditionsv1alpha1.ConditionSeverityError,
-						"Failed to update schema: %v",
+						"Failed to update cached schema: %v",
 						err,
 					)
 					return reconcileStatusStopAndRequeue, err

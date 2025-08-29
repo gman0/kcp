@@ -19,7 +19,6 @@ package cachedresources
 import (
 	"context"
 	"fmt"
-	// "fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,8 +26,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	// "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"github.com/kcp-dev/logicalcluster/v3"
@@ -51,6 +48,10 @@ func TestReconcileSchema(t *testing.T) {
 		expectedConditions      conditionsv1alpha1.Conditions
 		expectedFuncCalledState funcWasCalledState
 	}{
+		//
+		// Common
+		//
+
 		"has deletion timestamp and should skip": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
@@ -84,6 +85,11 @@ func TestReconcileSchema(t *testing.T) {
 				),
 			},
 		},
+
+		//
+		// APIResourceSchemaSource
+		//
+
 		"APIResourceSchemaSource with cached schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				Status: cachev1alpha1.CachedResourceStatus{
@@ -222,7 +228,7 @@ func TestReconcileSchema(t *testing.T) {
 					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
 				},
 				createCachedAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
-					return fmt.Errorf("an error")
+					return fmt.Errorf("create failed")
 				},
 			},
 			expectedStatus: reconcileStatusStopAndRequeue,
@@ -231,10 +237,10 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to store schema: an error`,
+					`Failed to store schema: create failed`,
 				),
 			},
-			expectedErr: fmt.Errorf("an error"),
+			expectedErr: fmt.Errorf("create failed"),
 		},
 		"APIResourceSchemaSource with missing cached schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
@@ -288,6 +294,11 @@ func TestReconcileSchema(t *testing.T) {
 			},
 			expectedErr: nil,
 		},
+
+		//
+		// CRDSchemaSource
+		//
+
 		"CRDSchemaSource with up-to-date cached schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
@@ -364,6 +375,344 @@ func TestReconcileSchema(t *testing.T) {
 				},
 			},
 			expectedStatus: reconcileStatusContinue,
+		},
+		"CRDSchemaSource with missing cached schema fails": {
+			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+					UID: "123-cachedresource-uid",
+				},
+				Spec: cachev1alpha1.CachedResourceSpec{
+					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+						Group:    "wildwest.dev",
+						Version:  "v1alpha1",
+						Resource: "cowboys",
+					},
+				},
+				Status: cachev1alpha1.CachedResourceStatus{
+					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
+						CRD: &cachev1alpha1.CRDSchemaSource{
+							Name:            "cowboys-crd",
+							ResourceVersion: "latest",
+						},
+					},
+				},
+			},
+			reconciler: &resourceSchema{
+				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
+					return &apiextensionsv1.CustomResourceDefinition{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:            "cowboys-crd",
+							ResourceVersion: "latest",
+						},
+						Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+							Group: "wildwest.dev",
+							Names: apiextensionsv1.CustomResourceDefinitionNames{
+								Plural: "cowboys",
+							},
+						},
+						Status: apiextensionsv1.CustomResourceDefinitionStatus{
+							Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
+								{
+									Type:   apiextensionsv1.Established,
+									Status: apiextensionsv1.ConditionTrue,
+								},
+							},
+							StoredVersions: []string{"v1alpha1"},
+						},
+					}, nil
+				},
+				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+								Spec: apisv1alpha1.APIResourceSchemaSpec{
+									Group: "wildwest.dev",
+									Names: apiextensionsv1.CustomResourceDefinitionNames{
+										Plural: "cowboys",
+									},
+									Versions: []apisv1alpha1.APIResourceVersion{
+										{
+											Name: "v1alpha1",
+										},
+									},
+								},
+							},
+						},
+					}
+					if sch := m[cluster][name]; sch != nil {
+						return sch, nil
+					}
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
+				createCachedAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
+					return fmt.Errorf("create failed")
+				},
+			},
+			expectedStatus: reconcileStatusStopAndRequeue,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.FalseCondition(
+					cachev1alpha1.CachedResourceSourceSchemaReplicated,
+					cachev1alpha1.SourceSchemaReplicatedFailedReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					`Failed to store cached schema: create failed`,
+				),
+			},
+			expectedErr: fmt.Errorf("create failed"),
+		},
+		"CRDSchemaSource with missing cached schema succeeds": {
+			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+					UID: "123-cachedresource-uid",
+				},
+				Spec: cachev1alpha1.CachedResourceSpec{
+					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+						Group:    "wildwest.dev",
+						Version:  "v1alpha1",
+						Resource: "cowboys",
+					},
+				},
+				Status: cachev1alpha1.CachedResourceStatus{
+					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
+						CRD: &cachev1alpha1.CRDSchemaSource{
+							Name:            "cowboys-crd",
+							ResourceVersion: "latest",
+						},
+					},
+				},
+			},
+			reconciler: &resourceSchema{
+				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
+					return &apiextensionsv1.CustomResourceDefinition{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:            "cowboys-crd",
+							ResourceVersion: "latest",
+						},
+						Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+							Group: "wildwest.dev",
+							Names: apiextensionsv1.CustomResourceDefinitionNames{
+								Plural: "cowboys",
+							},
+						},
+						Status: apiextensionsv1.CustomResourceDefinitionStatus{
+							Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
+								{
+									Type:   apiextensionsv1.Established,
+									Status: apiextensionsv1.ConditionTrue,
+								},
+							},
+							StoredVersions: []string{"v1alpha1"},
+						},
+					}, nil
+				},
+				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+								Spec: apisv1alpha1.APIResourceSchemaSpec{
+									Group: "wildwest.dev",
+									Names: apiextensionsv1.CustomResourceDefinitionNames{
+										Plural: "cowboys",
+									},
+									Versions: []apisv1alpha1.APIResourceVersion{
+										{
+											Name: "v1alpha1",
+										},
+									},
+								},
+							},
+						},
+					}
+					if sch := m[cluster][name]; sch != nil {
+						return sch, nil
+					}
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
+				createCachedAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
+					return nil
+				},
+			},
+			expectedStatus: reconcileStatusStopAndRequeue,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.TrueCondition(cachev1alpha1.CachedResourceSourceSchemaReplicated),
+			},
+		},
+		"CRDSchemaSource with out-of-date cached schema fails": {
+			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+					UID: "123-cachedresource-uid",
+				},
+				Spec: cachev1alpha1.CachedResourceSpec{
+					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+						Group:    "wildwest.dev",
+						Version:  "v1alpha1",
+						Resource: "cowboys",
+					},
+				},
+				Status: cachev1alpha1.CachedResourceStatus{
+					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
+						CRD: &cachev1alpha1.CRDSchemaSource{
+							Name:            "cowboys-crd",
+							ResourceVersion: "old",
+						},
+					},
+				},
+			},
+			reconciler: &resourceSchema{
+				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
+					return &apiextensionsv1.CustomResourceDefinition{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:            "cowboys-crd",
+							ResourceVersion: "latest",
+						},
+						Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+							Group: "wildwest.dev",
+							Names: apiextensionsv1.CustomResourceDefinitionNames{
+								Plural: "cowboys",
+							},
+						},
+						Status: apiextensionsv1.CustomResourceDefinitionStatus{
+							Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
+								{
+									Type:   apiextensionsv1.Established,
+									Status: apiextensionsv1.ConditionTrue,
+								},
+							},
+							StoredVersions: []string{"v1alpha1"},
+						},
+					}, nil
+				},
+				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+								Spec: apisv1alpha1.APIResourceSchemaSpec{
+									Group: "wildwest.dev",
+									Names: apiextensionsv1.CustomResourceDefinitionNames{
+										Plural: "cowboys",
+									},
+									Versions: []apisv1alpha1.APIResourceVersion{
+										{
+											Name: "v1alpha1",
+										},
+									},
+								},
+							},
+						},
+						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+							CachedAPIResourceSchemaName("123-cachedresource-uid"): &apisv1alpha1.APIResourceSchema{},
+						},
+					}
+					if sch := m[cluster][name]; sch != nil {
+						return sch, nil
+					}
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
+				updateCreateAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
+					return fmt.Errorf("update failed")
+				},
+			},
+			expectedStatus: reconcileStatusStopAndRequeue,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.FalseCondition(
+					cachev1alpha1.CachedResourceSourceSchemaReplicated,
+					cachev1alpha1.SourceSchemaReplicatedFailedReason,
+					conditionsv1alpha1.ConditionSeverityError,
+					`Failed to update cached schema: update failed`,
+				),
+			},
+			expectedErr: fmt.Errorf("update failed"),
+		},
+		"CRDSchemaSource with out-of-date cached schema succeeds": {
+			CachedResource: &cachev1alpha1.CachedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						logicalcluster.AnnotationKey: "consumer_cluster_name",
+					},
+					UID: "123-cachedresource-uid",
+				},
+				Spec: cachev1alpha1.CachedResourceSpec{
+					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+						Group:    "wildwest.dev",
+						Version:  "v1alpha1",
+						Resource: "cowboys",
+					},
+				},
+				Status: cachev1alpha1.CachedResourceStatus{
+					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
+						CRD: &cachev1alpha1.CRDSchemaSource{
+							Name:            "cowboys-crd",
+							ResourceVersion: "old",
+						},
+					},
+				},
+			},
+			reconciler: &resourceSchema{
+				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
+					return &apiextensionsv1.CustomResourceDefinition{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:            "cowboys-crd",
+							ResourceVersion: "latest",
+						},
+						Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+							Group: "wildwest.dev",
+							Names: apiextensionsv1.CustomResourceDefinitionNames{
+								Plural: "cowboys",
+							},
+						},
+						Status: apiextensionsv1.CustomResourceDefinitionStatus{
+							Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
+								{
+									Type:   apiextensionsv1.Established,
+									Status: apiextensionsv1.ConditionTrue,
+								},
+							},
+							StoredVersions: []string{"v1alpha1"},
+						},
+					}, nil
+				},
+				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+								Spec: apisv1alpha1.APIResourceSchemaSpec{
+									Group: "wildwest.dev",
+									Names: apiextensionsv1.CustomResourceDefinitionNames{
+										Plural: "cowboys",
+									},
+									Versions: []apisv1alpha1.APIResourceVersion{
+										{
+											Name: "v1alpha1",
+										},
+									},
+								},
+							},
+						},
+						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+							CachedAPIResourceSchemaName("123-cachedresource-uid"): &apisv1alpha1.APIResourceSchema{},
+						},
+					}
+					if sch := m[cluster][name]; sch != nil {
+						return sch, nil
+					}
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
+				updateCreateAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
+					return nil
+				},
+			},
+			expectedStatus: reconcileStatusStopAndRequeue,
+			expectedConditions: conditionsv1alpha1.Conditions{
+				*conditions.TrueCondition(cachev1alpha1.CachedResourceSourceSchemaReplicated),
+			},
 		},
 	}
 
