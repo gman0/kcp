@@ -2967,16 +2967,18 @@ func schema_sdk_apis_cache_v1alpha1_APIResourceSchemaSource(ref common.Reference
 				Properties: map[string]spec.Schema{
 					"clusterName": {
 						SchemaProps: spec.SchemaProps{
-							Default: "",
-							Type:    []string{"string"},
-							Format:  "",
+							Description: "ClusterName is the name of the cluster where the APIResourceSchema is defined.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 					"name": {
 						SchemaProps: spec.SchemaProps{
-							Default: "",
-							Type:    []string{"string"},
-							Format:  "",
+							Description: "Name is the APIResourceSchema name.",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 				},
@@ -2994,7 +2996,7 @@ func schema_sdk_apis_cache_v1alpha1_CRDSchemaSource(ref common.ReferenceCallback
 				Properties: map[string]spec.Schema{
 					"name": {
 						SchemaProps: spec.SchemaProps{
-							Description: "name is the CRD name.",
+							Description: "Name is the CRD name.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3002,7 +3004,7 @@ func schema_sdk_apis_cache_v1alpha1_CRDSchemaSource(ref common.ReferenceCallback
 					},
 					"resourceVersion": {
 						SchemaProps: spec.SchemaProps{
-							Description: "ResourceVersion is the version of the source CRD object.",
+							Description: "ResourceVersion is the resource version of the source CRD object.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3430,7 +3432,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceSchemaSource(ref common.Refere
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "CachedResourceSchemaSource describes the source of resource schema. Set during Initializing phase. Exactly one field is set.",
+				Description: "CachedResourceSchemaSource describes the source of resource schema. Exactly one field is set.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"apiResourceSchema": {
@@ -3525,7 +3527,7 @@ func schema_sdk_apis_cache_v1alpha1_CachedResourceStatus(ref common.ReferenceCal
 					},
 					"resourceSchemaSource": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Schema refers to the APIResourceSchema of the cached resource.",
+							Description: "ResourceSchemaSource is a reference to the schema object of the cached resource.",
 							Ref:         ref("github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1.CachedResourceSchemaSource"),
 						},
 					},

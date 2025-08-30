@@ -37,8 +37,9 @@ import (
 )
 
 type resourceSchema struct {
-	getAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
-	getCRD               func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
+	getAPIResourceSchema      func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	getLocalAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	getCRD                    func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
 
 	createCachedAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
 	updateCreateAPIResourceSchema func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error
@@ -80,7 +81,9 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 
 	// We need to find out if we have the source schema replicated.
 
-	_, err := r.getAPIResourceSchema(logicalcluster.From(cachedResource), CachedAPIResourceSchemaName(cachedResource.UID, gvr.GroupResource()))
+	// Get only the local schema. Global informer may be lagging behind
+	// and return the schema even if it's been already deleted locally.
+	_, err := r.getLocalAPIResourceSchema(logicalcluster.From(cachedResource), CachedAPIResourceSchemaName(cachedResource.UID, gvr.GroupResource()))
 	cachedSchemaNotFound := apierrors.IsNotFound(err)
 	if err != nil && !cachedSchemaNotFound {
 		logger.Error(err, "failed to get cached APIResourceSchema")

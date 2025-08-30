@@ -37,16 +37,12 @@ import (
 )
 
 func TestReconcileSchema(t *testing.T) {
-	type funcWasCalledState struct {
-	}
-
 	tests := map[string]struct {
-		CachedResource          *cachev1alpha1.CachedResource
-		reconciler              *resourceSchema
-		expectedErr             error
-		expectedStatus          reconcileStatus
-		expectedConditions      conditionsv1alpha1.Conditions
-		expectedFuncCalledState funcWasCalledState
+		CachedResource     *cachev1alpha1.CachedResource
+		reconciler         *resourceSchema
+		expectedErr        error
+		expectedStatus     reconcileStatus
+		expectedConditions conditionsv1alpha1.Conditions
 	}{
 		//
 		// Common
@@ -174,8 +170,8 @@ func TestReconcileSchema(t *testing.T) {
 			reconciler: &resourceSchema{
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "calmwest.org",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -234,8 +230,8 @@ func TestReconcileSchema(t *testing.T) {
 			reconciler: &resourceSchema{
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -298,8 +294,8 @@ func TestReconcileSchema(t *testing.T) {
 			reconciler: &resourceSchema{
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -385,8 +381,8 @@ func TestReconcileSchema(t *testing.T) {
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -400,7 +396,7 @@ func TestReconcileSchema(t *testing.T) {
 								},
 							},
 						},
-						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+						"consumer_cluster_name": {
 							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
@@ -463,8 +459,8 @@ func TestReconcileSchema(t *testing.T) {
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -550,8 +546,8 @@ func TestReconcileSchema(t *testing.T) {
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -631,8 +627,8 @@ func TestReconcileSchema(t *testing.T) {
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -646,7 +642,7 @@ func TestReconcileSchema(t *testing.T) {
 								},
 							},
 						},
-						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+						"consumer_cluster_name": {
 							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
@@ -721,8 +717,8 @@ func TestReconcileSchema(t *testing.T) {
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
-						"providers_cowboys_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"today.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
 								Spec: apisv1alpha1.APIResourceSchemaSpec{
 									Group: "wildwest.dev",
 									Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -736,7 +732,7 @@ func TestReconcileSchema(t *testing.T) {
 								},
 							},
 						},
-						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
+						"consumer_cluster_name": {
 							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
 						},
 					}

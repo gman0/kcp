@@ -102,8 +102,10 @@ func NewController(
 
 	logicalClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
 	apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer,
+
 	apiExportInformer apisv1alpha2informers.APIExportClusterInformer,
 	globalAPIExportInformer apisv1alpha2informers.APIExportClusterInformer,
+
 	apiResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
 	globalAPIResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
 ) (*Controller, error) {
@@ -179,6 +181,9 @@ func NewController(
 			return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](apisv1alpha2.Resource("apiexports"), apiExportInformer.Informer().GetIndexer(), globalAPIExportInformer.Informer().GetIndexer(), path, name)
 		},
 		getAPIResourceSchema: informer.NewScopedGetterWithFallback[*apisv1alpha1.APIResourceSchema, apisv1alpha1listers.APIResourceSchemaLister](apiResourceSchemaInformer.Lister(), globalAPIResourceSchemaInformer.Lister()),
+		getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+			return apiResourceSchemaInformer.Cluster(cluster).Lister().Get(name)
+		},
 
 		listCRDsByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error) {
 			crds, err := crdInformer.Cluster(cluster).Lister().List(labels.Everything())
@@ -211,7 +216,6 @@ func NewController(
 		},
 
 		createCachedAPIResourceSchema: func(ctx context.Context, cluster logicalcluster.Name, sch *apisv1alpha1.APIResourceSchema) error {
-			fmt.Printf("\n\nXXX createCachedAPIResourceSchema\n\n")
 			_, err := kcpClusterClient.Cluster(cluster.Path()).ApisV1alpha1().APIResourceSchemas().Create(ctx, sch, metav1.CreateOptions{})
 			return err
 		},
@@ -233,12 +237,40 @@ func NewController(
 	})
 
 	_, _ = logicalClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { c.enqueueLogicalCluster(objOrTombstone[*corev1alpha1.LogicalCluster](obj)) },
-		UpdateFunc: func(_, obj interface{}) { c.enqueueLogicalCluster(objOrTombstone[*corev1alpha1.LogicalCluster](obj)) },
-		DeleteFunc: func(obj interface{}) { c.enqueueLogicalCluster(objOrTombstone[*corev1alpha1.LogicalCluster](obj)) },
+		AddFunc: func(obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of LogicalCluster update")
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of LogicalCluster update")
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of LogicalCluster update")
+		},
 	})
 
-	_, _ = crdInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{})
+	_, _ = crdInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of CRD update")
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of CRD update")
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of CRD update")
+		},
+	})
+
+	_, _ = apiResourceSchemaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of APIResourceSchema update")
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of APIResourceSchema update")
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.enqueueCachedResourcesInCluster(obj.(metav1.Object), " because of APIResourceSchema update")
+		},
+	})
 
 	return c, nil
 }
@@ -293,11 +325,12 @@ type Controller struct {
 	getEndpointSlice    func(ctx context.Context, clusterName logicalcluster.Name, name string) (*cachev1alpha1.CachedResourceEndpointSlice, error)
 	createEndpointSlice func(ctx context.Context, clusterName logicalcluster.Path, endpointSlice *cachev1alpha1.CachedResourceEndpointSlice) error
 
-	getLogicalCluster    func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
-	getAPIBinding        func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
-	getAPIExport         func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
-	getAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
-	listCRDsByGR         func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error)
+	getLogicalCluster         func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
+	getAPIBinding             func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
+	getAPIExport              func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+	getAPIResourceSchema      func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	getLocalAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	listCRDsByGR              func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error)
 
 	getCRD func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
 
@@ -309,29 +342,14 @@ type Controller struct {
 	started bool
 }
 
-func (c *Controller) enqueueLogicalCluster(lc *corev1alpha1.LogicalCluster) {
-	cachedResources, err := c.CachedResourceLister.Cluster(logicalcluster.From(lc)).List(labels.Everything())
+func (c *Controller) enqueueCachedResourcesInCluster(metaObj metav1.Object, logSuffix string) {
+	cachedResources, err := c.CachedResourceLister.Cluster(logicalcluster.From(metaObj)).List(labels.Everything())
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}
-
 	for _, cr := range cachedResources {
-		c.enqueueCachedResource(cr, " because of LogicalCluster update")
-	}
-}
-
-func (c *Controller) enqueueCRD(crd *apiextensionsv1.CustomResourceDefinition) {
-	cachedResources, err := c.CachedResourceLister.Cluster(logicalcluster.From(crd)).List(labels.Everything())
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-
-	fmt.Printf("### CachedResource.Controller.enqueueCRD with %d cluster\n", len(cachedResources))
-
-	for _, cr := range cachedResources {
-		c.enqueueCachedResource(cr, " because of CustomResourceDefinition update")
+		c.enqueueCachedResource(cr, logSuffix)
 	}
 }
 
@@ -342,7 +360,7 @@ func (c *Controller) enqueueCachedResource(cachedResource *cachev1alpha1.CachedR
 		return
 	}
 	logger := logging.WithQueueKey(logging.WithReconciler(klog.Background(), ControllerName), key)
-	logger.V(4).Info("queueing CachedResource%s", logSuffix)
+	logger.V(4).Info(fmt.Sprintf("queueing CachedResource%s", logSuffix))
 	c.queue.Add(key)
 }
 

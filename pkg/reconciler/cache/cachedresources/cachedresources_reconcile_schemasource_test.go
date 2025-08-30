@@ -18,12 +18,10 @@ package cachedresources
 
 import (
 	"context"
-	// "fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	// apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -341,14 +339,14 @@ func TestReconcileSchemaSource(t *testing.T) {
 				},
 				listCRDsByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error) {
 					return []*apiextensionsv1.CustomResourceDefinition{
-						&apiextensionsv1.CustomResourceDefinition{
+						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "cowboys-crd",
 							},
 							Status: apiextensionsv1.CustomResourceDefinitionStatus{
 								StoredVersions: []string{"v1alpha2"},
 								Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
-									apiextensionsv1.CustomResourceDefinitionCondition{
+									{
 										Type:   apiextensionsv1.Established,
 										Status: apiextensionsv1.ConditionTrue,
 									},
@@ -385,14 +383,14 @@ func TestReconcileSchemaSource(t *testing.T) {
 				},
 				listCRDsByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error) {
 					return []*apiextensionsv1.CustomResourceDefinition{
-						&apiextensionsv1.CustomResourceDefinition{
+						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "cowboys-crd",
 							},
 							Status: apiextensionsv1.CustomResourceDefinitionStatus{
 								StoredVersions: []string{"v1alpha1"},
 								Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
-									apiextensionsv1.CustomResourceDefinitionCondition{
+									{
 										Type:   apiextensionsv1.Established,
 										Status: apiextensionsv1.ConditionFalse,
 									},
@@ -429,14 +427,14 @@ func TestReconcileSchemaSource(t *testing.T) {
 				},
 				listCRDsByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error) {
 					return []*apiextensionsv1.CustomResourceDefinition{
-						&apiextensionsv1.CustomResourceDefinition{
+						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "cowboys-crd",
 							},
 							Status: apiextensionsv1.CustomResourceDefinitionStatus{
 								StoredVersions: []string{"v1alpha1"},
 								Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
-									apiextensionsv1.CustomResourceDefinitionCondition{
+									{
 										Type:   apiextensionsv1.Established,
 										Status: apiextensionsv1.ConditionTrue,
 									},
@@ -480,14 +478,14 @@ func TestReconcileSchemaSource(t *testing.T) {
 				},
 				listCRDsByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*apiextensionsv1.CustomResourceDefinition, error) {
 					return []*apiextensionsv1.CustomResourceDefinition{
-						&apiextensionsv1.CustomResourceDefinition{
+						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "cowboys-crd",
 							},
 							Status: apiextensionsv1.CustomResourceDefinitionStatus{
 								StoredVersions: []string{"v1alpha1"},
 								Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
-									apiextensionsv1.CustomResourceDefinitionCondition{
+									{
 										Type:   apiextensionsv1.Established,
 										Status: apiextensionsv1.ConditionTrue,
 									},

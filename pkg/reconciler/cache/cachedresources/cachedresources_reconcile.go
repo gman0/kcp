@@ -61,6 +61,13 @@ type reconciler interface {
 func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name, cachedResource *cachev1alpha1.CachedResource) (bool, error) {
 	reconcilers := []reconciler{
 		&finalizer{},
+		&identity{
+			ensureSecretNamespaceExists:      c.ensureSecretNamespaceExists,
+			getSecret:                        c.getSecret,
+			createIdentitySecret:             c.createIdentitySecret,
+			updateOrVerifyIdentitySecretHash: c.updateOrVerifyIdentitySecretHash,
+			secretNamespace:                  c.secretNamespace,
+		},
 		&schemaSource{
 			getLogicalCluster:    c.getLogicalCluster,
 			getAPIBinding:        c.getAPIBinding,
@@ -70,16 +77,10 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 		},
 		&resourceSchema{
 			getAPIResourceSchema:          c.getAPIResourceSchema,
+			getLocalAPIResourceSchema:     c.getLocalAPIResourceSchema,
 			getCRD:                        c.getCRD,
 			createCachedAPIResourceSchema: c.createCachedAPIResourceSchema,
 			updateCreateAPIResourceSchema: c.updateCreateAPIResourceSchema,
-		},
-		&identity{
-			ensureSecretNamespaceExists:      c.ensureSecretNamespaceExists,
-			getSecret:                        c.getSecret,
-			createIdentitySecret:             c.createIdentitySecret,
-			updateOrVerifyIdentitySecretHash: c.updateOrVerifyIdentitySecretHash,
-			secretNamespace:                  c.secretNamespace,
 		},
 		&endpointSlice{
 			getEndpointSlice:    c.getEndpointSlice,

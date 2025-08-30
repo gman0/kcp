@@ -163,7 +163,7 @@ type CachedResourceStatus struct {
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
 
-	// Schema refers to the APIResourceSchema of the cached resource.
+	// ResourceSchemaSource is a reference to the schema object of the cached resource.
 	// +optional
 	ResourceSchemaSource *CachedResourceSchemaSource `json:"resourceSchemaSource,omitempty"`
 
@@ -178,7 +178,7 @@ type CachedResourceStatus struct {
 }
 
 // CachedResourceSchemaSource describes the source of resource schema.
-// Set during Initializing phase. Exactly one field is set.
+// Exactly one field is set.
 type CachedResourceSchemaSource struct {
 	// APIResourceSchema defines an APIResourceSchema as the source of the schema.
 	// +optional
