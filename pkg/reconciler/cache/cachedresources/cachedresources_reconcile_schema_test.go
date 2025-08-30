@@ -94,6 +94,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -102,7 +103,6 @@ func TestReconcileSchema(t *testing.T) {
 					ResourceSchemaSource: &cachev1alpha1.CachedResourceSchemaSource{
 						APIResourceSchema: &cachev1alpha1.APIResourceSchemaSource{},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -116,6 +116,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -127,7 +128,6 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "missing-cowboys-schema",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -141,7 +141,7 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to get source APIResourceSchema: apiresourceschemas.apis.kcp.io "missing-cowboys-schema" not found`,
+					`Failed to get source APIResourceSchema: apiresourceschemas.apis.kcp.io "missing-cowboys-schema" not found.`,
 				),
 			},
 			expectedErr: fmt.Errorf(`apiresourceschemas.apis.kcp.io "missing-cowboys-schema" not found`),
@@ -150,6 +150,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -168,7 +169,6 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "today.cowboys.wildwest.dev",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -210,6 +210,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -228,7 +229,6 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "today.cowboys.wildwest.dev",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -265,7 +265,7 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to store schema: create failed`,
+					`Failed to store schema: create failed.`,
 				),
 			},
 			expectedErr: fmt.Errorf("create failed"),
@@ -274,6 +274,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -292,7 +293,6 @@ func TestReconcileSchema(t *testing.T) {
 							Name:        "today.cowboys.wildwest.dev",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -338,6 +338,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -356,7 +357,6 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "latest",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -401,7 +401,7 @@ func TestReconcileSchema(t *testing.T) {
 							},
 						},
 						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"123-identity-hash.cowboys-cr.cachedresources.cache.kcp.io": &apisv1alpha1.APIResourceSchema{},
+							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
 					if sch := m[cluster][name]; sch != nil {
@@ -416,6 +416,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -434,7 +435,6 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "latest",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -494,7 +494,7 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to store cached schema: create failed`,
+					`Failed to store cached schema: create failed.`,
 				),
 			},
 			expectedErr: fmt.Errorf("create failed"),
@@ -503,6 +503,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -521,7 +522,6 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "latest",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -584,6 +584,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -602,7 +603,6 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "old",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -647,7 +647,7 @@ func TestReconcileSchema(t *testing.T) {
 							},
 						},
 						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"123-identity-hash.cowboys-cr.cachedresources.cache.kcp.io": &apisv1alpha1.APIResourceSchema{},
+							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
 					if sch := m[cluster][name]; sch != nil {
@@ -665,7 +665,7 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to update cached schema: update failed`,
+					`Failed to update cached schema: update failed.`,
 				),
 			},
 			expectedErr: fmt.Errorf("update failed"),
@@ -674,6 +674,7 @@ func TestReconcileSchema(t *testing.T) {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
+					UID:  "cowboys-cr-uid",
 					Annotations: map[string]string{
 						logicalcluster.AnnotationKey: "consumer_cluster_name",
 					},
@@ -692,7 +693,6 @@ func TestReconcileSchema(t *testing.T) {
 							ResourceVersion: "old",
 						},
 					},
-					IdentityHash: "123-identity-hash",
 				},
 			},
 			reconciler: &resourceSchema{
@@ -737,7 +737,7 @@ func TestReconcileSchema(t *testing.T) {
 							},
 						},
 						"consumer_cluster_name": map[string]*apisv1alpha1.APIResourceSchema{
-							"123-identity-hash.cowboys-cr.cachedresources.cache.kcp.io": &apisv1alpha1.APIResourceSchema{},
+							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
 						},
 					}
 					if sch := m[cluster][name]; sch != nil {

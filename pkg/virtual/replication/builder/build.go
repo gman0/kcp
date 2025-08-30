@@ -329,7 +329,7 @@ func (a *singleResourceAPIDefinitionSetProvider) GetAPIDefinitionSet(ctx context
 	}
 
 	wrappedGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
-	wrappedSch, err := a.getAPIResourceSchema(logicalcluster.From(cachedResource), cachedresources.CachedAPIResourceSchemaName(cachedResource, wrappedGVR.GroupResource()))
+	wrappedSch, err := a.getAPIResourceSchema(logicalcluster.From(cachedResource), cachedresources.CachedAPIResourceSchemaName(cachedResource.UID, wrappedGVR.GroupResource()))
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get schema for wrapped object in CachedResource %s|%s: %v", parsedKey.CachedResourceCluster, parsedKey.CachedResourceName, err)
 	}

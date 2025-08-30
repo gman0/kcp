@@ -162,6 +162,7 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 					apiBinding.Spec.Reference.Export.Path,
 					apiBinding.Spec.Reference.Export.Name,
 				)
+				return reconcileStatusStop, nil
 			}
 
 			conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid)
@@ -176,7 +177,7 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 			// The resource is backed by a CRD. Fall through to find that CRD.
 		} else {
 			// This should never happen! Neither APIBinding or CRD are present in the binding lock.
-			// We can drop this item from the queue (reconcileStatusStop). We'll try again once the LogicalCluster annotation is updated.
+			// We can drop this item from the queue. We'll try again once the LogicalCluster annotation is updated.
 
 			logger.Error(nil, "failed to process bindings annotation on LogicalCluster",
 				"LogicalCluster", fmt.Sprintf("%s|%s", cluster, corev1alpha1.LogicalClusterName),
@@ -187,7 +188,7 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 		}
 	}
 
-	// It's probably a CRD.
+	// Maybe it's a CRD?
 
 	crds, err := r.listCRDsByGR(cluster, gvr.GroupResource())
 	if err != nil {
@@ -199,6 +200,8 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 		conditions.Set(cachedResource, notReadyCond)
 		return reconcileStatusStop, nil
 	}
+
+	// It's definitely a CRD!
 
 	crd := crds[0]
 
@@ -225,8 +228,6 @@ func (r *schemaSource) reconcile(ctx context.Context, cachedResource *cachev1alp
 		)
 		return reconcileStatusStop, nil
 	}
-
-	// It's definitely a CRD!
 
 	conditions.MarkTrue(cachedResource, cachev1alpha1.CachedResourceSchemaSourceValid)
 	cachedResource.Status.ResourceSchemaSource = &cachev1alpha1.CachedResourceSchemaSource{
