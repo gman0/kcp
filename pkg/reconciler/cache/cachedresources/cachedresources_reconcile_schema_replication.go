@@ -36,7 +36,7 @@ import (
 	"github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/util/conditions"
 )
 
-type resourceSchema struct {
+type replicateResourceSchema struct {
 	getAPIResourceSchema      func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
 	getLocalAPIResourceSchema func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
 	getCRD                    func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
@@ -64,7 +64,7 @@ func ownAPIResourceSchema(cr *cachev1alpha1.CachedResource, sch *apisv1alpha1.AP
 	}
 }
 
-func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
+func (r *replicateResourceSchema) reconcile(ctx context.Context, cachedResource *cachev1alpha1.CachedResource) (reconcileStatus, error) {
 	if !cachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}
@@ -84,14 +84,14 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 	// Get only the local schema. Global informer may be lagging behind
 	// and return the schema even if it's been already deleted locally.
 	_, err := r.getLocalAPIResourceSchema(logicalcluster.From(cachedResource), CachedAPIResourceSchemaName(cachedResource.UID, gvr.GroupResource()))
-	cachedSchemaNotFound := apierrors.IsNotFound(err)
-	if err != nil && !cachedSchemaNotFound {
-		logger.Error(err, "failed to get cached APIResourceSchema")
+	replicatedSchemaNotFound := apierrors.IsNotFound(err)
+	if err != nil && !replicatedSchemaNotFound {
+		logger.Error(err, "failed to get replicated APIResourceSchema")
 		return reconcileStatusStopAndRequeue, err
 	}
 
 	if cachedResource.Status.ResourceSchemaSource.APIResourceSchema != nil {
-		if cachedSchemaNotFound {
+		if replicatedSchemaNotFound {
 			// We don't, so it needs to be created.
 
 			sourceSchema, err := r.getAPIResourceSchema(logicalcluster.Name(cachedResource.Status.ResourceSchemaSource.APIResourceSchema.ClusterName), cachedResource.Status.ResourceSchemaSource.APIResourceSchema.Name)
@@ -142,7 +142,7 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			return reconcileStatusStopAndRequeue, nil
 		}
 
-		// The cached APIResoureSchema already exists.
+		// The replicated APIResoureSchema already exists.
 		// No need to check for updates because it is immutable.
 		return reconcileStatusContinue, nil
 	}
@@ -185,8 +185,8 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			return reconcileStatusStop, nil
 		}
 
-		if cachedSchemaNotFound || crd.ObjectMeta.ResourceVersion != cachedResource.Status.ResourceSchemaSource.CRD.ResourceVersion {
-			// Either the cached schema doesn't exist, or it needs updating.
+		if replicatedSchemaNotFound || crd.ObjectMeta.ResourceVersion != cachedResource.Status.ResourceSchemaSource.CRD.ResourceVersion {
+			// Either the replicated schema doesn't exist, or it needs updating.
 
 			sourceSchema, err := apisv1alpha1.CRDToAPIResourceSchema(crd, "prefix")
 			if err != nil {
@@ -202,16 +202,16 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 			}
 			ownAPIResourceSchema(cachedResource, sourceSchema)
 
-			if cachedSchemaNotFound {
+			if replicatedSchemaNotFound {
 				if err = r.createCachedAPIResourceSchema(ctx, logicalcluster.From(cachedResource), sourceSchema); err != nil {
-					logger.Error(err, "failed to create the cached APIResourceSchema")
+					logger.Error(err, "failed to replicate APIResourceSchema")
 					if !apierrors.IsAlreadyExists(err) {
 						conditions.MarkFalse(
 							cachedResource,
 							cachev1alpha1.CachedResourceSourceSchemaReplicated,
 							cachev1alpha1.SourceSchemaReplicatedFailedReason,
 							conditionsv1alpha1.ConditionSeverityError,
-							"Failed to store cached schema: %v.",
+							"Failed to replicate schema: %v.",
 							err,
 						)
 						return reconcileStatusStopAndRequeue, err
@@ -219,13 +219,13 @@ func (r *resourceSchema) reconcile(ctx context.Context, cachedResource *cachev1a
 				}
 			} else {
 				if err = r.updateCreateAPIResourceSchema(ctx, logicalcluster.From(cachedResource), sourceSchema); err != nil {
-					logger.Error(err, "failed to update the cached APIResourceSchema")
+					logger.Error(err, "failed to update the replicated APIResourceSchema")
 					conditions.MarkFalse(
 						cachedResource,
 						cachev1alpha1.CachedResourceSourceSchemaReplicated,
 						cachev1alpha1.SourceSchemaReplicatedFailedReason,
 						conditionsv1alpha1.ConditionSeverityError,
-						"Failed to update cached schema: %v.",
+						"Failed to update the replicated schema: %v.",
 						err,
 					)
 					return reconcileStatusStopAndRequeue, err

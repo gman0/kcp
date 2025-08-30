@@ -36,10 +36,10 @@ import (
 	"github.com/kcp-dev/kcp/sdk/apis/third_party/conditions/util/conditions"
 )
 
-func TestReconcileSchema(t *testing.T) {
+func TestReconcileReplicateResourceSchema(t *testing.T) {
 	tests := map[string]struct {
 		CachedResource     *cachev1alpha1.CachedResource
-		reconciler         *resourceSchema
+		reconciler         *replicateResourceSchema
 		expectedErr        error
 		expectedStatus     reconcileStatus
 		expectedConditions conditionsv1alpha1.Conditions
@@ -54,7 +54,7 @@ func TestReconcileSchema(t *testing.T) {
 					DeletionTimestamp: ptr.To(metav1.Now()),
 				},
 			},
-			reconciler:     &resourceSchema{},
+			reconciler:     &replicateResourceSchema{},
 			expectedStatus: reconcileStatusContinue,
 		},
 		"has CachedResourceSchemaSourceValid=false condition, and should abort": {
@@ -70,7 +70,7 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler:     &resourceSchema{},
+			reconciler:     &replicateResourceSchema{},
 			expectedStatus: reconcileStatusStopAndRequeue,
 			expectedConditions: conditionsv1alpha1.Conditions{
 				*conditions.FalseCondition(
@@ -86,7 +86,7 @@ func TestReconcileSchema(t *testing.T) {
 		// APIResourceSchemaSource
 		//
 
-		"APIResourceSchemaSource with cached schema": {
+		"APIResourceSchemaSource with replicated schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -101,14 +101,14 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
-				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+			reconciler: &replicateResourceSchema{
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					return &apisv1alpha1.APIResourceSchema{}, nil
 				},
 			},
 			expectedStatus: reconcileStatusContinue,
 		},
-		"APIResourceSchemaSource with missing cached schema and missing source schema": {
+		"APIResourceSchemaSource with missing replicated schema and missing source schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -126,8 +126,11 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
 				},
 			},
@@ -142,7 +145,7 @@ func TestReconcileSchema(t *testing.T) {
 			},
 			expectedErr: fmt.Errorf(`apiresourceschemas.apis.kcp.io "missing-cowboys-schema" not found`),
 		},
-		"APIResourceSchemaSource with missing cached schema and invalid source schema": {
+		"APIResourceSchemaSource with missing replicated schema and invalid source schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -167,7 +170,10 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
 						"providers_cowboys_cluster_name": {
@@ -202,7 +208,7 @@ func TestReconcileSchema(t *testing.T) {
 				),
 			},
 		},
-		"APIResourceSchemaSource with missing cached schema and failing create": {
+		"APIResourceSchemaSource with missing replicated schema and failing create": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -227,7 +233,10 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
 						"providers_cowboys_cluster_name": {
@@ -266,7 +275,7 @@ func TestReconcileSchema(t *testing.T) {
 			},
 			expectedErr: fmt.Errorf("create failed"),
 		},
-		"APIResourceSchemaSource with missing cached schema succeeds": {
+		"APIResourceSchemaSource with missing replicated schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -291,7 +300,10 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
+				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
 						"providers_cowboys_cluster_name": {
@@ -330,7 +342,7 @@ func TestReconcileSchema(t *testing.T) {
 		// CRDSchemaSource
 		//
 
-		"CRDSchemaSource with up-to-date cached schema": {
+		"CRDSchemaSource with up-to-date replicated schema": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -355,7 +367,7 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
 				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 					return &apiextensionsv1.CustomResourceDefinition{
 						ObjectMeta: metav1.ObjectMeta{
@@ -378,6 +390,32 @@ func TestReconcileSchema(t *testing.T) {
 							StoredVersions: []string{"v1alpha1"},
 						},
 					}, nil
+				},
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
+						"providers_cowboys_cluster_name": {
+							"today.cowboys.wildwest.dev": {
+								Spec: apisv1alpha1.APIResourceSchemaSpec{
+									Group: "wildwest.dev",
+									Names: apiextensionsv1.CustomResourceDefinitionNames{
+										Plural: "cowboys",
+									},
+									Versions: []apisv1alpha1.APIResourceVersion{
+										{
+											Name: "v1alpha1",
+										},
+									},
+								},
+							},
+						},
+						"consumer_cluster_name": {
+							"cachedresources-cache-kcp-io-cowboys-cr-uid.cowboys.wildwest.dev": &apisv1alpha1.APIResourceSchema{},
+						},
+					}
+					if sch := m[cluster][name]; sch != nil {
+						return sch, nil
+					}
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
@@ -408,7 +446,7 @@ func TestReconcileSchema(t *testing.T) {
 			},
 			expectedStatus: reconcileStatusContinue,
 		},
-		"CRDSchemaSource with missing cached schema fails": {
+		"CRDSchemaSource with missing replicated schema fails": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -433,7 +471,7 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
 				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 					return &apiextensionsv1.CustomResourceDefinition{
 						ObjectMeta: metav1.ObjectMeta{
@@ -456,6 +494,9 @@ func TestReconcileSchema(t *testing.T) {
 							StoredVersions: []string{"v1alpha1"},
 						},
 					}, nil
+				},
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
@@ -490,12 +531,12 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to store cached schema: create failed.`,
+					`Failed to replicate schema: create failed.`,
 				),
 			},
 			expectedErr: fmt.Errorf("create failed"),
 		},
-		"CRDSchemaSource with missing cached schema succeeds": {
+		"CRDSchemaSource with missing replicated schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -520,7 +561,7 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
 				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 					return &apiextensionsv1.CustomResourceDefinition{
 						ObjectMeta: metav1.ObjectMeta{
@@ -543,6 +584,9 @@ func TestReconcileSchema(t *testing.T) {
 							StoredVersions: []string{"v1alpha1"},
 						},
 					}, nil
+				},
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+					return nil, apierrors.NewNotFound(apisv1alpha1.Resource("apiresourceschemas"), name)
 				},
 				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
@@ -576,7 +620,7 @@ func TestReconcileSchema(t *testing.T) {
 				*conditions.TrueCondition(cachev1alpha1.CachedResourceSourceSchemaReplicated),
 			},
 		},
-		"CRDSchemaSource with out-of-date cached schema fails": {
+		"CRDSchemaSource with out-of-date replicated schema fails": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -601,7 +645,7 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
 				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 					return &apiextensionsv1.CustomResourceDefinition{
 						ObjectMeta: metav1.ObjectMeta{
@@ -625,7 +669,7 @@ func TestReconcileSchema(t *testing.T) {
 						},
 					}, nil
 				},
-				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
 						"providers_cowboys_cluster_name": {
 							"today.cowboys.wildwest.dev": {
@@ -661,12 +705,12 @@ func TestReconcileSchema(t *testing.T) {
 					cachev1alpha1.CachedResourceSourceSchemaReplicated,
 					cachev1alpha1.SourceSchemaReplicatedFailedReason,
 					conditionsv1alpha1.ConditionSeverityError,
-					`Failed to update cached schema: update failed.`,
+					`Failed to update the replicated schema: update failed.`,
 				),
 			},
 			expectedErr: fmt.Errorf("update failed"),
 		},
-		"CRDSchemaSource with out-of-date cached schema succeeds": {
+		"CRDSchemaSource with out-of-date replicated schema succeeds": {
 			CachedResource: &cachev1alpha1.CachedResource{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cowboys-cr",
@@ -691,7 +735,7 @@ func TestReconcileSchema(t *testing.T) {
 					},
 				},
 			},
-			reconciler: &resourceSchema{
+			reconciler: &replicateResourceSchema{
 				getCRD: func(ctx context.Context, cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 					return &apiextensionsv1.CustomResourceDefinition{
 						ObjectMeta: metav1.ObjectMeta{
@@ -715,7 +759,7 @@ func TestReconcileSchema(t *testing.T) {
 						},
 					}, nil
 				},
-				getAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
+				getLocalAPIResourceSchema: func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
 					m := map[logicalcluster.Name]map[string]*apisv1alpha1.APIResourceSchema{
 						"providers_cowboys_cluster_name": {
 							"today.cowboys.wildwest.dev": {

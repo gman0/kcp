@@ -75,7 +75,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 			getAPIResourceSchema: c.getAPIResourceSchema,
 			listCRDsByGR:         c.listCRDsByGR,
 		},
-		&resourceSchema{
+		&replicateResourceSchema{
 			getAPIResourceSchema:          c.getAPIResourceSchema,
 			getLocalAPIResourceSchema:     c.getLocalAPIResourceSchema,
 			getCRD:                        c.getCRD,
