@@ -10,7 +10,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -25,6 +24,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/endpointslice"
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/logging"
+	"github.com/kcp-dev/kcp/pkg/tombstone"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	"github.com/kcp-dev/kcp/sdk/apis/core"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
@@ -36,20 +36,11 @@ const (
 	ControllerName = "kcp-virtualresource-apibinding"
 )
 
-func objOrTombstone[T runtime.Object](obj any) T {
-	if t, ok := obj.(T); ok {
-		return t
-	}
-	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		if t, ok := tombstone.Obj.(T); ok {
-			return t
-		}
-
-		panic(fmt.Errorf("tombstone %T is not a %T", tombstone, new(T)))
-	}
-
-	panic(fmt.Errorf("%T is not a %T", obj, new(T)))
-}
+// TODO(gman0): there is a known race between a virtual resource being bound
+// and marked as ready, and the virtual resources apiserver handler's readiness
+// for that resource. There is no synchronization between these two events at the
+// moment. As a consequence, during this out-of-sync period, API discovery will
+// function normally, but not objects will have been populated yet.
 
 func NewController(
 	shardName string,
@@ -104,9 +95,9 @@ func NewController(
 	logger := logging.WithReconciler(klog.Background(), ControllerName)
 
 	_, _ = apiBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { c.enqueueAPIBinding(objOrTombstone[*apisv1alpha2.APIBinding](obj), logger) },
-		UpdateFunc: func(_, obj interface{}) { c.enqueueAPIBinding(objOrTombstone[*apisv1alpha2.APIBinding](obj), logger) },
-		DeleteFunc: func(obj interface{}) { c.enqueueAPIBinding(objOrTombstone[*apisv1alpha2.APIBinding](obj), logger) },
+		AddFunc:    func(obj interface{}) { c.enqueueAPIBinding(tombstone.Obj[*apisv1alpha2.APIBinding](obj), logger) },
+		UpdateFunc: func(_, obj interface{}) { c.enqueueAPIBinding(tombstone.Obj[*apisv1alpha2.APIBinding](obj), logger) },
+		DeleteFunc: func(obj interface{}) { c.enqueueAPIBinding(tombstone.Obj[*apisv1alpha2.APIBinding](obj), logger) },
 	})
 
 	return c, nil
@@ -131,7 +122,7 @@ func (c *Controller) enqueueAPIBinding(apiBinding *apisv1alpha2.APIBinding, logg
 		return
 	}
 
-	logging.WithQueueKey(logger, key).V(4).Info(fmt.Sprintf("queueing APIBinding"))
+	logging.WithQueueKey(logger, key).V(4).Info("queueing APIBinding")
 	c.queue.Add(key)
 }
 
@@ -206,11 +197,9 @@ func (c *Controller) getVirtualResourceURL(ctx context.Context, shardUrl string,
 
 func (c *Controller) process(ctx context.Context, key string) (bool, error) {
 	logger := klog.FromContext(ctx)
-	fmt.Println(" >> 0")
 	clusterName, _, name, err := kcpcache.SplitMetaClusterNamespaceKey(key)
 	if err != nil {
 		utilruntime.HandleError(err)
-		fmt.Println(" >> 2")
 		return false, nil
 	}
 

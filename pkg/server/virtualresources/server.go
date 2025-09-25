@@ -11,9 +11,7 @@ import (
 	"sync"
 
 	// "k8s.io/apimachinery/pkg/runtime/schema"
-	restful "github.com/emicklei/go-restful/v3"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -21,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
-	"k8s.io/apiserver/pkg/endpoints/request"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/warning"
@@ -150,50 +147,13 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 	}
 	s.vwTlsConfig = tlsConfig
 
-	// c.Generic.BuildHandlerChainFunc = s.buildHandlerChain(c, delegationTarget)
-	// c.Generic.ReadyzChecks = append(c.Generic.ReadyzChecks, asHealthChecks(c.Extra.VirtualWorkspaces)...)
-	// apiBindings lister synced ^
-
 	s.GenericAPIServer, err = c.Generic.New("virtual-resources-root-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
 	}
-	s.GenericAPIServer.DiscoveryGroupManager = s.groupManagers
 
-	s.GenericAPIServer.Handler.GoRestfulContainer.Filter(func(req *restful.Request, res *restful.Response, chain *restful.FilterChain) {
-		pathParts := splitPath(req.Request.URL.Path)
-
-		ctx := req.Request.Context()
-		requestInfo, ok := request.RequestInfoFrom(ctx)
-		if !ok {
-			responsewriters.ErrorNegotiated(
-				apierrors.NewInternalError(fmt.Errorf("no RequestInfo found in the context")),
-				// TODO is this the right Codecs?
-				errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, res.ResponseWriter, req.Request,
-			)
-			return
-		}
-
-		if requestInfo.APIGroup == "" {
-			chain.ProcessFilter(req, res)
-			return
-		}
-
-		if !requestInfo.IsResourceRequest {
-			chain.ProcessFilter(req, res)
-			return
-		}
-
-		switch len(pathParts) {
-		case 3:
-			s.handleAPIResourceList(res.ResponseWriter, req.Request)
-			return
-		default:
-			s.handleResource(res.ResponseWriter, req.Request)
-			return
-		}
-	})
-
+	// We perform only APIResource discovery. Group discovery is delegated to apiextensions-server.
+	s.GenericAPIServer.DiscoveryGroupManager = nil
 	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/apis/", s.newApisHandler())
 
 	return s, nil
@@ -261,8 +221,6 @@ func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResou
 
 	// Store the API definitions we've found.
 
-	s.groupManagers.AddGroupForCluster(cluster, apiGroup)
-
 	if _, ok := s.apiDefs[cluster]; !ok {
 		s.apiDefs[cluster] = newApiDef()
 	}
@@ -285,7 +243,6 @@ func (s *Server) removeHandlerFor(cluster logicalcluster.Name, gr schema.GroupRe
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	s.groupManagers.RemoveGroupForCluster(cluster, gr.Group)
 	s.apiDefs[cluster].removeResource(gr)
 	exportIdentity := s.apiDefs[cluster].apiExportIdentities[gr]
 	delete(s.apiDefs[cluster].apiExportIdentities, gr)

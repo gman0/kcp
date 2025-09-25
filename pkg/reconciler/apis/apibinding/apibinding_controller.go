@@ -39,7 +39,6 @@ import (
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
 	kcpapiextensionsclientset "github.com/kcp-dev/client-go/apiextensions/client"
 	kcpapiextensionsv1informers "github.com/kcp-dev/client-go/apiextensions/informers/apiextensions/v1"
-	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	"github.com/kcp-dev/kcp/pkg/indexers"
@@ -72,7 +71,6 @@ var (
 func NewController(
 	crdClusterClient kcpapiextensionsclientset.ClusterInterface,
 	kcpClusterClient kcpclientset.ClusterInterface,
-	cacheDynamicClusterClient kcpdynamic.ClusterInterface,
 	apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer,
 	apiExportInformer apisv1alpha2informers.APIExportClusterInformer,
 	apiResourceSchemaInformer apisv1alpha1informers.APIResourceSchemaClusterInformer,
@@ -90,9 +88,8 @@ func NewController(
 				Name: ControllerName,
 			},
 		),
-		crdClusterClient:          crdClusterClient,
-		kcpClusterClient:          kcpClusterClient,
-		cacheDynamicClusterClient: cacheDynamicClusterClient,
+		crdClusterClient: crdClusterClient,
+		kcpClusterClient: kcpClusterClient,
 
 		listAPIBindings: func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIBinding, error) {
 			return apiBindingInformer.Lister().Cluster(clusterName).List(labels.Everything())
@@ -298,9 +295,8 @@ type CommitFunc = func(context.Context, *Resource, *Resource) error
 type controller struct {
 	queue workqueue.TypedRateLimitingInterface[string]
 
-	crdClusterClient          kcpapiextensionsclientset.ClusterInterface
-	kcpClusterClient          kcpclientset.ClusterInterface
-	cacheDynamicClusterClient kcpdynamic.ClusterInterface
+	crdClusterClient kcpapiextensionsclientset.ClusterInterface
+	kcpClusterClient kcpclientset.ClusterInterface
 
 	listAPIBindings            func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIBinding, error)
 	listAPIBindingsByAPIExport func(apiExport *apisv1alpha2.APIExport) ([]*apisv1alpha2.APIBinding, error)
