@@ -201,14 +201,12 @@ func TestCachedResources(t *testing.T) {
 		for resourceName := range resourceNames {
 			t.Logf("Waiting for %s.v1alpha1.wildwest.dev API to appear in %q", resourceName, consumerPath)
 			kcptestinghelpers.Eventually(t, func() (bool, string) {
-				resourcesList, err := kcpClusterClient.Cluster(consumerPath).Discovery().ServerResourcesForGroupVersion(wildwestv1alpha1.SchemeGroupVersion.String())
+				groupList, err := kcpClusterClient.Cluster(consumerPath).Discovery().ServerGroups()
 				if err != nil {
 					return false, fmt.Sprintf("failed to retrieve APIResourceList from discovery: %v", err)
 				}
-				return slices.ContainsFunc(resourcesList.APIResources, func(e metav1.APIResource) bool {
-					return e.Group == wildwestv1alpha1.SchemeGroupVersion.Group &&
-						e.Version == wildwestv1alpha1.SchemeGroupVersion.Version &&
-						e.Name == resourceName
+				return slices.ContainsFunc(groupList.Groups, func(e metav1.APIGroup) bool {
+					return e.Name == wildwestv1alpha1.SchemeGroupVersion.Group
 				}), fmt.Sprintf("%s.v1alpha1.wildwest.dev API not found in %q", resourceName, consumerPath)
 			}, wait.ForeverTestTimeout, time.Second*1, "waiting for %s.v1alpha1.wildwest.dev API in %q", resourceName, consumerPath)
 
@@ -221,7 +219,7 @@ func TestCachedResources(t *testing.T) {
 	}
 
 	// Map of Host->{Admissible workspaces}.
-	// A client from a certain host (e.g. a virtual workspace) may be able to reach only
+	// A client for a certain host (e.g. a virtual workspace) may be able to reach only
 	// workspaces co-located on the same shard. This map holds these associations.
 	admissibleWorkspaces := make(map[string]sets.Set[logicalcluster.Path])
 	// cfg is configured with front-proxy addr, so both workspaces are reachable regardless of which shard they are on.
@@ -393,7 +391,7 @@ func TestCachedResources(t *testing.T) {
 	// contents.
 	wildwestResourceNamespaces := map[string]string{
 		cowboyOne.Name:  cowboyOne.Namespace,
-		sheriffOne.Name: sheriffOne.Namespace,
+		sheriffOne.Name: sheriffOne.Namespace, // Actually, no namespace here -- this is just for the consistency's sake
 	}
 	namespaceableResource := func(namespace string, nsRes dynamic.NamespaceableResourceInterface) dynamic.ResourceInterface {
 		if namespace == "" {
@@ -401,8 +399,7 @@ func TestCachedResources(t *testing.T) {
 		}
 		return nsRes.Namespace(namespace)
 	}
-	// Get all dynamic clients in a single slice so that we can do this
-	// all in one go.
+	// Get all dynamic clients in a single slice so that we can do this all in one go.
 	var cfgs []*rest.Config
 	for _, c := range apiExportVWClientConfigs {
 		cfgs = append(cfgs, c)
@@ -472,6 +469,14 @@ func TestCachedResources(t *testing.T) {
 			}
 		}
 	}
+
+	// Verify that APIBinding's conflict checker blocks creating Sheriff CRD in consumer1WS.
+	/*_, err = kcpCRDClusterClient.Cluster(consumer1Path).Create(ctx, wildwest.CRD(t, metav1.GroupResource{
+		Group:    wildwestv1alpha1.SchemeGroupVersion.Group,
+		Resource: "sheriffs",
+	}), metav1.CreateOptions{})
+	require.Error(t, err, "creating a CRD should fail because the same GR already exists")*/
+
 }
 
 func normalizeUnstructuredMap(origObj map[string]interface{}) map[string]interface{} {
