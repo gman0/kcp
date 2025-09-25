@@ -24,6 +24,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/endpointslice"
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/logging"
+	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	"github.com/kcp-dev/kcp/pkg/tombstone"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	"github.com/kcp-dev/kcp/sdk/apis/core"
@@ -45,6 +46,7 @@ const (
 func NewController(
 	shardName string,
 	apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer,
+	logicalClusterInformer corev1alpha1informers.LogicalClusterClusterInformer,
 	globalShardClusterInformer corev1alpha1informers.ShardClusterInformer,
 	localAPIExportInformer, globalAPIExportInformer apisv1alpha2informers.APIExportClusterInformer,
 	dynamicClusterClient kcpdynamic.ClusterInterface,
@@ -64,6 +66,9 @@ func NewController(
 		},
 		getAPIBinding: func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error) {
 			return apiBindingInformer.Cluster(cluster).Lister().Get(name)
+		},
+		getLogicalCluster: func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error) {
+			return logicalClusterInformer.Cluster(cluster).Lister().Get(corev1alpha1.LogicalClusterName)
 		},
 		getAPIExport: func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error) {
 			return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](apisv1alpha2.Resource("apiexports"), localAPIExportInformer.Informer().GetIndexer(), globalAPIExportInformer.Informer().GetIndexer(), path, name)
@@ -97,7 +102,20 @@ func NewController(
 	_, _ = apiBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { c.enqueueAPIBinding(tombstone.Obj[*apisv1alpha2.APIBinding](obj), logger) },
 		UpdateFunc: func(_, obj interface{}) { c.enqueueAPIBinding(tombstone.Obj[*apisv1alpha2.APIBinding](obj), logger) },
-		DeleteFunc: func(obj interface{}) { c.enqueueAPIBinding(tombstone.Obj[*apisv1alpha2.APIBinding](obj), logger) },
+	})
+
+	_, _ = logicalClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			c.enqueueLogicalCluster(tombstone.Obj[*corev1alpha1.LogicalCluster](obj), logger)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldLC := tombstone.Obj[*corev1alpha1.LogicalCluster](oldObj)
+			newLC := tombstone.Obj[*corev1alpha1.LogicalCluster](newObj)
+			if oldLC.Annotations[apibinding.ResourceBindingsAnnotationKey] != newLC.Annotations[apibinding.ResourceBindingsAnnotationKey] ||
+				newLC.DeletionTimestamp != nil {
+				c.enqueueLogicalCluster(newLC, logger)
+			}
+		},
 	})
 
 	return c, nil
@@ -111,6 +129,7 @@ type Controller struct {
 	dynamicClusterClient         kcpdynamic.ClusterInterface
 	getMyShard                   func() (*corev1alpha1.Shard, error)
 	getAPIBinding                func(cluster logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error)
+	getLogicalCluster            func(cluster logicalcluster.Name) (*corev1alpha1.LogicalCluster, error)
 	getAPIExport                 func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
 	getUnstructuredEndpointSlice func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error)
 }
@@ -124,6 +143,30 @@ func (c *Controller) enqueueAPIBinding(apiBinding *apisv1alpha2.APIBinding, logg
 
 	logging.WithQueueKey(logger, key).V(4).Info("queueing APIBinding")
 	c.queue.Add(key)
+}
+
+func (c *Controller) enqueueLogicalCluster(lc *corev1alpha1.LogicalCluster, logger logr.Logger) {
+	resLock, err := apibinding.GetResourceBindings(lc)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	cluster := logicalcluster.From(lc)
+
+	for _, lock := range resLock {
+		if lock.Name == "" {
+			continue
+		}
+
+		binding, err := c.getAPIBinding(cluster, lock.Name)
+		if err != nil {
+			utilruntime.HandleError(err)
+		}
+
+		logger.V(4).Info("queueing APIBinding because of LogicalCluster")
+		c.enqueueAPIBinding(binding, logger)
+	}
 }
 
 // Start starts the controller, which stops when ctx.Done() is closed.
@@ -196,7 +239,6 @@ func (c *Controller) getVirtualResourceURL(ctx context.Context, shardUrl string,
 }
 
 func (c *Controller) process(ctx context.Context, key string) (bool, error) {
-	logger := klog.FromContext(ctx)
 	clusterName, _, name, err := kcpcache.SplitMetaClusterNamespaceKey(key)
 	if err != nil {
 		utilruntime.HandleError(err)
@@ -215,42 +257,6 @@ func (c *Controller) process(ctx context.Context, key string) (bool, error) {
 		return false, nil
 	}
 
-	exportPath := logicalcluster.NewPath(binding.Spec.Reference.Export.Path)
-	if exportPath.Empty() {
-		exportPath = logicalcluster.From(binding).Path()
-	}
-	export, err := c.getAPIExport(exportPath, binding.Spec.Reference.Export.Name)
-	if err != nil {
-		return true, err
-	}
-
-	logger = logging.WithObject(logger, binding)
-	ctx = klog.NewContext(ctx, logger)
-
-	thisShard, err := c.getMyShard()
-	if err != nil {
-		return true, err
-	}
-
-	for _, resource := range export.Spec.Resources {
-		if resource.Storage.Virtual == nil {
-			continue
-		}
-
-		resourceGR := schema.GroupResource{
-			Group:    resource.Group,
-			Resource: resource.Name,
-		}
-
-		vrURL, err := c.getVirtualResourceURL(ctx, thisShard.Spec.VirtualWorkspaceURL, logicalcluster.From(export), resource.Storage.Virtual)
-		if err != nil {
-			return true, err
-		}
-
-		if err := c.server.addHandlerFor(clusterName, resourceGR, vrURL, export.Status.IdentityHash); err != nil {
-			return true, err
-		}
-	}
-
-	return false, nil
+	logger := logging.WithObject(klog.FromContext(ctx), binding)
+	return c.reconcile(klog.NewContext(ctx, logger), binding)
 }
