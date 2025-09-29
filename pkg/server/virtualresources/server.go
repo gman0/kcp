@@ -63,14 +63,6 @@ func init() {
 	scheme.AddUnversionedTypes(unversionedVersion, unversionedTypes...)
 }
 
-type apiDef struct {
-	apiGroups    map[string]metav1.APIGroup
-	apiResources map[schema.GroupVersion]map[string]metav1.APIResource
-
-	endpoints           map[schema.GroupResource]string
-	apiExportIdentities map[schema.GroupResource]string
-}
-
 type Server struct {
 	GenericAPIServer *genericapiserver.GenericAPIServer
 	Extra            *ExtraConfig
@@ -378,7 +370,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 
 	cluster := apirequest.ClusterFrom(r.Context())
 	if cluster == nil {
-		http.Error(w, fmt.Sprintf("cluster not in request"), http.StatusInternalServerError)
+		http.Error(w, "cluster not in request", http.StatusInternalServerError)
 		return
 	}
 
@@ -423,9 +415,10 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// We do what the apiextensions apiserver does: delegate on not found or !NamesAccepted or !Established, otherwise we fail.
-	crd, err := s.getCRD(logicalcluster.Name("system:system-crds"), crdName)
+	crd, err := s.getCRD(logicalcluster.Name("system:bound-crds"), crdName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			// Should give 404 -- maybe the CRD is created by the time apiextensions delegate finishes and takes over.
 			s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 			return
 		}
@@ -492,7 +485,6 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vrHandler.ServeHTTP(w, r)
-	return
 }
 
 func (s *Server) getVirtualResourceURL(ctx context.Context, apiExportCluster logicalcluster.Name, virtual *apisv1alpha2.ResourceSchemaStorageVirtual) (string, error) {

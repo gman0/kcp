@@ -356,7 +356,7 @@ func (c *apiBindingAwareCRDLister) getForIdentityWildcard(name, identity string)
 const annotationKeyPartialMetadata = "crd.kcp.io/partial-metadata"
 
 func (c *apiBindingAwareCRDLister) getForWildcardPartialMetadata(name string) (*apiextensionsv1.CustomResourceDefinition, error) {
-	objs, err := c.crdIndexer.ByIndex(indexers.APIBindingByIdentityAndGroupResource, name)
+	objs, err := c.crdIndexer.ByIndex(byGroupResourceName, name)
 	if err != nil {
 		return nil, err
 	}
