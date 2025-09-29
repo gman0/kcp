@@ -74,6 +74,8 @@ func (r *versionDiscoveryHandler) ServeHTTP(w http.ResponseWriter, req *http.Req
 
 	ctx := req.Context()
 
+	fmt.Printf("\n\n\n### APIEXPORT 0\n\n\n")
+
 	apiDomainKey := dyncamiccontext.APIDomainKeyFrom(ctx)
 
 	apiSet, hasLocationKey, err := r.apiSetRetriever.GetAPIDefinitionSet(ctx, apiDomainKey)
@@ -125,6 +127,8 @@ func (r *versionDiscoveryHandler) ServeHTTP(w http.ResponseWriter, req *http.Req
 
 		// TODO(david): Add scale sub-resource ???
 	}
+
+	fmt.Printf("\n\n\n### APIEXPORT VW DISCOVERY %#v \n\n\n", apiResourcesForDiscovery)
 
 	resourceListerFunc := discovery.APIResourceListerFunc(func() []metav1.APIResource {
 		return apiResourcesForDiscovery

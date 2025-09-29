@@ -96,7 +96,6 @@ import (
 	"github.com/kcp-dev/kcp/pkg/reconciler/tenancy/workspacemounts"
 	"github.com/kcp-dev/kcp/pkg/reconciler/tenancy/workspacetype"
 	"github.com/kcp-dev/kcp/pkg/reconciler/topology/partitionset"
-	"github.com/kcp-dev/kcp/pkg/server/virtualresources"
 	initializingworkspacesbuilder "github.com/kcp-dev/kcp/pkg/virtual/initializingworkspaces/builder"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	tenancyv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/tenancy/v1alpha1"
@@ -1829,41 +1828,6 @@ func (s *Server) installCachedResourceEndpointSliceURLsController(_ context.Cont
 					s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced() &&
 					s.CacheKcpSharedInformerFactory.Cache().V1alpha1().CachedResources().Informer().HasSynced() &&
 					s.KcpSharedInformerFactory.Core().V1alpha1().LogicalClusters().Informer().HasSynced(), nil
-			})
-		},
-		Runner: func(ctx context.Context) {
-			c.Start(ctx, 2)
-		},
-	})
-}
-
-func (s *Server) installVirtualResourcesAPIBindingController(ctx context.Context, config *rest.Config) error {
-	// TODO(gman0): add VirtualResources feature gates.
-	// if !kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.VirtualResources) {
-	// 	return nil
-	// }
-
-	apiBindingClusterInfomer := s.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings()
-
-	c, err := virtualresources.NewController(
-		s.Options.Extra.ShardName,
-		apiBindingClusterInfomer,
-		s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
-		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
-		s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
-		s.CacheDynamicClient,
-		s.VirtualResources,
-	)
-	if err != nil {
-		return err
-	}
-	return s.registerController(&controllerWrapper{
-		Name: virtualresources.ControllerName,
-		Wait: func(ctx context.Context, s *Server) error {
-			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
-				return s.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards().Informer().HasSynced() &&
-					s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced() &&
-					s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().HasSynced(), nil
 			})
 		},
 		Runner: func(ctx context.Context) {
