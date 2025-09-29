@@ -245,6 +245,8 @@ const (
 	// for the request. This data is synthetic; it is not stored in etcd and instead is only applied when retrieving
 	// CRs for the CRD.
 	AnnotationAPIIdentityKey = "apis.kcp.io/identity"
+
+	AnnotationSchemaVirtualStorageIdentityKey = "apis.kcp.io/schema-virtual-storage-identity"
 )
 
 // BoundAPIResource describes a bound GroupVersionResource through an APIResourceSchema of an APIExport..

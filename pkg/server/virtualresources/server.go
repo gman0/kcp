@@ -2,43 +2,65 @@ package virtualresources
 
 import (
 	// "encoding/json"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
-	"sync"
 
-	// "k8s.io/apimachinery/pkg/runtime/schema"
-
+	autoscaling "k8s.io/api/autoscaling/v1"
+	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apiserver/pkg/endpoints/discovery"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
-	"k8s.io/apiserver/pkg/warning"
-	discoveryclient "k8s.io/client-go/discovery"
+	// discoveryclient "k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
+	"github.com/kcp-dev/kcp/pkg/endpointslice"
+	"github.com/kcp-dev/kcp/pkg/indexers"
 	kcpfilters "github.com/kcp-dev/kcp/pkg/server/filters"
+	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
+	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
+	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
+	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
 )
 
 var (
-	errorScheme = runtime.NewScheme()
-	errorCodecs = serializer.NewCodecFactory(errorScheme)
+	scheme = runtime.NewScheme()
+	codecs = serializer.NewCodecFactory(scheme)
+
+	// if you modify this, make sure you update the crEncoder
+	unversionedVersion = schema.GroupVersion{Group: "", Version: "v1"}
+	unversionedTypes   = []runtime.Object{
+		&metav1.Status{},
+		&metav1.WatchEvent{},
+		&metav1.APIVersions{},
+		&metav1.APIGroupList{},
+		&metav1.APIGroup{},
+		&metav1.APIResourceList{},
+	}
 )
 
 func init() {
-	errorScheme.AddUnversionedTypes(metav1.Unversioned,
-		&metav1.Status{},
-	)
+	// we need to add the options to empty v1
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "", Version: "v1"})
+
+	scheme.AddUnversionedTypes(unversionedVersion, unversionedTypes...)
 }
 
 type apiDef struct {
@@ -55,90 +77,41 @@ type Server struct {
 	delegate         genericapiserver.DelegationTarget
 	vwTlsConfig      *tls.Config
 
-	groupManagers *clusterAwareGroupManager
-
-	lock              sync.RWMutex
-	apiDefs           map[logicalcluster.Name]apiDef
-	wildcardEndpoints map[string]map[schema.GroupResource]string
-}
-
-func newApiDef() apiDef {
-	return apiDef{
-		apiGroups:           make(map[string]metav1.APIGroup),
-		apiResources:        make(map[schema.GroupVersion]map[string]metav1.APIResource),
-		endpoints:           make(map[schema.GroupResource]string),
-		apiExportIdentities: make(map[schema.GroupResource]string),
-	}
-}
-
-func (d apiDef) addGroup(apiGroup metav1.APIGroup) {
-	existingApiGroup, ok := d.apiGroups[apiGroup.Name]
-	if !ok {
-		d.apiGroups[apiGroup.Name] = apiGroup
-		return
-	}
-
-	groupVersions := sets.New[string]()
-	for _, version := range existingApiGroup.Versions {
-		groupVersions.Insert(version.Version)
-	}
-	for _, version := range apiGroup.Versions {
-		groupVersions.Insert(version.Version)
-	}
-	apiGroup.Versions = make([]metav1.GroupVersionForDiscovery, len(groupVersions))
-	for i, version := range sets.List[string](groupVersions) {
-		apiGroup.Versions[i] = metav1.GroupVersionForDiscovery{
-			Version: version,
-			GroupVersion: schema.GroupVersion{
-				Group:   apiGroup.Name,
-				Version: version,
-			}.String(),
-		}
-	}
-	if len(apiGroup.Versions) > 0 {
-		apiGroup.PreferredVersion = apiGroup.Versions[len(apiGroup.Versions)-1]
-	}
-
-	d.apiGroups[apiGroup.Name] = apiGroup
-}
-
-func (d apiDef) addResource(apiResource metav1.APIResource) {
-	gv := schema.GroupVersion{
-		Group:   apiResource.Group,
-		Version: apiResource.Version,
-	}
-
-	if _, ok := d.apiResources[gv]; !ok {
-		d.apiResources[gv] = make(map[string]metav1.APIResource)
-	}
-	d.apiResources[gv][apiResource.Name] = apiResource
-}
-
-func (d apiDef) removeResource(gr schema.GroupResource) {
-	apiGroup, ok := d.apiGroups[gr.Group]
-	if !ok {
-		return
-	}
-
-	for _, version := range apiGroup.Versions {
-		gv := schema.GroupVersion{
-			Group:   gr.Group,
-			Version: version.Version,
-		}
-		delete(d.apiResources[gv], gr.Resource)
-		if len(d.apiResources[gv]) == 0 {
-			delete(d.apiResources, gv)
-		}
-	}
+	getThisShard                 func() (*corev1alpha1.Shard, error)
+	getCRD                       func(cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
+	getUnstructuredEndpointSlice func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error)
 }
 
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
 	s := &Server{
-		Extra:             c.Extra,
-		delegate:          delegationTarget,
-		groupManagers:     newClusterAwareGroupManager(c.Generic.DiscoveryAddresses, c.Generic.Serializer),
-		apiDefs:           make(map[logicalcluster.Name]apiDef),
-		wildcardEndpoints: make(map[string]map[schema.GroupResource]string),
+		Extra:    c.Extra,
+		delegate: delegationTarget,
+
+		getUnstructuredEndpointSlice: func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error) {
+			list, err := c.Extra.DynamicClusterClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+
+			if len(list.Items) == 0 {
+				return nil, apierrors.NewNotFound(gvr.GroupResource(), name)
+			}
+
+			var slice *unstructured.Unstructured
+			for _, item := range list.Items {
+				if item.GetName() == name {
+					if slice != nil {
+						return nil, apierrors.NewInternalError(fmt.Errorf("multiple objects found"))
+					}
+					slice = &item
+				}
+			}
+
+			return slice, nil
+		},
+		getCRD: func(clusterName logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
+			return c.Extra.CRDLister.Lister().Cluster(clusterName).Get(name)
+		},
 	}
 
 	tlsConfig, err := rest.TLSConfigFor(c.Extra.VWClientConfig)
@@ -159,99 +132,54 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 	return s, nil
 }
 
-func (s *Server) addHandlerFor(cluster logicalcluster.Name, gr schema.GroupResource, vrEndpointURL, exportIdentity string) error {
-	config := *s.Extra.VWClientConfig
-	config.Host = urlWithCluster(vrEndpointURL, exportIdentity, &genericapirequest.Cluster{Name: cluster})
+/*dc, err := discoveryclient.NewDiscoveryClientForConfig(&config)
+if err != nil {
+	return fmt.Errorf("failed to create discovery client for gr=%q, endpoint=%q: %v", gr, config.Host, err)
+}
 
-	dc, err := discoveryclient.NewDiscoveryClientForConfig(&config)
+// Get API groups from the VW.
+
+apiGroupList, err := dc.ServerGroups()
+if err != nil {
+	return fmt.Errorf("discovery client failed to list api groups for endpoint=%q: %v", config.Host, err)
+}
+
+// Find the group we want to bind.
+
+var apiGroup *metav1.APIGroup
+for _, group := range apiGroupList.Groups {
+	if group.Name == gr.Group {
+		apiGroup = group.DeepCopy()
+		break
+	}
+}
+if apiGroup == nil {
+	return fmt.Errorf("group %s not found in %s discovery", gr.Group, vrEndpointURL)
+}
+
+// Get all versions in the found group that are serving the bound resource.
+
+var apiResources []metav1.APIResource
+for _, version := range apiGroup.Versions {
+	apiResourceList, err := dc.ServerResourcesForGroupVersion(version.GroupVersion)
 	if err != nil {
-		return fmt.Errorf("failed to create discovery client for gr=%q, endpoint=%q: %v", gr, config.Host, err)
+		return fmt.Errorf("discovery client failed to list resources for group/version %s in %s: %v", version.GroupVersion, vrEndpointURL, err)
 	}
 
-	// Get API groups from the VW.
-
-	apiGroupList, err := dc.ServerGroups()
-	if err != nil {
-		return fmt.Errorf("discovery client failed to list api groups for endpoint=%q: %v", config.Host, err)
-	}
-
-	// Find the group we want to bind.
-
-	var apiGroup *metav1.APIGroup
-	for _, group := range apiGroupList.Groups {
-		if group.Name == gr.Group {
-			apiGroup = group.DeepCopy()
+	for _, res := range apiResourceList.APIResources {
+		if res.Name == gr.Resource {
+			res = *res.DeepCopy()
+			if res.Group == "" {
+				res.Group = apiGroup.Name
+			}
+			if res.Version == "" {
+				res.Version = version.Version
+			}
+			apiResources = append(apiResources, res)
 			break
 		}
 	}
-	if apiGroup == nil {
-		return fmt.Errorf("group %s not found in %s discovery", gr.Group, vrEndpointURL)
-	}
-
-	// Get all versions in the found group that are serving the bound resource.
-
-	var apiResources []metav1.APIResource
-	for _, version := range apiGroup.Versions {
-		apiResourceList, err := dc.ServerResourcesForGroupVersion(version.GroupVersion)
-		if err != nil {
-			return fmt.Errorf("discovery client failed to list resources for group/version %s in %s: %v", version.GroupVersion, vrEndpointURL, err)
-		}
-
-		for _, res := range apiResourceList.APIResources {
-			if res.Name == gr.Resource {
-				res = *res.DeepCopy()
-				if res.Group == "" {
-					res.Group = apiGroup.Name
-				}
-				if res.Version == "" {
-					res.Version = version.Version
-				}
-				apiResources = append(apiResources, res)
-				break
-			}
-		}
-	}
-
-	if apiResources == nil {
-		return fmt.Errorf("resource %s/%s not found in %s", gr.Group, gr.Resource, vrEndpointURL)
-	}
-
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	// Store the API definitions we've found.
-
-	if _, ok := s.apiDefs[cluster]; !ok {
-		s.apiDefs[cluster] = newApiDef()
-	}
-	if _, ok := s.wildcardEndpoints[exportIdentity]; !ok {
-		s.wildcardEndpoints[exportIdentity] = make(map[schema.GroupResource]string)
-	}
-
-	s.apiDefs[cluster].addGroup(*apiGroup)
-	for _, apiResource := range apiResources {
-		s.apiDefs[cluster].addResource(apiResource)
-	}
-	s.apiDefs[cluster].endpoints[gr] = vrEndpointURL
-	s.apiDefs[cluster].apiExportIdentities[gr] = exportIdentity
-	s.wildcardEndpoints[exportIdentity][gr] = vrEndpointURL
-
-	return nil
-}
-
-func (s *Server) removeHandlerFor(cluster logicalcluster.Name, gr schema.GroupResource) error {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.apiDefs[cluster].removeResource(gr)
-	exportIdentity := s.apiDefs[cluster].apiExportIdentities[gr]
-	delete(s.apiDefs[cluster].apiExportIdentities, gr)
-	delete(s.wildcardEndpoints[exportIdentity], gr)
-
-	// TODO: Handle group deletion, cluster deletion.
-
-	return nil
-}
+}*/
 
 func splitPath(path string) []string {
 	path = strings.Trim(path, "/")
@@ -275,129 +203,358 @@ func (s *Server) newApisHandler() http.HandlerFunc {
 	}
 }
 
-func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
-	pathParts := splitPath(r.URL.Path)
-	if len(pathParts) != 3 {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
-	}
+func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds []*apiextensionsv1.CustomResourceDefinition) []metav1.APIResource {
+	apiResourcesForDiscovery := []metav1.APIResource{}
 
-	ctx := r.Context()
+	for _, crd := range crds {
+		if requestedGroup != crd.Spec.Group {
+			continue
+		}
 
-	cluster := genericapirequest.ClusterFrom(ctx)
-	if cluster == nil {
-		warning.AddWarning(ctx, "", "cluster missing in context")
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
-	}
+		if !apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Established) {
+			continue
+		}
 
-	_, hasReqInfo := genericapirequest.RequestInfoFrom(ctx)
-	if !hasReqInfo {
-		warning.AddWarning(ctx, "", "request info missing in context")
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
-	}
+		var (
+			storageVersionHash string
+			subresources       *apiextensionsv1.CustomResourceSubresources
+			foundVersion       = false
+		)
 
-	gv := schema.GroupVersion{
-		Group:   pathParts[1],
-		Version: pathParts[2],
-	}
+		for _, v := range crd.Spec.Versions {
+			if !v.Served {
+				continue
+			}
 
-	var knownVersionedResources []metav1.APIResource
-	s.lock.RLock()
-	if resources, ok := s.apiDefs[cluster.Name].apiResources[gv]; ok {
-		for _, res := range resources {
-			knownVersionedResources = append(knownVersionedResources, *res.DeepCopy())
+			// HACK: support the case when we add core resources through CRDs (KCP scenario)
+			groupVersion := crd.Spec.Group + "/" + v.Name
+			if crd.Spec.Group == "" {
+				groupVersion = v.Name
+			}
+
+			gv := metav1.GroupVersion{Group: groupVersion, Version: v.Name}
+
+			if v.Name == requestedVersion {
+				foundVersion = true
+				subresources = v.Subresources
+			}
+			if v.Storage {
+				storageVersionHash = discovery.StorageVersionHash(logicalcluster.From(crd), gv.Group, gv.Version, crd.Spec.Names.Kind)
+			}
+		}
+
+		if !foundVersion {
+			// This CRD doesn't have the requested version
+			continue
+		}
+
+		verbs := metav1.Verbs([]string{"delete", "deletecollection", "get", "list", "patch", "create", "update", "watch"})
+		// if we're terminating we don't allow some verbs
+		if apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Terminating) {
+			verbs = metav1.Verbs([]string{"delete", "deletecollection", "get", "list", "watch"})
+		}
+
+		if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
+			verbs = metav1.Verbs([]string{"get", "list", "watch"})
+		}
+
+		apiResourcesForDiscovery = append(apiResourcesForDiscovery, metav1.APIResource{
+			Name:               crd.Status.AcceptedNames.Plural,
+			SingularName:       crd.Status.AcceptedNames.Singular,
+			Namespaced:         crd.Spec.Scope == apiextensionsv1.NamespaceScoped,
+			Kind:               crd.Status.AcceptedNames.Kind,
+			Verbs:              verbs,
+			ShortNames:         crd.Status.AcceptedNames.ShortNames,
+			Categories:         crd.Status.AcceptedNames.Categories,
+			StorageVersionHash: storageVersionHash,
+		})
+
+		if subresources != nil && subresources.Status != nil {
+			statusVerbs := metav1.Verbs([]string{"get", "patch", "update"})
+			if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
+				statusVerbs = metav1.Verbs([]string{"get"})
+			}
+
+			apiResourcesForDiscovery = append(apiResourcesForDiscovery, metav1.APIResource{
+				Name:       crd.Status.AcceptedNames.Plural + "/status",
+				Namespaced: crd.Spec.Scope == apiextensionsv1.NamespaceScoped,
+				Kind:       crd.Status.AcceptedNames.Kind,
+				Verbs:      statusVerbs,
+			})
+		}
+
+		if subresources != nil && subresources.Scale != nil {
+			scaleVerbs := metav1.Verbs([]string{"get", "patch", "update"})
+			if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
+				scaleVerbs = metav1.Verbs([]string{"get"})
+			}
+
+			apiResourcesForDiscovery = append(apiResourcesForDiscovery, metav1.APIResource{
+				Group:      autoscaling.GroupName,
+				Version:    "v1",
+				Kind:       "Scale",
+				Name:       crd.Status.AcceptedNames.Plural + "/scale",
+				Namespaced: crd.Spec.Scope == apiextensionsv1.NamespaceScoped,
+				Verbs:      scaleVerbs,
+			})
 		}
 	}
-	s.lock.RUnlock()
 
-	if len(knownVersionedResources) == 0 {
+	return apiResourcesForDiscovery
+}
+
+func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
+	pathParts := splitPath(r.URL.Path)
+	// only match /apis/<group>/<version>
+	if len(pathParts) != 3 || pathParts[0] != "apis" {
 		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 		return
 	}
 
-	apiResourceList := &metav1.APIResourceList{}
-	apiResourceList.GroupVersion = gv.String()
-	apiResourceList.APIResources = knownVersionedResources
+	clusterName, wildcard, err := genericapirequest.ClusterNameOrWildcardFrom(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if wildcard {
+		// this is the only case where wildcard works for a list because this is our special CRD lister that handles it.
+		clusterName = "*"
+	}
 
-	responsewriters.WriteObjectNegotiated(s.GenericAPIServer.Serializer, negotiation.DefaultEndpointRestrictions, schema.GroupVersion{}, w, r, http.StatusOK, apiResourceList, false)
+	requestedGroup := pathParts[1]
+	requestedVersion := pathParts[2]
+
+	crds, err := s.Extra.APIBindingAwareCRDLister.Cluster(clusterName).List(r.Context(), labels.Everything())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	apiResources := apiResourcesForGroupVersion(requestedGroup, requestedVersion, crds) // TODO: VR verbs should be moved out
+	// StorageAPIBindingAwareCRDLister?
+
+	resourceListerFunc := discovery.APIResourceListerFunc(func() []metav1.APIResource {
+		return apiResources
+	})
+
+	discovery.NewAPIVersionHandler(codecs, schema.GroupVersion{Group: requestedGroup, Version: requestedVersion}, resourceListerFunc).ServeHTTP(w, r)
 }
 
 func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	requestInfo, ok := apirequest.RequestInfoFrom(ctx)
+	if !ok {
+		responsewriters.ErrorNegotiated(
+			apierrors.NewInternalError(fmt.Errorf("no RequestInfo found in the context")),
+			codecs, schema.GroupVersion{}, w, r,
+		)
+		return
+	}
+	if !requestInfo.IsResourceRequest {
+		pathParts := splitPath(requestInfo.Path)
+		// Only match /apis/<group>/<version>.
+		// Registered under /apis.
+		if len(pathParts) == 3 {
+			s.handleAPIResourceList(w, r)
+			return
+		}
 
-	apiExportIdentity := kcpfilters.IdentityFromContext(ctx)
+		// Group discovery is left to the delegate (apiextensions apiserver).
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
 
-	cluster := genericapirequest.ClusterFrom(ctx)
+	// Check there is a bound CRD, and is healthy
+	// * ns in req mismatch
+	// * list watch possible across namespaces (should be handled by VW?)
+	// * crd has NamesAccepted and Established
+	// * schema negotiation not needed for now
+	// * no special handling for terminating state because we don't handle Create for now
+	// * wildcard partial metadata?
+	// Get a binding
+	// Get its export
+	// Get VR URL
+	// Serve from it
+
+	cluster := apirequest.ClusterFrom(r.Context())
 	if cluster == nil {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		http.Error(w, fmt.Sprintf("cluster not in request"), http.StatusInternalServerError)
 		return
 	}
-
-	if cluster.Wildcard && apiExportIdentity == "" {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
-	}
-
-	reqInfo, hasReqInfo := genericapirequest.RequestInfoFrom(ctx)
-	if !hasReqInfo {
-		warning.AddWarning(ctx, "", "request info missing in context")
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
-	}
-
-	if !reqInfo.IsResourceRequest {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
-		return
-	}
-
-	// cluster may be *, check if apiexport identity is in ctx
 
 	gr := schema.GroupResource{
-		Group:    reqInfo.APIGroup,
-		Resource: reqInfo.Resource,
+		Group:    requestInfo.APIGroup,
+		Resource: requestInfo.Resource,
+	}
+	if gr.Group == "" {
+		gr.Group = "core"
 	}
 
-	handler := s.proxyFor(cluster, apiExportIdentity, gr)
-	if handler == nil {
+	// partialMetadataRequest := kcpfilters.IsPartialMetadataRequest(ctx)
+	identity := kcpfilters.IdentityFromContext(ctx)
+
+	apiBinding, err := s.getAPIBindingForRequest(*cluster, gr, identity)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if apiBinding == nil {
+		// Not a virtual resource: the resource is not provided by an APIBinding.
 		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 		return
 	}
 
-	handler.ServeHTTP(w, r)
+	// The associated CRD must be healthy.
+
+	var crdName string
+	for _, boundResource := range apiBinding.Status.BoundResources {
+		if boundResource.Group == gr.Group && boundResource.Resource == gr.Resource {
+			crdName = boundResource.Schema.UID
+			break
+		}
+	}
+	if crdName == "" {
+		// This should not happen, the indexers returned a binding for this specific GR.
+		responsewriters.ErrorNegotiated(
+			apierrors.NewInternalError(fmt.Errorf("resource not available")),
+			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+		)
+		return
+	}
+	// We do what the apiextensions apiserver does: delegate on not found or !NamesAccepted or !Established, otherwise we fail.
+	crd, err := s.getCRD(logicalcluster.Name("system:system-crds"), crdName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+			return
+		}
+		utilruntime.HandleError(err)
+		responsewriters.ErrorNegotiated(
+			apierrors.NewInternalError(fmt.Errorf("error resolving resource: %v", err)),
+			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+		)
+		return
+	}
+	if !apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.NamesAccepted) &&
+		!apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Established) {
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	// Get the origin APIExport, and check that the resource has virtual storage. Otherwise delegate the request.
+
+	apiExportPath := logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)
+	if apiExportPath.Empty() {
+		apiExportPath = logicalcluster.NewPath(logicalcluster.From(apiBinding).String())
+	}
+	apiExport, err := getAPIExportByPath(
+		apiExportPath,
+		apiBinding.Spec.Reference.Export.Name,
+		s.Extra.LocalAPIExportInformer,
+		s.Extra.GlobalAPIExportInformer,
+	)
+
+	var virtualStorageDef *apisv1alpha2.ResourceSchemaStorageVirtual
+	for _, resource := range apiExport.Spec.Resources {
+		if resource.Storage.Virtual != nil &&
+			resource.Group == gr.Group &&
+			resource.Name == gr.Resource {
+			virtualStorageDef = resource.Storage.Virtual
+		}
+	}
+	if virtualStorageDef == nil {
+		// Not a virtual resource: the binding's export doesn't define such resource with virtual storage.
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
+	// We have a virtual resource. Get the endpoint URL, create a proxy handler and serve from that endpoint.
+
+	vrEndpointURL, err := s.getVirtualResourceURL(ctx, logicalcluster.From(apiExport), virtualStorageDef)
+	if err != nil {
+		utilruntime.HandleError(err)
+		responsewriters.ErrorNegotiated(
+			apierrors.NewInternalError(fmt.Errorf("error resolving resource: %v", err)),
+			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+		)
+		return
+	}
+
+	vrHandler, err := newProxy(cluster, vrEndpointURL, apiExport.Status.IdentityHash, s.vwTlsConfig)
+	if err != nil {
+		utilruntime.HandleError(err)
+		responsewriters.ErrorNegotiated(
+			apierrors.NewInternalError(fmt.Errorf("error serving resource: %v", err)),
+			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+		)
+		return
+	}
+
+	vrHandler.ServeHTTP(w, r)
+	return
 }
 
-func (s *Server) proxyFor(cluster *genericapirequest.Cluster, apiExportIdentity string, gr schema.GroupResource) http.Handler {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	var grEndpointMap map[schema.GroupResource]string
-	if cluster.Wildcard {
-		grEndpointMap = s.wildcardEndpoints[apiExportIdentity]
-	} else {
-		grEndpointMap = s.apiDefs[cluster.Name].endpoints
-	}
-
-	if grEndpointMap == nil {
-		return nil
-	}
-
-	vrUrl := grEndpointMap[gr]
-	if vrUrl == "" {
-		return nil
-	}
-
-	if apiExportIdentity == "" {
-		apiExportIdentity = s.apiDefs[cluster.Name].apiExportIdentities[gr]
-	}
-
-	handler, err := newProxy(cluster, vrUrl, apiExportIdentity, s.vwTlsConfig)
+func (s *Server) getVirtualResourceURL(ctx context.Context, apiExportCluster logicalcluster.Name, virtual *apisv1alpha2.ResourceSchemaStorageVirtual) (string, error) {
+	slice, err := s.getUnstructuredEndpointSlice(ctx, apiExportCluster, schema.GroupVersionResource{
+		Group:    virtual.Group,
+		Version:  virtual.Version,
+		Resource: virtual.Resource,
+	}, virtual.Name)
 	if err != nil {
-		return nil
+		return "", err
 	}
 
-	return handler
+	urls, err := endpointslice.ListURLsFromUnstructured(*slice)
+	if err != nil {
+		return "", err
+	}
+
+	return endpointslice.FindOneURL(s.Extra.ShartVirtualWorkspaceURLGetter(), urls)
+}
+
+func (s *Server) getAPIBindingForRequest(
+	cluster genericapirequest.Cluster,
+	gr schema.GroupResource,
+	identity string,
+) (*apisv1alpha2.APIBinding, error) {
+	var (
+		apiBindings []*apisv1alpha2.APIBinding
+		err         error
+	)
+	if cluster.Wildcard {
+		apiBindings, err = indexers.ByIndex[*apisv1alpha2.APIBinding](
+			s.Extra.APIBindingInformer.Informer().GetIndexer(),
+			indexers.APIBindingByIdentityAndGroupResource,
+			indexers.IdentityGroupResourceKeyFunc(identity, gr.Group, gr.Resource),
+		)
+	} else {
+		apiBindings, err = indexers.ByIndex[*apisv1alpha2.APIBinding](
+			s.Extra.APIBindingInformer.Informer().GetIndexer(),
+			indexers.APIBindingByBoundResources,
+			indexers.APIBindingBoundResourceValue(cluster.Name, gr.Group, gr.Resource),
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if len(apiBindings) > 0 {
+		return apiBindings[0], nil
+	}
+
+	// This GR does not seem to be provided by an APIBinding.
+	return nil, nil
+}
+
+func getAPIExportByPath(clusterPath logicalcluster.Path, name string, local, global apisv1alpha2informers.APIExportClusterInformer) (*apisv1alpha2.APIExport, error) {
+	return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](
+		apisv1alpha2.Resource("apiexports"),
+		local.Informer().GetIndexer(),
+		global.Informer().GetIndexer(),
+		clusterPath,
+		name,
+	)
 }
 
 func newProxy(cluster *genericapirequest.Cluster, vwURL, apiExportIdentity string, vwTLSConfig *tls.Config) (http.Handler, error) {

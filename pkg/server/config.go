@@ -62,6 +62,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/authorization"
 	bootstrappolicy "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
 	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
+	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/network"
 	"github.com/kcp-dev/kcp/pkg/server/bootstrap"
@@ -614,9 +615,12 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	_ = c.KcpSharedInformerFactory.Apis().V1alpha1().APIConversions().Informer()
 
 	_ = c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetIndexer().AddIndexers(cache.Indexers{byGroupResourceName: indexCRDByGroupResourceName})
-	_ = c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().GetIndexer().AddIndexers(cache.Indexers{byIdentityGroupResource: indexAPIBindingByIdentityGroupResource})
+	_ = c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().GetIndexer().AddIndexers(cache.Indexers{
+		indexers.APIBindingByIdentityAndGroupResource: indexers.IndexAPIBindingByIdentityGroupResource,
+		indexers.APIBindingByBoundResources:           indexers.IndexAPIBindingByBoundResources,
+	})
 
-	c.ApiExtensions.ExtraConfig.ClusterAwareCRDLister = &apiBindingAwareCRDClusterLister{
+	apiBindingAwareCRDClusterLister := &apiBindingAwareCRDClusterLister{
 		kcpClusterClient:  c.KcpClusterClient,
 		crdLister:         c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Lister(),
 		crdIndexer:        c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().GetIndexer(),
@@ -628,6 +632,7 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 			return c.KcpSharedInformerFactory.Apis().V1alpha1().APIResourceSchemas().Lister().Cluster(clusterName).Get(name)
 		},
 	}
+	c.ApiExtensions.ExtraConfig.ClusterAwareCRDLister = apiBindingAwareCRDClusterLister
 	c.ApiExtensions.ExtraConfig.Client = c.ApiExtensionsClusterClient
 	c.ApiExtensions.ExtraConfig.Informers = c.ApiExtensionsSharedInformerFactory
 	c.ApiExtensions.ExtraConfig.TableConverterProvider = NewTableConverterProvider()
@@ -642,7 +647,16 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 			KeyFile:  opts.Extra.ShardClientKeyFile,
 		}
 	}
-	c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig)
+	c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig,
+		c.CacheDynamicClient,
+		c.ShardVirtualWorkspaceURL,
+		c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
+		apiBindingAwareCRDClusterLister,
+		c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
+		c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		c.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create config for virtual resources server: %v", err)
 	}

@@ -392,12 +392,6 @@ func (s *Server) installControllers(ctx context.Context, controllerConfig *rest.
 		}
 	}
 
-	if s.Options.Controllers.EnableAll || enabled.Has("virtualresourceapibinding") {
-		if err := s.installVirtualResourcesAPIBindingController(ctx, controllerConfig); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

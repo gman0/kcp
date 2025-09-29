@@ -36,6 +36,7 @@ import (
 	kcpapiextensionsv1listers "github.com/kcp-dev/client-go/apiextensions/listers/apiextensions/v1"
 	"github.com/kcp-dev/logicalcluster/v3"
 
+	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	kcpfilters "github.com/kcp-dev/kcp/pkg/server/filters"
@@ -233,6 +234,7 @@ func (c *apiBindingAwareCRDLister) Get(ctx context.Context, name string) (*apiex
 		identity := kcpfilters.IdentityFromContext(ctx)
 		if clusterName == "*" && identity != "" {
 			// Priority 2: APIBinding CRD
+			fmt.Printf("\n### apiBindingAwareCRDClusterLister Get name=%s clusterName=%q identity=%s partialMetadataRequest=%v\n\n", name, clusterName, identity, partialMetadataRequest)
 			crd, err = c.getForIdentityWildcard(name, identity)
 		} else if clusterName == "*" && partialMetadataRequest {
 			// Priority 3: partial metadata wildcard request
@@ -311,9 +313,9 @@ func addPartialMetadataCRDAnnotation(crd *apiextensionsv1.CustomResourceDefiniti
 func (c *apiBindingAwareCRDLister) getForIdentityWildcard(name, identity string) (*apiextensionsv1.CustomResourceDefinition, error) {
 	group, resource := crdNameToGroupResource(name)
 
-	indexKey := identityGroupResourceKeyFunc(identity, group, resource)
+	indexKey := indexers.IdentityGroupResourceKeyFunc(identity, group, resource)
 
-	apiBindings, err := c.apiBindingIndexer.ByIndex(byIdentityGroupResource, indexKey)
+	apiBindings, err := c.apiBindingIndexer.ByIndex(indexers.APIBindingByIdentityAndGroupResource, indexKey)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +356,7 @@ func (c *apiBindingAwareCRDLister) getForIdentityWildcard(name, identity string)
 const annotationKeyPartialMetadata = "crd.kcp.io/partial-metadata"
 
 func (c *apiBindingAwareCRDLister) getForWildcardPartialMetadata(name string) (*apiextensionsv1.CustomResourceDefinition, error) {
-	objs, err := c.crdIndexer.ByIndex(byGroupResourceName, name)
+	objs, err := c.crdIndexer.ByIndex(indexers.APIBindingByIdentityAndGroupResource, name)
 	if err != nil {
 		return nil, err
 	}

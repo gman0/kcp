@@ -1,11 +1,19 @@
 package virtualresources
 
 import (
+	apiextensionsapiserverkcp "k8s.io/apiextensions-apiserver/pkg/kcp"
 	"k8s.io/apimachinery/pkg/runtime"
 	apiopenapi "k8s.io/apiserver/pkg/endpoints/openapi"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/rest"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
+
+	kcpapiextensionsv1informers "github.com/kcp-dev/client-go/apiextensions/informers/apiextensions/v1"
+	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
+
+	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
+	corev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/core/v1alpha1"
+	apisv1alpha2listers "github.com/kcp-dev/kcp/sdk/client/listers/apis/v1alpha2"
 )
 
 type Config struct {
@@ -14,7 +22,18 @@ type Config struct {
 }
 
 type ExtraConfig struct {
-	VWClientConfig *rest.Config
+	VWClientConfig       *rest.Config
+	DynamicClusterClient kcpdynamic.ClusterInterface
+
+	ShartVirtualWorkspaceURLGetter func() string
+
+	CRDLister                  kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer
+	APIBindingAwareCRDLister   apiextensionsapiserverkcp.ClusterAwareCRDClusterLister
+	APIBindingInformer         apisv1alpha2informers.APIBindingClusterInformer
+	APIBindingLister           apisv1alpha2listers.APIBindingClusterLister
+	LocalAPIExportInformer     apisv1alpha2informers.APIExportClusterInformer
+	GlobalAPIExportInformer    apisv1alpha2informers.APIExportClusterInformer
+	GlobalShardClusterInformer corev1alpha1informers.ShardClusterInformer
 }
 
 type completedConfig struct {
@@ -52,14 +71,33 @@ func (c *completedConfig) WithOpenAPIAggregationController(delegatedAPIServer *g
 	return nil
 }
 
-func NewConfig(cfg *genericapiserver.Config, vwClientConfig *rest.Config) (*Config, error) {
-	rest.AddUserAgent(vwClientConfig, ControllerName)
+func NewConfig(cfg *genericapiserver.Config, vwClientConfig *rest.Config,
+	dynamicClusterClient kcpdynamic.ClusterInterface,
+	shartVirtualWorkspaceURLGetter func() string,
+	crdLister kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer,
+	apiBindingAwareCRDLister apiextensionsapiserverkcp.ClusterAwareCRDClusterLister,
+	apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer,
+	localAPIExportInformer apisv1alpha2informers.APIExportClusterInformer,
+	globalAPIExportInformer apisv1alpha2informers.APIExportClusterInformer,
+	globalShardClusterInformer corev1alpha1informers.ShardClusterInformer,
+) (*Config, error) {
+	rest.AddUserAgent(vwClientConfig, "kcp-virtual-resources-apiserver")
 	cfg.SkipOpenAPIInstallation = true
 
 	ret := &Config{
 		Generic: cfg,
 		Extra: ExtraConfig{
-			VWClientConfig: vwClientConfig,
+			VWClientConfig:       vwClientConfig,
+			DynamicClusterClient: dynamicClusterClient,
+
+			ShartVirtualWorkspaceURLGetter: shartVirtualWorkspaceURLGetter,
+
+			CRDLister:                  crdLister,
+			APIBindingAwareCRDLister:   apiBindingAwareCRDLister,
+			APIBindingInformer:         apiBindingInformer,
+			LocalAPIExportInformer:     localAPIExportInformer,
+			GlobalAPIExportInformer:    globalAPIExportInformer,
+			GlobalShardClusterInformer: globalShardClusterInformer,
 		},
 	}
 

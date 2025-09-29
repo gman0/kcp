@@ -414,8 +414,13 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 				continue
 			}
 		} else {
+			var virtualStorageIdentity string
+			if resourceSchema.Storage.Virtual != nil {
+				virtualStorageIdentity = resourceSchema.Storage.Virtual.IdentityHash
+			}
+
 			// Need to create bound CRD
-			crd, err := generateCRD(sch)
+			crd, err := generateCRD(sch, virtualStorageIdentity)
 			if err != nil {
 				logger.Error(err, "error generating CRD")
 
@@ -602,7 +607,7 @@ func boundCRDName(schema *apisv1alpha1.APIResourceSchema) string {
 	return string(schema.UID)
 }
 
-func generateCRD(schema *apisv1alpha1.APIResourceSchema) (*apiextensionsv1.CustomResourceDefinition, error) {
+func generateCRD(schema *apisv1alpha1.APIResourceSchema, virtualStorageIdentity string) (*apiextensionsv1.CustomResourceDefinition, error) {
 	crd := &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: boundCRDName(schema),
@@ -618,6 +623,9 @@ func generateCRD(schema *apisv1alpha1.APIResourceSchema) (*apiextensionsv1.Custo
 			Names: schema.Spec.Names,
 			Scope: schema.Spec.Scope,
 		},
+	}
+	if virtualStorageIdentity != "" {
+		crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] = virtualStorageIdentity
 	}
 
 	// Propagate the protected API approval annotation, `api-approved.kubernetes.io`, if any.
