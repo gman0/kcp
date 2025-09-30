@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -194,8 +196,10 @@ func TestCachedResources(t *testing.T) {
 					},
 				},
 			}, metav1.CreateOptions{})
-			require.NoError(t, err)
-			return err == nil, fmt.Sprintf("failed to create APIBinding: %v", err)
+			if err != nil {
+				return false, fmt.Sprintf("failed to create APIBinding: %v", err)
+			}
+			return true, ""
 		}, wait.ForeverTestTimeout, time.Second*1, "waiting to create apibinding")
 
 		for resourceName := range resourceNames {
@@ -222,7 +226,8 @@ func TestCachedResources(t *testing.T) {
 	// A client for a certain host (e.g. a virtual workspace) may be able to reach only
 	// workspaces co-located on the same shard. This map holds these associations.
 	admissibleWorkspaces := make(map[string]sets.Set[logicalcluster.Path])
-	// cfg is configured with front-proxy addr, so both workspaces are reachable regardless of which shard they are on.
+	// The default `cfg` is configured with the external addr, so both
+	// workspaces are reachable regardless of which shard they are on.
 	admissibleWorkspaces[cfg.Host] = sets.New(consumer1Path, consumer2Path)
 
 	// Generate APIExport VW client configs. The consumers could each be in a different
@@ -386,9 +391,8 @@ func TestCachedResources(t *testing.T) {
 		require.Equal(t, 2, counter, "Wildcard listing should return two %s", resourceName)
 	}
 
-	// Make sure listing and getting resources in a specific cluster works,
-	// both through APIExport VW and regular workspace, and that it has expected
-	// contents.
+	// Make sure listing and getting resources in a specific cluster works, both through
+	// APIExport VW and regular workspace, and that it has expected contents.
 	wildwestResourceNamespaces := map[string]string{
 		cowboyOne.Name:  cowboyOne.Namespace,
 		sheriffOne.Name: sheriffOne.Namespace, // Actually, no namespace here -- this is just for the consistency's sake
@@ -446,7 +450,7 @@ func TestCachedResources(t *testing.T) {
 				objName := resourceName + "-1"
 				objNamespace := wildwestResourceNamespaces[objName]
 
-				t.Logf("Listing %s resources in %q through %q should return one object", resourceName, consumerPath, host)
+				t.Logf("Listing %s resources in %q via %q should return one object", resourceName, consumerPath, host)
 				list, err := namespaceableResource(
 					objNamespace,
 					dynClient.Cluster(logicalcluster.NewPath(consumerWS.Spec.Cluster)).
@@ -458,7 +462,7 @@ func TestCachedResources(t *testing.T) {
 				require.NoError(t, err)
 				require.EqualValues(t, wildwestObjsNormalizedUnstructured[objName], normalizeUnstructuredMap(list.Items[0].Object))
 
-				t.Logf("Getting a %s resource named %s in %q through %q should return that object", resourceName, objName, consumerPath, host)
+				t.Logf("Getting a %s resource named %s in %q via %q should return that object", resourceName, objName, consumerPath, host)
 				obj, err := namespaceableResource(
 					objNamespace,
 					dynClient.Cluster(logicalcluster.NewPath(consumerWS.Spec.Cluster)).
@@ -471,12 +475,21 @@ func TestCachedResources(t *testing.T) {
 	}
 
 	// Verify that APIBinding's conflict checker blocks creating Sheriff CRD in consumer1WS.
-	/*_, err = kcpCRDClusterClient.Cluster(consumer1Path).Create(ctx, wildwest.CRD(t, metav1.GroupResource{
+	t.Log("Creating a CRD with conflicting name")
+	sheriffsCRDConflicting, err := kcpCRDClusterClient.Cluster(consumer1Path).Create(ctx, wildwest.CRD(t, metav1.GroupResource{
 		Group:    wildwestv1alpha1.SchemeGroupVersion.Group,
 		Resource: "sheriffs",
 	}), metav1.CreateOptions{})
-	require.Error(t, err, "creating a CRD should fail because the same GR already exists")*/
+	require.NoError(t, err)
+	kcptestinghelpers.Eventually(t, func() (bool, string) {
+		sheriffsCRDConflicting, err = kcpApiExtensionClusterClient.Cluster(consumer1Path).ApiextensionsV1().CustomResourceDefinitions().Get(ctx, "sheriffs.wildwest.dev", metav1.GetOptions{})
+		if err != nil {
+			return false, fmt.Sprintf("failed to get CRD: %v", err)
+		}
+		return apiextensionshelpers.IsCRDConditionFalse(sheriffsCRDConflicting, apiextensionsv1.NamesAccepted), "the CRD should not be accepted because of names collision"
+	}, wait.ForeverTestTimeout, time.Second*1, "waiting to create apibinding")
 
+	time.Sleep(time.Minute)
 }
 
 func normalizeUnstructuredMap(origObj map[string]interface{}) map[string]interface{} {

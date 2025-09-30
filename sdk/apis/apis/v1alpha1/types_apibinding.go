@@ -246,7 +246,7 @@ const (
 	// CRs for the CRD.
 	AnnotationAPIIdentityKey = "apis.kcp.io/identity"
 
-	AnnotationSchemaVirtualStorageIdentityKey = "apis.kcp.io/schema-virtual-storage-identity"
+	AnnotationSchemaStorageKey = "apis.kcp.io/schema-storage"
 )
 
 // BoundAPIResource describes a bound GroupVersionResource through an APIResourceSchema of an APIExport..
