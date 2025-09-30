@@ -211,8 +211,17 @@ func TestCachedResources(t *testing.T) {
 				}
 				return slices.ContainsFunc(groupList.Groups, func(e metav1.APIGroup) bool {
 					return e.Name == wildwestv1alpha1.SchemeGroupVersion.Group
+				}), fmt.Sprintf("wildwest.dev group not found in %q", consumerPath)
+			}, wait.ForeverTestTimeout, time.Second*1, "waiting for wildwest.dev group in %q", resourceName, consumerPath)
+			kcptestinghelpers.Eventually(t, func() (bool, string) {
+				resourceList, err := kcpClusterClient.Cluster(consumerPath).Discovery().ServerResourcesForGroupVersion("wildwest.dev/v1alpha1")
+				if err != nil {
+					return false, fmt.Sprintf("failed to retrieve APIResourceList from discovery: %v", err)
+				}
+				return slices.ContainsFunc(resourceList.APIResources, func(e metav1.APIResource) bool {
+					return e.Name == resourceName
 				}), fmt.Sprintf("%s.v1alpha1.wildwest.dev API not found in %q", resourceName, consumerPath)
-			}, wait.ForeverTestTimeout, time.Second*1, "waiting for %s.v1alpha1.wildwest.dev API in %q", resourceName, consumerPath)
+			}, wait.ForeverTestTimeout, time.Second*1, "waiting for wildwest.dev group in %q", resourceName, consumerPath)
 
 			t.Logf("Ensure %s.v1alpha1.wildwest.dev API is available in OpenAPIv3 endpoint in %q", resourceName, consumerPath)
 			paths, err := kcpClusterClient.Cluster(consumerPath).Discovery().OpenAPIV3().Paths()
@@ -488,8 +497,6 @@ func TestCachedResources(t *testing.T) {
 		}
 		return apiextensionshelpers.IsCRDConditionFalse(sheriffsCRDConflicting, apiextensionsv1.NamesAccepted), "the CRD should not be accepted because of names collision"
 	}, wait.ForeverTestTimeout, time.Second*1, "waiting to create apibinding")
-
-	// time.Sleep(time.Minute)
 }
 
 func normalizeUnstructuredMap(origObj map[string]interface{}) map[string]interface{} {

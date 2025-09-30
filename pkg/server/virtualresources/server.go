@@ -127,6 +127,14 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 			return indexers.ByIndex[*apisv1alpha2.APIBinding](c.Extra.APIBindingInformer.Informer().GetIndexer(), indexers.APIBindingByBoundResourceUID, boundResourceUID)
 		},
 		getAPIExportByPath: s.getAPIExportByPath,
+		getAPIExportsByVirtualResourceIdentity: func(vrIdentity string) ([]*apisv1alpha2.APIExport, error) {
+			return indexers.ByIndexWithFallback[*apisv1alpha2.APIExport](
+				c.Extra.LocalAPIExportInformer.Informer().GetIndexer(),
+				c.Extra.GlobalAPIExportInformer.Informer().GetIndexer(),
+				indexers.APIExportByVirtualResourceIdentities,
+				vrIdentity,
+			)
+		},
 
 		knownVirtualResourceVerbs: map[string][]string{
 			"cachedresourceendpointslices.cache.kcp.io": []string{"get", "list", "patch"},
