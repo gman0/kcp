@@ -489,7 +489,7 @@ func TestCachedResources(t *testing.T) {
 		return apiextensionshelpers.IsCRDConditionFalse(sheriffsCRDConflicting, apiextensionsv1.NamesAccepted), "the CRD should not be accepted because of names collision"
 	}, wait.ForeverTestTimeout, time.Second*1, "waiting to create apibinding")
 
-	time.Sleep(time.Minute)
+	// time.Sleep(time.Minute)
 }
 
 func normalizeUnstructuredMap(origObj map[string]interface{}) map[string]interface{} {

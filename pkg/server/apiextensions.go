@@ -351,6 +351,7 @@ func tryDecorateCRDWithSchemaStorage(in *apiextensionsv1.CustomResourceDefinitio
 	for _, resource := range apiExport.Spec.Resources {
 		if resource.Group == in.Spec.Group && resource.Name == in.Status.AcceptedNames.Plural {
 			resourceStorage = resource.Storage
+			foundResource = true
 			break
 		}
 	}
