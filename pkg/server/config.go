@@ -630,7 +630,7 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 		getAPIExportByPath: func(clusterPath logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error) {
 			return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](
 				apisv1alpha2.Resource("apiexports"),
-				c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().GetIndexer(),
+				c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 				c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
 				clusterPath,
 				name,
