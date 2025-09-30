@@ -26,6 +26,8 @@ import (
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/warning"
+
 	// discoveryclient "k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 
@@ -36,7 +38,6 @@ import (
 	kcpfilters "github.com/kcp-dev/kcp/pkg/server/filters"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
-	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
 )
 
@@ -69,9 +70,11 @@ type Server struct {
 	delegate         genericapiserver.DelegationTarget
 	vwTlsConfig      *tls.Config
 
-	getThisShard                 func() (*corev1alpha1.Shard, error)
+	verbsProvider *storageAwareResourceVerbsProvider
+
 	getCRD                       func(cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
 	getUnstructuredEndpointSlice func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error)
+	getAPIExportByPath           func(clusterPath logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
 }
 
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
@@ -104,6 +107,22 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		getCRD: func(clusterName logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 			return c.Extra.CRDLister.Lister().Cluster(clusterName).Get(name)
 		},
+		getAPIExportByPath: func(clusterPath logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error) {
+			return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](
+				apisv1alpha2.Resource("apiexports"),
+				c.Extra.LocalAPIExportInformer.Informer().GetIndexer(),
+				c.Extra.GlobalAPIExportInformer.Informer().GetIndexer(),
+				clusterPath,
+				name,
+			)
+		},
+	}
+
+	s.verbsProvider = &storageAwareResourceVerbsProvider{
+		getAPIBindingForBoundResourceUID: func(boundResourceUID string) ([]*apisv1alpha2.APIBinding, error) {
+			return indexers.ByIndex[*apisv1alpha2.APIBinding](c.Extra.APIBindingInformer.Informer().GetIndexer(), indexers.APIBindingByBoundResourceUID, boundResourceUID)
+		},
+		getAPIExportByPath: s.getAPIExportByPath,
 	}
 
 	tlsConfig, err := rest.TLSConfigFor(c.Extra.VWClientConfig)
@@ -195,8 +214,9 @@ func (s *Server) newApisHandler() http.HandlerFunc {
 	}
 }
 
-func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds []*apiextensionsv1.CustomResourceDefinition) []metav1.APIResource {
+func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds []*apiextensionsv1.CustomResourceDefinition, verbsProvider resourceVerbsProvider) ([]metav1.APIResource, []error) {
 	apiResourcesForDiscovery := []metav1.APIResource{}
+	var errs []error
 
 	for _, crd := range crds {
 		if requestedGroup != crd.Spec.Group {
@@ -240,14 +260,10 @@ func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds [
 			continue
 		}
 
-		verbs := metav1.Verbs([]string{"delete", "deletecollection", "get", "list", "patch", "create", "update", "watch"})
-		// if we're terminating we don't allow some verbs
-		if apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Terminating) {
-			verbs = metav1.Verbs([]string{"delete", "deletecollection", "get", "list", "watch"})
-		}
-
-		if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
-			verbs = metav1.Verbs([]string{"get", "list", "watch"})
+		resourceVerbs, err := verbsProvider.resource(crd)
+		if err != nil {
+			errs = append(errs, err)
+			continue
 		}
 
 		apiResourcesForDiscovery = append(apiResourcesForDiscovery, metav1.APIResource{
@@ -255,16 +271,17 @@ func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds [
 			SingularName:       crd.Status.AcceptedNames.Singular,
 			Namespaced:         crd.Spec.Scope == apiextensionsv1.NamespaceScoped,
 			Kind:               crd.Status.AcceptedNames.Kind,
-			Verbs:              verbs,
+			Verbs:              resourceVerbs,
 			ShortNames:         crd.Status.AcceptedNames.ShortNames,
 			Categories:         crd.Status.AcceptedNames.Categories,
 			StorageVersionHash: storageVersionHash,
 		})
 
 		if subresources != nil && subresources.Status != nil {
-			statusVerbs := metav1.Verbs([]string{"get", "patch", "update"})
-			if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
-				statusVerbs = metav1.Verbs([]string{"get"})
+			statusVerbs, err := verbsProvider.statusSubresource(crd)
+			if err != nil {
+				errs = append(errs, err)
+				continue
 			}
 
 			apiResourcesForDiscovery = append(apiResourcesForDiscovery, metav1.APIResource{
@@ -276,9 +293,10 @@ func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds [
 		}
 
 		if subresources != nil && subresources.Scale != nil {
-			scaleVerbs := metav1.Verbs([]string{"get", "patch", "update"})
-			if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
-				scaleVerbs = metav1.Verbs([]string{"get"})
+			scaleVerbs, err := verbsProvider.scaleSubresource(crd)
+			if err != nil {
+				errs = append(errs, err)
+				continue
 			}
 
 			apiResourcesForDiscovery = append(apiResourcesForDiscovery, metav1.APIResource{
@@ -292,7 +310,7 @@ func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds [
 		}
 	}
 
-	return apiResourcesForDiscovery
+	return apiResourcesForDiscovery, errs
 }
 
 func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
@@ -322,14 +340,66 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiResources := apiResourcesForGroupVersion(requestedGroup, requestedVersion, crds) // TODO: VR verbs should be moved out
-	// StorageAPIBindingAwareCRDLister?
+	apiResources, errs := apiResourcesForGroupVersion(requestedGroup, requestedVersion, crds, s.verbsProvider)
+	if len(errs) > 0 {
+		warning.AddWarning(r.Context(), "", fmt.Sprintf("Some resources are temporarily unavailable: %v.", errs))
+	}
 
 	resourceListerFunc := discovery.APIResourceListerFunc(func() []metav1.APIResource {
 		return apiResources
 	})
 
 	discovery.NewAPIVersionHandler(codecs, schema.GroupVersion{Group: requestedGroup, Version: requestedVersion}, resourceListerFunc).ServeHTTP(w, r)
+}
+
+type resourceVerbsProvider interface {
+	resource(crd *apiextensionsv1.CustomResourceDefinition) (verbs []string, err error)
+	statusSubresource(crd *apiextensionsv1.CustomResourceDefinition) (verbs []string, err error)
+	scaleSubresource(crd *apiextensionsv1.CustomResourceDefinition) (verbs []string, err error)
+}
+
+type storageAwareResourceVerbsProvider struct {
+	getAPIBindingForBoundResourceUID func(boundResourceUID string) ([]*apisv1alpha2.APIBinding, error)
+	getAPIExportByPath               func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+
+	knownVirtualResourceVerbs       map[string][]string
+	knownVirtualResourceStatusVerbs map[string][]string
+	knownVirtualResourceScaleVerbs  map[string][]string
+}
+
+func (p *storageAwareResourceVerbsProvider) resource(crd *apiextensionsv1.CustomResourceDefinition) (verbs []string, err error) {
+	if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
+		verbs = metav1.Verbs([]string{"get", "list", "watch"})
+		return
+	}
+
+	verbs = metav1.Verbs([]string{"delete", "deletecollection", "get", "list", "patch", "create", "update", "watch"})
+	// if we're terminating we don't allow some verbs
+	if apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Terminating) {
+		verbs = metav1.Verbs([]string{"delete", "deletecollection", "get", "list", "watch"})
+	}
+
+	return
+}
+
+func (p *storageAwareResourceVerbsProvider) statusSubresource(crd *apiextensionsv1.CustomResourceDefinition) (verbs []string, err error) {
+	if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
+		verbs = metav1.Verbs([]string{"get"})
+		return
+	}
+
+	verbs = metav1.Verbs([]string{"get", "patch", "update"})
+	return
+}
+
+func (p *storageAwareResourceVerbsProvider) scaleSubresource(crd *apiextensionsv1.CustomResourceDefinition) (verbs []string, err error) {
+	if crd.Annotations[apisv1alpha1.AnnotationSchemaVirtualStorageIdentityKey] != "" {
+		verbs = metav1.Verbs([]string{"get"})
+		return
+	}
+
+	verbs = metav1.Verbs([]string{"get", "patch", "update"})
+	return
 }
 
 func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
@@ -356,22 +426,13 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check there is a bound CRD, and is healthy
-	// * ns in req mismatch
-	// * list watch possible across namespaces (should be handled by VW?)
-	// * crd has NamesAccepted and Established
-	// * schema negotiation not needed for now
-	// * no special handling for terminating state because we don't handle Create for now
-	// * wildcard partial metadata?
-	// Get a binding
-	// Get its export
-	// Get VR URL
-	// Serve from it
-
-	cluster := apirequest.ClusterFrom(r.Context())
-	if cluster == nil {
-		http.Error(w, "cluster not in request", http.StatusInternalServerError)
+	clusterNameOrWildcard, wildcard, err := genericapirequest.ClusterNameOrWildcardFrom(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if wildcard {
+		clusterNameOrWildcard = "*"
 	}
 
 	gr := schema.GroupResource{
@@ -385,7 +446,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	// partialMetadataRequest := kcpfilters.IsPartialMetadataRequest(ctx)
 	identity := kcpfilters.IdentityFromContext(ctx)
 
-	apiBinding, err := s.getAPIBindingForRequest(*cluster, gr, identity)
+	apiBinding, err := s.getAPIBindingForRequest(clusterNameOrWildcard.String(), gr, identity)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -441,12 +502,15 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	if apiExportPath.Empty() {
 		apiExportPath = logicalcluster.NewPath(logicalcluster.From(apiBinding).String())
 	}
-	apiExport, err := getAPIExportByPath(
-		apiExportPath,
-		apiBinding.Spec.Reference.Export.Name,
-		s.Extra.LocalAPIExportInformer,
-		s.Extra.GlobalAPIExportInformer,
-	)
+	apiExport, err := s.getAPIExportByPath(apiExportPath, apiBinding.Spec.Reference.Export.Name)
+	if err != nil {
+		utilruntime.HandleError(err)
+		responsewriters.ErrorNegotiated(
+			apierrors.NewInternalError(fmt.Errorf("error resolving resource: %v", err)),
+			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+		)
+		return
+	}
 
 	var virtualStorageDef *apisv1alpha2.ResourceSchemaStorageVirtual
 	for _, resource := range apiExport.Spec.Resources {
@@ -474,7 +538,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vrHandler, err := newProxy(cluster, vrEndpointURL, apiExport.Status.IdentityHash, s.vwTlsConfig)
+	vrHandler, err := newProxy(clusterNameOrWildcard.String(), vrEndpointURL, apiExport.Status.IdentityHash, s.vwTlsConfig)
 	if err != nil {
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(
@@ -506,7 +570,7 @@ func (s *Server) getVirtualResourceURL(ctx context.Context, apiExportCluster log
 }
 
 func (s *Server) getAPIBindingForRequest(
-	cluster genericapirequest.Cluster,
+	clusterNameOrWildcard string,
 	gr schema.GroupResource,
 	identity string,
 ) (*apisv1alpha2.APIBinding, error) {
@@ -514,7 +578,7 @@ func (s *Server) getAPIBindingForRequest(
 		apiBindings []*apisv1alpha2.APIBinding
 		err         error
 	)
-	if cluster.Wildcard {
+	if clusterNameOrWildcard == "*" {
 		apiBindings, err = indexers.ByIndex[*apisv1alpha2.APIBinding](
 			s.Extra.APIBindingInformer.Informer().GetIndexer(),
 			indexers.APIBindingByIdentityAndGroupResource,
@@ -524,7 +588,7 @@ func (s *Server) getAPIBindingForRequest(
 		apiBindings, err = indexers.ByIndex[*apisv1alpha2.APIBinding](
 			s.Extra.APIBindingInformer.Informer().GetIndexer(),
 			indexers.APIBindingByBoundResources,
-			indexers.APIBindingBoundResourceValue(cluster.Name, gr.Group, gr.Resource),
+			indexers.APIBindingBoundResourceValue(logicalcluster.Name(clusterNameOrWildcard), gr.Group, gr.Resource),
 		)
 	}
 	if err != nil {
@@ -532,6 +596,9 @@ func (s *Server) getAPIBindingForRequest(
 	}
 
 	if len(apiBindings) > 0 {
+		// Matching cluster/identity and bound GR should mean we have the correct APIBinding.
+		// This is similar to what we're doing in apiBindingAwareCRDLister when selecting
+		// a binding by identity wildcard.
 		return apiBindings[0], nil
 	}
 
@@ -549,8 +616,8 @@ func getAPIExportByPath(clusterPath logicalcluster.Path, name string, local, glo
 	)
 }
 
-func newProxy(cluster *genericapirequest.Cluster, vwURL, apiExportIdentity string, vwTLSConfig *tls.Config) (http.Handler, error) {
-	scopedURL, err := url.Parse(urlWithCluster(vwURL, apiExportIdentity, cluster))
+func newProxy(clusterNameOrWildcard string, vwURL, apiExportIdentity string, vwTLSConfig *tls.Config) (http.Handler, error) {
+	scopedURL, err := url.Parse(virtualResourceURLWithCluster(vwURL, apiExportIdentity, clusterNameOrWildcard))
 	if err != nil {
 		return nil, err
 	}
@@ -563,10 +630,8 @@ func newProxy(cluster *genericapirequest.Cluster, vwURL, apiExportIdentity strin
 	return handler, nil
 }
 
-func urlWithCluster(vwURL, apiExportIdentity string, cluster *genericapirequest.Cluster) string {
-	clusterName := cluster.Name
-	if cluster.Wildcard {
-		clusterName = "*"
-	}
-	return fmt.Sprintf("%s:%s/clusters/%s", vwURL, apiExportIdentity, clusterName)
+func virtualResourceURLWithCluster(vwURL, apiExportIdentity string, clusterNameOrWildcard string) string {
+	// Formats the URL like so:
+	//     <Virtual resource VW endpoint>:<APIExport identity>/clusters/<Target cluster>
+	return fmt.Sprintf("%s:%s/clusters/%s", vwURL, apiExportIdentity, clusterNameOrWildcard)
 }
