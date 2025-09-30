@@ -27,7 +27,6 @@ import (
 
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
-	"github.com/kcp-dev/kcp/sdk/apis/core"
 )
 
 const (
@@ -111,20 +110,10 @@ func IndexAPIExportByVirtualResourceIdentities(obj interface{}) ([]string, error
 
 	virtualResourceIdentities := sets.New[string]()
 
-	clusterPath := logicalcluster.NewPath(apiExport.GetAnnotations()[core.LogicalClusterPathAnnotationKey])
-	clusterName := logicalcluster.From(apiExport).Path()
-	insertKeys := func(virtualResourceName string) {
-		virtualResourceIdentities.Insert(clusterName.Join(virtualResourceName).String())
-		if !clusterPath.Empty() {
-			virtualResourceIdentities.Insert(clusterPath.Join(virtualResourceName).String())
-		}
-	}
-
 	for _, res := range apiExport.Spec.Resources {
-		if res.Storage.Virtual == nil {
-			continue
+		if res.Storage.Virtual != nil {
+			virtualResourceIdentities.Insert(res.Storage.Virtual.IdentityHash)
 		}
-		insertKeys(res.Storage.Virtual.IdentityHash)
 	}
 
 	return sets.List[string](virtualResourceIdentities), nil

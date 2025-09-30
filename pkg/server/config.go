@@ -619,6 +619,12 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 		indexers.APIBindingByIdentityAndGroupResource: indexers.IndexAPIBindingByIdentityGroupResource,
 		indexers.APIBindingByBoundResources:           indexers.IndexAPIBindingByBoundResources,
 	})
+	_ = c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().GetIndexer().AddIndexers(cache.Indexers{
+		indexers.APIExportByVirtualResourceIdentities: indexers.IndexAPIExportByVirtualResourceIdentities,
+	})
+	_ = c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().GetIndexer().AddIndexers(cache.Indexers{
+		indexers.APIExportByVirtualResourceIdentities: indexers.IndexAPIExportByVirtualResourceIdentities,
+	})
 
 	apiBindingAwareCRDClusterLister := &apiBindingAwareCRDClusterLister{
 		kcpClusterClient:  c.KcpClusterClient,
