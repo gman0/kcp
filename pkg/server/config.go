@@ -65,6 +65,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/network"
+	"github.com/kcp-dev/kcp/pkg/server/aggregatingversiondiscovery"
 	"github.com/kcp-dev/kcp/pkg/server/bootstrap"
 	kcpfilters "github.com/kcp-dev/kcp/pkg/server/filters"
 	"github.com/kcp-dev/kcp/pkg/server/openapiv3"
@@ -83,12 +84,13 @@ type Config struct {
 
 	EmbeddedEtcd *embeddedetcd.Config
 
-	GenericConfig    *genericapiserver.Config // the config embedded into MiniAggregator, the head of the delegation chain
-	MiniAggregator   *miniaggregator.MiniAggregatorConfig
-	Apis             *controlplaneapiserver.Config
-	ApiExtensions    *apiextensionsapiserver.Config
-	VirtualResources *virtualresources.Config
-	OptionalVirtual  *VirtualConfig
+	GenericConfig               *genericapiserver.Config // the config embedded into MiniAggregator, the head of the delegation chain
+	MiniAggregator              *miniaggregator.MiniAggregatorConfig
+	Apis                        *controlplaneapiserver.Config
+	ApiExtensions               *apiextensionsapiserver.Config
+	VirtualResources            *virtualresources.Config
+	AggregatingVersionDiscovery *aggregatingversiondiscovery.Config
+	OptionalVirtual             *VirtualConfig
 
 	ExtraConfig
 }
@@ -144,13 +146,14 @@ type ExtraConfig struct {
 type completedConfig struct {
 	Options kcpserveroptions.CompletedOptions
 
-	GenericConfig    genericapiserver.CompletedConfig
-	EmbeddedEtcd     embeddedetcd.CompletedConfig
-	MiniAggregator   miniaggregator.CompletedMiniAggregatorConfig
-	Apis             controlplaneapiserver.CompletedConfig
-	ApiExtensions    apiextensionsapiserver.CompletedConfig
-	VirtualResources virtualresources.CompletedConfig
-	OptionalVirtual  CompletedVirtualConfig
+	GenericConfig               genericapiserver.CompletedConfig
+	EmbeddedEtcd                embeddedetcd.CompletedConfig
+	MiniAggregator              miniaggregator.CompletedMiniAggregatorConfig
+	Apis                        controlplaneapiserver.CompletedConfig
+	ApiExtensions               apiextensionsapiserver.CompletedConfig
+	VirtualResources            virtualresources.CompletedConfig
+	AggregatingVersionDiscovery aggregatingversiondiscovery.CompletedConfig
+	OptionalVirtual             CompletedVirtualConfig
 
 	ExtraConfig
 }
@@ -167,12 +170,13 @@ func (c *Config) Complete() (CompletedConfig, error) {
 	return CompletedConfig{&completedConfig{
 		Options: c.Options,
 
-		GenericConfig:    c.GenericConfig.Complete(informerfactoryhack.Wrap(c.KubeSharedInformerFactory)),
-		EmbeddedEtcd:     c.EmbeddedEtcd.Complete(),
-		MiniAggregator:   miniAggregator,
-		Apis:             c.Apis.Complete(),
-		ApiExtensions:    c.ApiExtensions.Complete(),
-		VirtualResources: c.VirtualResources.Complete(),
+		GenericConfig:               c.GenericConfig.Complete(informerfactoryhack.Wrap(c.KubeSharedInformerFactory)),
+		EmbeddedEtcd:                c.EmbeddedEtcd.Complete(),
+		MiniAggregator:              miniAggregator,
+		Apis:                        c.Apis.Complete(),
+		ApiExtensions:               c.ApiExtensions.Complete(),
+		AggregatingVersionDiscovery: c.AggregatingVersionDiscovery.Complete(),
+		VirtualResources:            c.VirtualResources.Complete(),
 		OptionalVirtual: c.OptionalVirtual.Complete(
 			miniAggregator.GenericConfig.Authentication,
 			miniAggregator.GenericConfig.AuditPolicyRuleEvaluator,
@@ -647,6 +651,20 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	c.ApiExtensions.ExtraConfig.Client = c.ApiExtensionsClusterClient
 	c.ApiExtensions.ExtraConfig.Informers = c.ApiExtensionsSharedInformerFactory
 	c.ApiExtensions.ExtraConfig.TableConverterProvider = NewTableConverterProvider()
+
+	aggregatingVersionDiscoveryConfig := *c.GenericConfig
+	c.AggregatingVersionDiscovery, err = aggregatingversiondiscovery.NewConfig(
+		&aggregatingVersionDiscoveryConfig,
+		c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
+		apiBindingAwareCRDClusterLister,
+		c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
+		c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		c.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config for aggregating version discovery server: %v", err)
+	}
 
 	virtualResourcesConfig := *c.GenericConfig
 	virtualResourcesConfig.SkipOpenAPIInstallation = true
