@@ -146,7 +146,7 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		return nil, err
 	}
 
-	s.MiniAggregator, err = c.MiniAggregator.New(s.Apis.GenericAPIServer, s.Apis, s.ApiExtensions, s.VirtualResources.GenericAPIServer)
+	s.MiniAggregator, err = c.MiniAggregator.New(s.Apis.GenericAPIServer, s.Apis, s.ApiExtensions)
 	if err != nil {
 		return nil, err
 	}

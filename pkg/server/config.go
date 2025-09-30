@@ -71,7 +71,7 @@ import (
 	kcpserveroptions "github.com/kcp-dev/kcp/pkg/server/options"
 	"github.com/kcp-dev/kcp/pkg/server/options/batteries"
 	"github.com/kcp-dev/kcp/pkg/server/virtualresources"
-	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
+	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	kcpclientset "github.com/kcp-dev/kcp/sdk/client/clientset/versioned/cluster"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 
@@ -627,9 +627,14 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 		workspaceLister:   c.KcpSharedInformerFactory.Tenancy().V1alpha1().Workspaces().Lister(),
 		apiBindingLister:  c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Lister(),
 		apiBindingIndexer: c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().GetIndexer(),
-		apiExportIndexer:  c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
-		getAPIResourceSchema: func(clusterName logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error) {
-			return c.KcpSharedInformerFactory.Apis().V1alpha1().APIResourceSchemas().Lister().Cluster(clusterName).Get(name)
+		getAPIExportByPath: func(clusterPath logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error) {
+			return indexers.ByPathAndNameWithFallback[*apisv1alpha2.APIExport](
+				apisv1alpha2.Resource("apiexports"),
+				c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings().Informer().GetIndexer(),
+				c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports().Informer().GetIndexer(),
+				clusterPath,
+				name,
+			)
 		},
 	}
 	c.ApiExtensions.ExtraConfig.ClusterAwareCRDLister = apiBindingAwareCRDClusterLister

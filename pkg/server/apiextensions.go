@@ -64,9 +64,8 @@ type apiBindingAwareCRDClusterLister struct {
 	apiBindingIndexer cache.Indexer
 	apiBindingLister  apisv1alpha2listers.APIBindingClusterLister
 
-	apiExportIndexer cache.Indexer
-
 	getAPIResourceSchema func(clusterName logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	getAPIExportByPath   func(clusterPath logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
 }
 
 func (a *apiBindingAwareCRDClusterLister) Cluster(name logicalcluster.Name) kcp.ClusterAwareCRDLister {
@@ -85,6 +84,21 @@ type apiBindingAwareCRDLister struct {
 }
 
 var _ kcp.ClusterAwareCRDLister = &apiBindingAwareCRDLister{}
+
+func (c *apiBindingAwareCRDClusterLister) apiExportGetter(path logicalcluster.Path, name string) func() (*apisv1alpha2.APIExport, error) {
+	var apiExport *apisv1alpha2.APIExport
+	return func() (*apisv1alpha2.APIExport, error) {
+		if apiExport != nil {
+			return apiExport, nil
+		}
+		ae, err := c.getAPIExportByPath(path, name)
+		if err != nil {
+			return nil, err
+		}
+		apiExport = ae
+		return apiExport, nil
+	}
+}
 
 // List lists all CustomResourceDefinitions that come in via APIBindings as well as all in the current
 // logical cluster retrieved from the context.
@@ -117,6 +131,12 @@ func (c *apiBindingAwareCRDLister) List(ctx context.Context, selector labels.Sel
 		return nil, err
 	}
 	for _, apiBinding := range apiBindings {
+		apiExportPath := logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)
+		if apiExportPath.Empty() {
+			apiExportPath = logicalcluster.NewPath(logicalcluster.From(apiBinding).String())
+		}
+		apiExportGetter := c.apiExportGetter(apiExportPath, apiBinding.Spec.Reference.Export.Name)
+
 		for _, boundResource := range apiBinding.Status.BoundResources {
 			logger := logging.WithObject(logger, &apiextensionsv1.CustomResourceDefinition{
 				ObjectMeta: metav1.ObjectMeta{
@@ -142,10 +162,21 @@ func (c *apiBindingAwareCRDLister) List(ctx context.Context, selector labels.Sel
 			}
 
 			// Priority 2: Add APIBinding CRDs. These take priority over those from the local workspace.
-
 			// Add the APIExport identity hash as an annotation to the CRD so the RESTOptionsGetter can assign
 			// the correct etcd resource prefix.
 			crd = decorateCRDWithBinding(crd, boundResource.Schema.IdentityHash, apiBinding.DeletionTimestamp)
+
+			if len(boundResource.StorageVersions) == 0 {
+				// Bound resources with no storage versions have non-CRD storage.
+				// We'll need to consult with the source APIExport to see, and optionally
+				// add storage annotation to inform the handlers to circumvent the regular
+				// apiextensions apiserver, and handle the resource correctly.
+				crd, err = tryDecorateCRDWithSchemaStorage(crd, apiExportGetter)
+				if err != nil {
+					logger.Error(err, "skipping APIBinding CRD with non-CRD storage")
+					continue
+				}
+			}
 
 			ret = append(ret, crd)
 			seen.Insert(crdName(crd))
@@ -199,6 +230,11 @@ func (c *apiBindingAwareCRDLister) Refresh(crd *apiextensionsv1.CustomResourceDe
 		refreshed.Annotations[apisv1alpha1.AnnotationAPIIdentityKey] = "placeholder"
 	}
 
+	// Copy the storage annotation, if any.
+	if storageAnn := crd.Annotations[apisv1alpha1.AnnotationSchemaStorageKey]; storageAnn != "" {
+		refreshed.Annotations[apisv1alpha1.AnnotationSchemaStorageKey] = storageAnn
+	}
+
 	// If crd was only partial metadata, make sure refreshed is too
 	if _, partialMetadata := crd.Annotations[annotationKeyPartialMetadata]; partialMetadata {
 		addPartialMetadataCRDAnnotation(refreshed)
@@ -234,7 +270,6 @@ func (c *apiBindingAwareCRDLister) Get(ctx context.Context, name string) (*apiex
 		identity := kcpfilters.IdentityFromContext(ctx)
 		if clusterName == "*" && identity != "" {
 			// Priority 2: APIBinding CRD
-			fmt.Printf("\n### apiBindingAwareCRDClusterLister Get name=%s clusterName=%q identity=%s partialMetadataRequest=%v\n\n", name, clusterName, identity, partialMetadataRequest)
 			crd, err = c.getForIdentityWildcard(name, identity)
 		} else if clusterName == "*" && partialMetadataRequest {
 			// Priority 3: partial metadata wildcard request
@@ -301,6 +336,39 @@ func decorateCRDWithBinding(in *apiextensionsv1.CustomResourceDefinition, identi
 	return out
 }
 
+func tryDecorateCRDWithSchemaStorage(in *apiextensionsv1.CustomResourceDefinition, apiExportGetter func() (*apisv1alpha2.APIExport, error)) (*apiextensionsv1.CustomResourceDefinition, error) {
+	// No storage versions means the resource uses storage other than CRD (i.e. virtual). Check with the source APIExport to see.
+	apiExport, err := apiExportGetter()
+	if err != nil {
+		// We don't have the export, skip.
+		return nil, err
+	}
+	// Add the APIExport storage information for discovery and resource handlers.
+	var (
+		resourceStorage apisv1alpha2.ResourceSchemaStorage
+		foundResource   bool
+	)
+	for _, resource := range apiExport.Spec.Resources {
+		if resource.Group == in.Spec.Group && resource.Name == in.Status.AcceptedNames.Plural {
+			resourceStorage = resource.Storage
+			break
+		}
+	}
+	if !foundResource {
+		return nil, fmt.Errorf("APIExport %s|%s does not export resource %s.%s", logicalcluster.From(apiExport), apiExport.Name, in.Status.AcceptedNames.Plural, in.Spec.Group)
+	}
+	out := shallowCopyCRDAndDeepCopyAnnotations(in)
+
+	if resourceStorage.Virtual != nil {
+		// This CRD is NOT to be served through the apiextensions apiserver CRD handler.
+		// Instead, the APIExport has a reference to a virtual resource endpoint slice,
+		// that contains a URL to a dedicated apiserver for handling.
+		out.Annotations[apisv1alpha1.AnnotationSchemaStorageKey] = fmt.Sprintf("virtual:%s", resourceStorage.Virtual.IdentityHash)
+	}
+
+	return out, nil
+}
+
 // addPartialMetadataCRDAnnotation adds an annotation that marks this CRD as being
 // for a partial metadata request.
 func addPartialMetadataCRDAnnotation(crd *apiextensionsv1.CustomResourceDefinition) {
@@ -329,10 +397,17 @@ func (c *apiBindingAwareCRDLister) getForIdentityWildcard(name, identity string)
 	apiBinding := apiBindings[0].(*apisv1alpha2.APIBinding)
 
 	var boundCRDName string
+	// Bound resources with no storage versions don't use the CRD storage,
+	// and need to be annotated accordingly, to let the apiserver know how
+	// to handle the resource.
+	var needsStorageAnnotation bool
 
 	for _, r := range apiBinding.Status.BoundResources {
 		if r.Group == group && r.Resource == resource && r.Schema.IdentityHash == identity {
 			boundCRDName = r.Schema.UID
+			if len(r.StorageVersions) == 0 {
+				needsStorageAnnotation = true
+			}
 			break
 		}
 	}
@@ -349,6 +424,18 @@ func (c *apiBindingAwareCRDLister) getForIdentityWildcard(name, identity string)
 	// Add the APIExport identity hash as an annotation to the CRD so the RESTOptionsGetter can assign
 	// the correct etcd resource prefix. Use a shallow copy because deep copy is expensive (but deep copy the annotations).
 	crd = decorateCRDWithBinding(crd, identity, apiBinding.DeletionTimestamp)
+
+	if needsStorageAnnotation {
+		apiExportPath := logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)
+		if apiExportPath.Empty() {
+			apiExportPath = logicalcluster.NewPath(logicalcluster.From(apiBinding).String())
+		}
+		crd, err = tryDecorateCRDWithSchemaStorage(crd, c.apiExportGetter(apiExportPath, apiBinding.Spec.Reference.Export.Name))
+		if err != nil {
+			klog.Error("cannot annotate CRD with storage information: %v", err)
+			return nil, apierrors.NewServiceUnavailable(fmt.Sprintf("%s is currently unavailable", name))
+		}
+	}
 
 	return crd, nil
 }
@@ -383,6 +470,12 @@ func (c *apiBindingAwareCRDLister) get(clusterName logicalcluster.Name, name, id
 		return nil, err
 	}
 	for _, apiBinding := range apiBindings {
+		apiExportPath := logicalcluster.NewPath(apiBinding.Spec.Reference.Export.Path)
+		if apiExportPath.Empty() {
+			apiExportPath = logicalcluster.NewPath(logicalcluster.From(apiBinding).String())
+		}
+		apiExportGetter := c.apiExportGetter(apiExportPath, apiBinding.Spec.Reference.Export.Name)
+
 		for _, boundResource := range apiBinding.Status.BoundResources {
 			// identity is empty string if the request is coming from a regular workspace client.
 			// It is set if the request is coming from the virtual apiexport apiserver client.
@@ -402,6 +495,14 @@ func (c *apiBindingAwareCRDLister) get(clusterName logicalcluster.Name, name, id
 				// Add the APIExport identity hash as an annotation to the CRD so the RESTOptionsGetter can assign
 				// the correct etcd resource prefix.
 				crd = decorateCRDWithBinding(crd, boundResource.Schema.IdentityHash, apiBinding.DeletionTimestamp)
+
+				if len(boundResource.StorageVersions) == 0 {
+					crd, err = tryDecorateCRDWithSchemaStorage(crd, apiExportGetter)
+					if err != nil {
+						klog.Error("cannot annotate CRD with storage information: %v", err)
+						return nil, apierrors.NewServiceUnavailable(fmt.Sprintf("%s is currently unavailable", name))
+					}
+				}
 
 				return crd, nil
 			}
