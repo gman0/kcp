@@ -652,40 +652,53 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	c.ApiExtensions.ExtraConfig.Informers = c.ApiExtensionsSharedInformerFactory
 	c.ApiExtensions.ExtraConfig.TableConverterProvider = NewTableConverterProvider()
 
-	aggregatingVersionDiscoveryConfig := *c.GenericConfig
-	c.AggregatingCRDVersionDiscovery, err = aggregatingcrdversiondiscovery.NewConfig(
-		&aggregatingVersionDiscoveryConfig,
-		c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
-		apiBindingAwareCRDClusterLister,
-		c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
-		c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
-		c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
-		c.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create config for aggregating version discovery server: %v", err)
-	}
-
-	virtualResourcesConfig := *c.GenericConfig
-	virtualResourcesConfig.SkipOpenAPIInstallation = true
-	vwClientConfig := rest.CopyConfig(c.GenericConfig.LoopbackClientConfig)
-	if !opts.Virtual.Enabled && opts.Extra.ShardVirtualWorkspaceURL != "" {
-		vwClientConfig.TLSClientConfig = rest.TLSClientConfig{
-			CAFile:   opts.Extra.ShardVirtualWorkspaceCAFile,
-			CertFile: opts.Extra.ShardClientCertFile,
-			KeyFile:  opts.Extra.ShardClientKeyFile,
+	if kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) {
+		// We need an aggregating version discovery for CRDs that is RESTstorage-aware.
+		// The apiextensions apiserver sources its data from the apiBindingAwareCRDClusterLister.
+		// With the onset of virtual resources, not all bound CRDs use CRD storage, and as a consequence,
+		// the verbs such a resource supports may also be different -- compared to what apiextensions
+		// thinks a CRD should support. This special version discovery server is aware of the storage
+		// defined in the APIExport of the bound CRD, and will advertise correct set of verbs in
+		// APIResourceList for CRD- or virtual-backed resources.
+		aggregatingVersionDiscoveryConfig := *c.GenericConfig
+		c.AggregatingCRDVersionDiscovery, err = aggregatingcrdversiondiscovery.NewConfig(
+			&aggregatingVersionDiscoveryConfig,
+			c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
+			apiBindingAwareCRDClusterLister,
+			c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
+			c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+			c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+			c.CacheKcpSharedInformerFactory.Core().V1alpha1().Shards(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create config for aggregating version discovery server: %v", err)
 		}
-	}
-	c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig,
-		c.CacheDynamicClient,
-		c.ShardVirtualWorkspaceURL,
-		c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
-		c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
-		c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
-		c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create config for virtual resources server: %v", err)
+
+		// The virtual resources apiserver serves resources from a virtual workspace.
+		virtualResourcesConfig := *c.GenericConfig
+		virtualResourcesConfig.SkipOpenAPIInstallation = true
+		// vwClientConfig is used by the proxy handler to proxy the client requests to the virtual workspace.
+		vwClientConfig := rest.CopyConfig(c.GenericConfig.LoopbackClientConfig)
+		if !opts.Virtual.Enabled && opts.Extra.ShardVirtualWorkspaceURL != "" {
+			vwClientConfig.TLSClientConfig = rest.TLSClientConfig{
+				CAFile:   opts.Extra.ShardVirtualWorkspaceCAFile,
+				CertFile: opts.Extra.ShardClientCertFile,
+				KeyFile:  opts.Extra.ShardClientKeyFile,
+			}
+		} else {
+			// TODO
+		}
+		c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig,
+			c.CacheDynamicClient,
+			c.ShardVirtualWorkspaceURL,
+			c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
+			c.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
+			c.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+			c.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create config for virtual resources server: %v", err)
+		}
 	}
 
 	c.openAPIv3Controller = openapiv3.NewController(c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions())

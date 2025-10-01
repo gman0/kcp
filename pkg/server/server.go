@@ -53,6 +53,7 @@ import (
 	configshard "github.com/kcp-dev/kcp/config/shard"
 	systemcrds "github.com/kcp-dev/kcp/config/system-crds"
 	bootstrappolicy "github.com/kcp-dev/kcp/pkg/authorization/bootstrap"
+	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	metadataclient "github.com/kcp-dev/kcp/pkg/metadata"
 	"github.com/kcp-dev/kcp/pkg/reconciler/cache/replication"
@@ -114,17 +115,21 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		return nil, fmt.Errorf("create api extensions: %v", err)
 	}
 
-	s.VirtualResources, err = virtualresources.NewServer(c.VirtualResources, s.ApiExtensions.GenericAPIServer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create virtual resources server: %v", err)
+	gcpDelegate := s.ApiExtensions.GenericAPIServer
+
+	if kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) {
+		s.VirtualResources, err = virtualresources.NewServer(c.VirtualResources, s.ApiExtensions.GenericAPIServer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create virtual resources server: %v", err)
+		}
+		s.AggregatingCRDVersionDiscovery, err = aggregatingcrdversiondiscovery.NewServer(c.AggregatingCRDVersionDiscovery, s.VirtualResources.GenericAPIServer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create aggregating version discovery server: %v", err)
+		}
+		gcpDelegate = s.AggregatingCRDVersionDiscovery.GenericAPIServer
 	}
 
-	s.AggregatingCRDVersionDiscovery, err = aggregatingcrdversiondiscovery.NewServer(c.AggregatingCRDVersionDiscovery, s.VirtualResources.GenericAPIServer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create aggregating version discovery server: %v", err)
-	}
-
-	s.Apis, err = c.Apis.New("generic-control-plane", s.AggregatingCRDVersionDiscovery.GenericAPIServer)
+	s.Apis, err = c.Apis.New("generic-control-plane", gcpDelegate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic controlplane apiserver: %w", err)
 	}
