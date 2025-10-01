@@ -64,7 +64,8 @@ func (c *completedConfig) WithOpenAPIAggregationController(delegatedAPIServer *g
 	return nil
 }
 
-func NewConfig(cfg *genericapiserver.Config,
+func NewConfig(
+	cfg *genericapiserver.Config,
 	crdLister kcpapiextensionsv1informers.CustomResourceDefinitionClusterInformer,
 	apiBindingAwareCRDLister apiextensionsapiserverkcp.ClusterAwareCRDClusterLister,
 	apiBindingInformer apisv1alpha2informers.APIBindingClusterInformer,
