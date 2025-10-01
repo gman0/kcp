@@ -24,6 +24,7 @@ import (
 
 	autoscaling "k8s.io/api/autoscaling/v1"
 	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/install"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -60,6 +61,8 @@ var (
 )
 
 func init() {
+	install.Install(scheme)
+
 	// we need to add the options to empty v1
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "", Version: "v1"})
 
