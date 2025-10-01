@@ -24,7 +24,6 @@ import (
 
 	autoscaling "k8s.io/api/autoscaling/v1"
 	apiextensionshelpers "k8s.io/apiextensions-apiserver/pkg/apihelpers"
-	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/install"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -51,18 +50,11 @@ var (
 	// if you modify this, make sure you update the crEncoder
 	unversionedVersion = schema.GroupVersion{Group: "", Version: "v1"}
 	unversionedTypes   = []runtime.Object{
-		&metav1.Status{},
-		&metav1.WatchEvent{},
-		&metav1.APIVersions{},
-		&metav1.APIGroupList{},
-		&metav1.APIGroup{},
 		&metav1.APIResourceList{},
 	}
 )
 
 func init() {
-	install.Install(scheme)
-
 	// we need to add the options to empty v1
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "", Version: "v1"})
 
@@ -128,7 +120,7 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		return nil, err
 	}
 
-	// We perform only APIResource discovery. Group discovery is delegated to apiextensions-server.
+	// We perform only APIResource discovery.
 	s.GenericAPIServer.DiscoveryGroupManager = nil
 	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/apis/", s.newApisHandler())
 
@@ -264,8 +256,8 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reserved k8s APIs are better handled elsewhere.
-	if strings.HasSuffix(pathParts[1], ".k8s.io") {
+	// We do only version discovery aggregation for CRDs. Reserved groups (apiextensions.kcp.io) don't belong here.
+	if strings.HasSuffix(pathParts[1], ".k8s.io") || strings.HasSuffix(pathParts[1], ".kubernetes.io") {
 		s.delegate.ServeHTTP(w, r)
 		return
 	}
@@ -287,11 +279,6 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	crdNames := make([]string, 0, len(crds))
-	for _, crd := range crds {
-		crdNames = append(crdNames, fmt.Sprintf("%s.%s/%s", crd.Status.AcceptedNames.Plural, crd.Spec.Group, crd.Name))
 	}
 
 	apiResources, errs := apiResourcesForGroupVersion(requestedGroup, requestedVersion, crds, s.verbsProvider)

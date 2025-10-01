@@ -50,26 +50,14 @@ import (
 )
 
 var (
-	scheme = runtime.NewScheme()
-	codecs = serializer.NewCodecFactory(scheme)
-
-	// if you modify this, make sure you update the crEncoder
-	unversionedVersion = schema.GroupVersion{Group: "", Version: "v1"}
-	unversionedTypes   = []runtime.Object{
-		&metav1.Status{},
-		&metav1.WatchEvent{},
-		&metav1.APIVersions{},
-		&metav1.APIGroupList{},
-		&metav1.APIGroup{},
-		&metav1.APIResourceList{},
-	}
+	errorScheme = runtime.NewScheme()
+	errorCodecs = serializer.NewCodecFactory(errorScheme)
 )
 
 func init() {
-	// we need to add the options to empty v1
-	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "", Version: "v1"})
-
-	scheme.AddUnversionedTypes(unversionedVersion, unversionedTypes...)
+	errorScheme.AddUnversionedTypes(metav1.Unversioned,
+		&metav1.Status{},
+	)
 }
 
 type Server struct {
@@ -135,7 +123,9 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		return nil, err
 	}
 
-	// We perform only APIResource discovery. Group discovery is delegated to apiextensions-server.
+	// s.GenericAPIServer.AddPostStartHookOrDie()
+
+	// We don't do discovery at all because it needs to be aggregated with other CRD-based resources.
 	s.GenericAPIServer.DiscoveryGroupManager = nil
 	s.GenericAPIServer.Handler.NonGoRestfulMux.HandlePrefix("/apis/", s.newApisHandler())
 
@@ -174,7 +164,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		responsewriters.ErrorNegotiated(
 			apierrors.NewInternalError(fmt.Errorf("no RequestInfo found in the context")),
-			codecs, schema.GroupVersion{}, w, r,
+			errorCodecs, schema.GroupVersion{}, w, r,
 		)
 		return
 	}
@@ -236,25 +226,25 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		// This should not happen, the indexers returned a binding for this specific GR.
 		responsewriters.ErrorNegotiated(
 			apierrors.NewInternalError(fmt.Errorf("resource not available")),
-			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 		)
 		return
 	}
 
-	// We do what the apiextensions apiserver does: return 404 on not found or !NamesAccepted or !Established.
+	// We do what the apiextensions apiserver does: return 404 on not found, !NamesAccepted or !Established.
 	crd, err := s.getCRD(logicalcluster.Name("system:bound-crds"), crdName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			responsewriters.ErrorNegotiated(
 				apierrors.NewNotFound(schema.GroupResource{Group: requestInfo.APIGroup, Resource: requestInfo.Resource}, requestInfo.Name),
-				codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+				errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 			)
 			return
 		}
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(
 			apierrors.NewInternalError(fmt.Errorf("error resolving resource: %v", err)),
-			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 		)
 		return
 	}
@@ -262,7 +252,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		!apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Established) {
 		responsewriters.ErrorNegotiated(
 			apierrors.NewNotFound(schema.GroupResource{Group: requestInfo.APIGroup, Resource: requestInfo.Resource}, requestInfo.Name),
-			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 		)
 		return
 	}
@@ -278,7 +268,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(
 			apierrors.NewInternalError(fmt.Errorf("error resolving resource: %v", err)),
-			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 		)
 		return
 	}
@@ -289,6 +279,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 			resource.Group == gr.Group &&
 			resource.Name == gr.Resource {
 			virtualStorage = resource.Storage.Virtual
+			break
 		}
 	}
 	if virtualStorage == nil {
@@ -304,7 +295,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(
 			apierrors.NewInternalError(fmt.Errorf("error resolving resource: %v", err)),
-			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 		)
 		return
 	}
@@ -314,7 +305,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(
 			apierrors.NewInternalError(fmt.Errorf("error serving resource: %v", err)),
-			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			errorCodecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
 		)
 		return
 	}
