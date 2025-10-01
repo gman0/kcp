@@ -95,7 +95,7 @@ func (p *storageAwareResourceVerbsProvider) tryVirtualStorageVerbs(crd *apiexten
 			return nil, fmt.Errorf("unknown %s annotation %q on bound CRD %s", apisv1alpha1.AnnotationSchemaStorageKey, crd.Annotations[apisv1alpha1.AnnotationSchemaStorageKey], crd.Name)
 		}
 
-		vrIdentity := crd.Annotations[apisv1alpha1.AnnotationSchemaStorageKey][len(boundCRDVirtualStorageAnnotationPrefix):]
+		vrIdentity := strings.TrimPrefix(crd.Annotations[apisv1alpha1.AnnotationSchemaStorageKey], boundCRDVirtualStorageAnnotationPrefix)
 		virtualStorage, apiExport, err := p.getVirtualResourceStorage(
 			crd.Annotations[apisv1alpha1.AnnotationAPIIdentityKey],
 			vrIdentity,
@@ -113,7 +113,7 @@ func (p *storageAwareResourceVerbsProvider) tryVirtualStorageVerbs(crd *apiexten
 			return verbs, nil
 		}
 		// TODO(gman0): add a fallback option to retrieve verbs for unknown/dynamically added VRs with real
-		// discovery from their VWs, if we ever need such things. For now we're just returning an error.
+		// discovery from their VWs, if we ever need such a thing. For now we're just returning an error.
 		return nil, fmt.Errorf("unknown virtual resource endpoint slice %s.%s.%s defined in %s|%s", virtualStorage.Resource, virtualStorage.Version, virtualStorage.Group, logicalcluster.From(apiExport), apiExport.Name)
 	}
 
