@@ -167,10 +167,10 @@ func (c *apiBindingAwareCRDLister) List(ctx context.Context, selector labels.Sel
 			crd = decorateCRDWithBinding(crd, boundResource.Schema.IdentityHash, apiBinding.DeletionTimestamp)
 
 			if len(boundResource.StorageVersions) == 0 {
-				// Bound resources with no storage versions have non-CRD storage.
-				// We'll need to consult with the source APIExport to see, and optionally
-				// add storage annotation to inform the handlers to circumvent the regular
-				// apiextensions apiserver, and handle the resource correctly.
+				// No storage versions means this bound resource uses non-CRD storage.
+				// We'll need to consult with the source APIExport to see what it is,
+				// and optionally add storage annotation to inform the handlers to circumvent
+				// the regular apiextensions apiserver, and handle the resource accordingly.
 				crd, err = tryDecorateCRDWithSchemaStorage(crd, apiExportGetter)
 				if err != nil {
 					logger.Error(err, "skipping APIBinding CRD with non-CRD storage")
@@ -337,13 +337,11 @@ func decorateCRDWithBinding(in *apiextensionsv1.CustomResourceDefinition, identi
 }
 
 func tryDecorateCRDWithSchemaStorage(in *apiextensionsv1.CustomResourceDefinition, apiExportGetter func() (*apisv1alpha2.APIExport, error)) (*apiextensionsv1.CustomResourceDefinition, error) {
-	// No storage versions means the resource uses storage other than CRD (i.e. virtual). Check with the source APIExport to see.
 	apiExport, err := apiExportGetter()
 	if err != nil {
-		// We don't have the export, skip.
 		return nil, err
 	}
-	// Add the APIExport storage information for discovery and resource handlers.
+
 	var (
 		resourceStorage apisv1alpha2.ResourceSchemaStorage
 		foundResource   bool
@@ -361,9 +359,6 @@ func tryDecorateCRDWithSchemaStorage(in *apiextensionsv1.CustomResourceDefinitio
 	out := shallowCopyCRDAndDeepCopyAnnotations(in)
 
 	if resourceStorage.Virtual != nil {
-		// This CRD is NOT to be served through the apiextensions apiserver CRD handler.
-		// Instead, the APIExport has a reference to a virtual resource endpoint slice,
-		// that contains a URL to a dedicated apiserver for handling.
 		out.Annotations[apisv1alpha1.AnnotationSchemaStorageKey] = fmt.Sprintf("virtual:%s", resourceStorage.Virtual.IdentityHash)
 	}
 
