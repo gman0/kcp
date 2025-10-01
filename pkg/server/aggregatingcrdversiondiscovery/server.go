@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package aggregatingversiondiscovery
+package aggregatingcrdversiondiscovery
 
 import (
 	"context"
@@ -72,7 +72,7 @@ func init() {
 type Server struct {
 	GenericAPIServer *genericapiserver.GenericAPIServer
 	Extra            *ExtraConfig
-	delegate         genericapiserver.DelegationTarget
+	delegate         http.Handler
 
 	verbsProvider *storageAwareResourceVerbsProvider
 
@@ -84,7 +84,7 @@ type Server struct {
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
 	s := &Server{
 		Extra:    c.Extra,
-		delegate: delegationTarget,
+		delegate: delegationTarget.UnprotectedHandler(),
 
 		getCRD: func(clusterName logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 			return c.Extra.CRDLister.Lister().Cluster(clusterName).Get(name)
@@ -123,7 +123,7 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 	}
 
 	var err error
-	s.GenericAPIServer, err = c.Generic.New("aggregating-version-discovery-apiserver", delegationTarget)
+	s.GenericAPIServer, err = c.Generic.New("aggregating-crd-version-discovery-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (s *Server) newApisHandler() http.HandlerFunc {
 			return
 		}
 
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
 	}
 }
 
@@ -222,7 +222,7 @@ func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds [
 			statusVerbs, err := verbsProvider.statusSubresource(crd)
 			if err != nil {
 				utilruntime.HandleError(err)
-				errs = append(errs, fmt.Errorf("%s/status.%s", crd.Status.AcceptedNames.Plural, crd.Spec.Group))
+				errs = append(errs, fmt.Errorf("%s.%s status subresource", crd.Status.AcceptedNames.Plural, crd.Spec.Group))
 				continue
 			}
 
@@ -238,7 +238,7 @@ func apiResourcesForGroupVersion(requestedGroup, requestedVersion string, crds [
 			scaleVerbs, err := verbsProvider.scaleSubresource(crd)
 			if err != nil {
 				utilruntime.HandleError(err)
-				errs = append(errs, fmt.Errorf("%s/scale.%s", crd.Status.AcceptedNames.Plural, crd.Spec.Group))
+				errs = append(errs, fmt.Errorf("%s.%s scale subresource", crd.Status.AcceptedNames.Plural, crd.Spec.Group))
 				continue
 			}
 
@@ -260,7 +260,13 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 	pathParts := splitPath(r.URL.Path)
 	// only match /apis/<group>/<version>
 	if len(pathParts) != 3 || pathParts[0] != "apis" {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
+		return
+	}
+
+	// Reserved k8s APIs are better handled elsewhere.
+	if strings.HasSuffix(pathParts[1], ".k8s.io") {
+		s.delegate.ServeHTTP(w, r)
 		return
 	}
 
@@ -281,6 +287,11 @@ func (s *Server) handleAPIResourceList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	crdNames := make([]string, 0, len(crds))
+	for _, crd := range crds {
+		crdNames = append(crdNames, fmt.Sprintf("%s.%s/%s", crd.Status.AcceptedNames.Plural, crd.Spec.Group, crd.Name))
 	}
 
 	apiResources, errs := apiResourcesForGroupVersion(requestedGroup, requestedVersion, crds, s.verbsProvider)
