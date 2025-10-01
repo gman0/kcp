@@ -146,6 +146,13 @@ func (s *Server) newApisHandler() http.HandlerFunc {
 }
 
 func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
+	pathParts := splitPath(r.URL.Path)
+	// Only match /apis/<group>/<version>/<resource>/...
+	if len(pathParts) <= 3 || pathParts[0] != "apis" {
+		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		return
+	}
+
 	ctx := r.Context()
 	requestInfo, ok := apirequest.RequestInfoFrom(ctx)
 	if !ok {
@@ -194,12 +201,18 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The associated CRD must be healthy.
-
 	var crdName string
 	for _, boundResource := range apiBinding.Status.BoundResources {
 		if boundResource.Group == gr.Group && boundResource.Resource == gr.Resource {
 			crdName = boundResource.Schema.UID
+
+			if len(boundResource.StorageVersions) > 0 {
+				// Virtual resources have zero storage versions, because they don't
+				// use CRD storage. This resource is definitely not a VR.
+				s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+				return
+			}
+
 			break
 		}
 	}
@@ -211,12 +224,15 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	// We do what the apiextensions apiserver does: delegate on not found or !NamesAccepted or !Established, otherwise we fail.
+
+	// We do what the apiextensions apiserver does: return 404 on not found or !NamesAccepted or !Established.
 	crd, err := s.getCRD(logicalcluster.Name("system:bound-crds"), crdName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// XXX: This should return 404 -- maybe the CRD is created by the time apiextensions delegate finishes and takes over and this would race.
-			s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+			responsewriters.ErrorNegotiated(
+				apierrors.NewNotFound(schema.GroupResource{Group: requestInfo.APIGroup, Resource: requestInfo.Resource}, requestInfo.Name),
+				codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+			)
 			return
 		}
 		utilruntime.HandleError(err)
@@ -228,8 +244,10 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	}
 	if !apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.NamesAccepted) &&
 		!apiextensionshelpers.IsCRDConditionTrue(crd, apiextensionsv1.Established) {
-		// Same as above -- this should be 404.
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		responsewriters.ErrorNegotiated(
+			apierrors.NewNotFound(schema.GroupResource{Group: requestInfo.APIGroup, Resource: requestInfo.Resource}, requestInfo.Name),
+			codecs, schema.GroupVersion{Group: requestInfo.APIGroup, Version: requestInfo.APIVersion}, w, r,
+		)
 		return
 	}
 
@@ -249,15 +267,15 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var virtualStorageDef *apisv1alpha2.ResourceSchemaStorageVirtual
+	var virtualStorage *apisv1alpha2.ResourceSchemaStorageVirtual
 	for _, resource := range apiExport.Spec.Resources {
 		if resource.Storage.Virtual != nil &&
 			resource.Group == gr.Group &&
 			resource.Name == gr.Resource {
-			virtualStorageDef = resource.Storage.Virtual
+			virtualStorage = resource.Storage.Virtual
 		}
 	}
-	if virtualStorageDef == nil {
+	if virtualStorage == nil {
 		// Not a virtual resource: the binding's export doesn't define such resource with virtual storage.
 		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
 		return
@@ -265,7 +283,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 
 	// We have a virtual resource. Get the endpoint URL, create a proxy handler and serve from that endpoint.
 
-	vrEndpointURL, err := s.getVirtualResourceURL(ctx, logicalcluster.From(apiExport), virtualStorageDef)
+	vrEndpointURL, err := s.getVirtualResourceURL(ctx, logicalcluster.From(apiExport), virtualStorage)
 	if err != nil {
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(

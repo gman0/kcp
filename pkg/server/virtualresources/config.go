@@ -1,7 +1,6 @@
 package virtualresources
 
 import (
-	apiextensionsapiserverkcp "k8s.io/apiextensions-apiserver/pkg/kcp"
 	"k8s.io/apimachinery/pkg/runtime"
 	apiopenapi "k8s.io/apiserver/pkg/endpoints/openapi"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -12,8 +11,6 @@ import (
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 
 	apisv1alpha2informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/apis/v1alpha2"
-	corev1alpha1informers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions/core/v1alpha1"
-	apisv1alpha2listers "github.com/kcp-dev/kcp/sdk/client/listers/apis/v1alpha2"
 )
 
 type Config struct {
