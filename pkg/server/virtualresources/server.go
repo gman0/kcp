@@ -75,7 +75,7 @@ func init() {
 type Server struct {
 	GenericAPIServer *genericapiserver.GenericAPIServer
 	Extra            *ExtraConfig
-	delegate         genericapiserver.DelegationTarget
+	delegate         http.Handler
 	vwTlsConfig      *tls.Config
 
 	getCRD                       func(cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
@@ -86,7 +86,7 @@ type Server struct {
 func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTarget) (*Server, error) {
 	s := &Server{
 		Extra:    c.Extra,
-		delegate: delegationTarget,
+		delegate: delegationTarget.UnprotectedHandler(),
 
 		getUnstructuredEndpointSlice: func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error) {
 			list, err := c.Extra.DynamicClusterClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
@@ -157,7 +157,7 @@ func (s *Server) newApisHandler() http.HandlerFunc {
 			return
 		}
 
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
 	}
 }
 
@@ -165,7 +165,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	pathParts := splitPath(r.URL.Path)
 	// Only match /apis/<group>/<version>/<resource>/...
 	if len(pathParts) <= 3 || pathParts[0] != "apis" {
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
 		return
 	}
 
@@ -181,7 +181,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	if !requestInfo.IsResourceRequest {
 		// Discovery requests should have been caught earlier.
 		// Maybe the delegate knows what to do.
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
 		return
 	}
 
@@ -213,7 +213,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 
 	if apiBinding == nil {
 		// Not a virtual resource: the resource is not provided by an APIBinding.
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
 		return
 	}
 
@@ -225,7 +225,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 			if len(boundResource.StorageVersions) > 0 {
 				// Virtual resources have zero storage versions, because they don't
 				// use CRD storage. This resource is definitely not a VR.
-				s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+				s.delegate.ServeHTTP(w, r)
 				return
 			}
 
@@ -293,7 +293,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	}
 	if virtualStorage == nil {
 		// Not a virtual resource: the binding's export doesn't define such resource with virtual storage.
-		s.delegate.UnprotectedHandler().ServeHTTP(w, r)
+		s.delegate.ServeHTTP(w, r)
 		return
 	}
 
