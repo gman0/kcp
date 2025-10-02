@@ -240,7 +240,7 @@ func checkCrossNamespaceAndWildcard(ctx context.Context, gvr schema.GroupVersion
 }
 
 type unwrappingWatch struct {
-	lock       sync.Mutex
+	stopLock   sync.Mutex // Don't use this anywhere but in Stop()!
 	doneChan   chan struct{}
 	resultChan chan watch.Event
 
@@ -337,10 +337,10 @@ func newUnwrappingWatch(
 
 				innerObj, err := unwrapWithMatchingSelectors(cachedObj)
 				if err != nil {
-					w.resultChan <- watch.Event{
+					w.safeWrite(watch.Event{
 						Type:   watch.Error,
 						Object: &apierrors.NewInternalError(err).ErrStatus,
-					}
+					})
 					return
 				}
 				if innerObj == nil {
@@ -351,9 +351,11 @@ func newUnwrappingWatch(
 				for _, cluster := range syntheticClusters() {
 					obj := innerObj.DeepCopy()
 					setCluster(obj, cluster)
-					w.resultChan <- watch.Event{
+					if !w.safeWrite(watch.Event{
 						Type:   watch.Added,
 						Object: obj,
+					}) {
+						return
 					}
 				}
 			},
@@ -361,10 +363,10 @@ func newUnwrappingWatch(
 				cachedObj := tombstone.Obj[*cachev1alpha1.CachedObject](newObj)
 				innerObj, err := unwrapWithMatchingSelectors(cachedObj)
 				if err != nil {
-					w.resultChan <- watch.Event{
+					w.safeWrite(watch.Event{
 						Type:   watch.Error,
 						Object: &apierrors.NewInternalError(err).ErrStatus,
-					}
+					})
 					return
 				}
 				if innerObj == nil {
@@ -373,9 +375,11 @@ func newUnwrappingWatch(
 				for _, cluster := range syntheticClusters() {
 					obj := innerObj.DeepCopy()
 					setCluster(obj, cluster)
-					w.resultChan <- watch.Event{
+					if !w.safeWrite(watch.Event{
 						Type:   watch.Added,
 						Object: obj,
+					}) {
+						return
 					}
 				}
 			},
@@ -383,10 +387,10 @@ func newUnwrappingWatch(
 				cachedObj := tombstone.Obj[*cachev1alpha1.CachedObject](obj)
 				innerObj, err := unwrapWithMatchingSelectors(cachedObj)
 				if err != nil {
-					w.resultChan <- watch.Event{
+					w.safeWrite(watch.Event{
 						Type:   watch.Error,
 						Object: &apierrors.NewInternalError(err).ErrStatus,
-					}
+					})
 					return
 				}
 				if innerObj == nil {
@@ -396,9 +400,11 @@ func newUnwrappingWatch(
 				for _, cluster := range syntheticClusters() {
 					obj := innerObj.DeepCopy()
 					setCluster(obj, cluster)
-					w.resultChan <- watch.Event{
+					if !w.safeWrite(watch.Event{
 						Type:   watch.Added,
 						Object: obj,
+					}) {
+						return
 					}
 				}
 			},
@@ -412,9 +418,23 @@ func newUnwrappingWatch(
 	return w, nil
 }
 
+// safeWrite sends data to resultChan only if Stop() hasn't been called already.
+// It may happen that Stop() is called while watch events are still being sent
+// to clusters (when using a wildcard). The CachedObject handler is removed, the
+// resultChan closed, but writing to the channel may still continue, causing a panic.
+func (w *unwrappingWatch) safeWrite(e watch.Event) bool {
+	select {
+	case <-w.doneChan:
+		return false
+	default:
+		w.resultChan <- e
+		return true
+	}
+}
+
 func (w *unwrappingWatch) Stop() {
-	w.lock.Lock()
-	defer w.lock.Unlock()
+	w.stopLock.Lock()
+	defer w.stopLock.Unlock()
 
 	select {
 	case <-w.doneChan:
