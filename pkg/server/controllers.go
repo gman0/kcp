@@ -1665,7 +1665,7 @@ func (s *Server) installGarbageCollectorController(ctx context.Context, config *
 }
 
 func (s *Server) installDynamicRESTMapper(ctx context.Context, config *rest.Config) error {
-	c, err := dynamicrestmapper.NewController(ctx, s.DynRESTMapper,
+	dynRESTMapperController, err := dynamicrestmapper.NewController(ctx, s.DynRESTMapper,
 		s.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
 		s.KcpSharedInformerFactory.Apis().V1alpha2().APIBindings(),
 		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
@@ -1674,6 +1674,28 @@ func (s *Server) installDynamicRESTMapper(ctx context.Context, config *rest.Conf
 		s.CacheKcpSharedInformerFactory.Apis().V1alpha1().APIResourceSchemas(),
 		s.KcpSharedInformerFactory.Core().V1alpha1().LogicalClusters(),
 	)
+	if err != nil {
+		return err
+	}
+
+	builtinTypesController, err := dynamicrestmapper.NewBuiltinTypesController(
+		ctx, s.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
+	)
+	if err != nil {
+		return err
+	}
+
+	err = s.registerController(&controllerWrapper{
+		Name: dynamicrestmapper.BuiltinTypesControllerName,
+		Wait: func(ctx context.Context, s *Server) error {
+			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
+				return s.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced(), nil
+			})
+		},
+		Runner: func(ctx context.Context) {
+			builtinTypesController.Start(ctx, 2)
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -1692,7 +1714,7 @@ func (s *Server) installDynamicRESTMapper(ctx context.Context, config *rest.Conf
 			})
 		},
 		Runner: func(ctx context.Context) {
-			c.Start(ctx, 2)
+			dynRESTMapperController.Start(ctx, 2)
 		},
 	})
 }

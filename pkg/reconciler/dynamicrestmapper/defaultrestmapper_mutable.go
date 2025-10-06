@@ -41,6 +41,25 @@ func (m *DefaultRESTMapper) add(typeMeta typeMeta) {
 
 	m.kindToPluralResource[kind] = plural
 	m.kindToScope[kind] = meta.RESTScopeRoot
+
+	foundDefaultVersion := false
+	for i := range m.defaultGroupVersions {
+		if m.defaultGroupVersions[i].Group == typeMeta.Group {
+			if typeMeta.Version > m.defaultGroupVersions[i].Version {
+				m.defaultGroupVersions[i].Version = typeMeta.Group
+			}
+
+			foundDefaultVersion = true
+			break
+		}
+	}
+
+	if !foundDefaultVersion {
+		m.defaultGroupVersions = append(m.defaultGroupVersions, schema.GroupVersion{
+			Group:   typeMeta.Group,
+			Version: typeMeta.Version,
+		})
+	}
 }
 
 func (m *DefaultRESTMapper) remove(typeMeta typeMeta) {
@@ -56,6 +75,8 @@ func (m *DefaultRESTMapper) remove(typeMeta typeMeta) {
 
 	delete(m.kindToPluralResource, kind)
 	delete(m.kindToScope, kind)
+
+	// TODO: consider cleaning up defaultGroupVersions if the group has no resources anymore.
 }
 
 func (m *DefaultRESTMapper) getGVKR(gvr schema.GroupVersionResource) typeMeta {

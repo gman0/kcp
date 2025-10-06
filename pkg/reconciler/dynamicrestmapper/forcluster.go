@@ -45,6 +45,13 @@ func newForCluster(clusterName logicalcluster.Name, parent *DynamicRESTMapper) *
 
 // KindFor takes a partial resource and returns the single match.  Returns an error if there are multiple matches.
 func (v *ForCluster) KindFor(resource schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	v.parent.builtinTypes.lock.RLock()
+	gvk, err := v.parent.builtinTypes.state.KindFor(resource)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return gvk, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).KindFor(resource)
@@ -52,6 +59,13 @@ func (v *ForCluster) KindFor(resource schema.GroupVersionResource) (schema.Group
 
 // KindsFor takes a partial resource and returns the list of potential kinds in priority order.
 func (v *ForCluster) KindsFor(input schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
+	v.parent.builtinTypes.lock.RLock()
+	gvks, err := v.parent.builtinTypes.state.KindsFor(input)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return gvks, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).KindsFor(input)
@@ -59,6 +73,13 @@ func (v *ForCluster) KindsFor(input schema.GroupVersionResource) ([]schema.Group
 
 // ResourceFor takes a partial resource and returns the single match.  Returns an error if there are multiple matches.
 func (v *ForCluster) ResourceFor(resource schema.GroupVersionResource) (schema.GroupVersionResource, error) {
+	v.parent.builtinTypes.lock.RLock()
+	gvr, err := v.parent.builtinTypes.state.ResourceFor(resource)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return gvr, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).ResourceFor(resource)
@@ -66,6 +87,13 @@ func (v *ForCluster) ResourceFor(resource schema.GroupVersionResource) (schema.G
 
 // ResourcesFor takes a partial resource and returns the list of potential resource in priority order.
 func (v *ForCluster) ResourcesFor(input schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
+	v.parent.builtinTypes.lock.RLock()
+	gvrs, err := v.parent.builtinTypes.state.ResourcesFor(input)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return gvrs, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).ResourcesFor(input)
@@ -73,6 +101,13 @@ func (v *ForCluster) ResourcesFor(input schema.GroupVersionResource) ([]schema.G
 
 // RESTMapping identifies a preferred resource mapping for the provided group kind.
 func (v *ForCluster) RESTMapping(gk schema.GroupKind, versions ...string) (*meta.RESTMapping, error) {
+	v.parent.builtinTypes.lock.RLock()
+	mapping, err := v.parent.builtinTypes.state.RESTMapping(gk, versions...)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return mapping, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).RESTMapping(gk, versions...)
@@ -82,12 +117,26 @@ func (v *ForCluster) RESTMapping(gk schema.GroupKind, versions ...string) (*meta
 // version search is provided. Otherwise identifies a preferred resource mapping for
 // the provided version(s).
 func (v *ForCluster) RESTMappings(gk schema.GroupKind, versions ...string) ([]*meta.RESTMapping, error) {
+	v.parent.builtinTypes.lock.RLock()
+	mappings, err := v.parent.builtinTypes.state.RESTMappings(gk, versions...)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return mappings, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).RESTMappings(gk, versions...)
 }
 
 func (v *ForCluster) ResourceSingularizer(resourceType string) (string, error) {
+	v.parent.builtinTypes.lock.RLock()
+	singular, err := v.parent.builtinTypes.state.ResourceSingularizer(resourceType)
+	v.parent.builtinTypes.lock.RUnlock()
+	if err == nil {
+		return singular, nil
+	}
+
 	v.parent.lock.RLock()
 	defer v.parent.lock.RUnlock()
 	return v.clusterMappingOrEmpty(v.clusterName).ResourceSingularizer(resourceType)

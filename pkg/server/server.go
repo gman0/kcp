@@ -106,7 +106,7 @@ func NewServer(c CompletedConfig) (*Server, error) {
 		syncedCh:             make(chan struct{}),
 		rootPhase1FinishedCh: make(chan struct{}),
 		controllers:          make(map[string]*controllerWrapper),
-		DynRESTMapper:        dynamicrestmapper.NewDynamicRESTMapper(nil),
+		DynRESTMapper:        dynamicrestmapper.NewDynamicRESTMapper(),
 	}
 
 	notFoundHandler := notfoundhandler.New(c.GenericConfig.Serializer, genericapifilters.NoMuxAndDiscoveryIncompleteKey)

@@ -19,8 +19,6 @@ package dynamicrestmapper
 import (
 	"sync"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/kcp-dev/logicalcluster/v3"
 )
 
@@ -30,11 +28,13 @@ import (
 // mappings for built-in types (pkg/virtual/apiexport/schemas/builtin/builtin.go) are
 // added for each LogicalCluster by default.
 type DynamicRESTMapper struct {
+	builtinTypes *BuiltinTypesController
+
 	lock      sync.RWMutex
 	byCluster map[logicalcluster.Name]*DefaultRESTMapper
 }
 
-func NewDynamicRESTMapper(defaultGroupVersions []schema.GroupVersion) *DynamicRESTMapper {
+func NewDynamicRESTMapper() *DynamicRESTMapper {
 	return &DynamicRESTMapper{
 		byCluster: make(map[logicalcluster.Name]*DefaultRESTMapper),
 	}

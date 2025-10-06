@@ -36,13 +36,11 @@ import (
 	kcpapiextensionsv1informers "github.com/kcp-dev/client-go/apiextensions/informers/apiextensions/v1"
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	bootstrapcrds "github.com/kcp-dev/kcp/config/crds"
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	"github.com/kcp-dev/kcp/pkg/reconciler/apis/apibinding"
 	"github.com/kcp-dev/kcp/pkg/tombstone"
-	builtinschemas "github.com/kcp-dev/kcp/pkg/virtual/apiexport/schemas/builtin"
 	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
 	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
 	corev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
@@ -54,45 +52,6 @@ import (
 const (
 	ControllerName = "kcp-dynamicrestmapper"
 )
-
-// When we detect a new LogicalCluster, we add builtinGVKRs mappings to it.
-// Since they are always the same, we stash them away to be reused.
-var builtinGVKRs []typeMeta
-
-func init() {
-	builtinGVKRs = make([]typeMeta, len(builtinschemas.BuiltInAPIs))
-
-	for i := range builtinschemas.BuiltInAPIs {
-		builtinGVKRs[i] = newTypeMeta(
-			builtinschemas.BuiltInAPIs[i].GroupVersion.Group,
-			builtinschemas.BuiltInAPIs[i].GroupVersion.Version,
-			builtinschemas.BuiltInAPIs[i].Names.Kind,
-			builtinschemas.BuiltInAPIs[i].Names.Singular,
-			builtinschemas.BuiltInAPIs[i].Names.Plural,
-			resourceScopeToRESTScope(builtinschemas.BuiltInAPIs[i].ResourceScope),
-		)
-	}
-
-	kcpCRDs, err := bootstrapcrds.AllCRDs()
-	if err != nil {
-		panic(err)
-	}
-	for _, crd := range kcpCRDs {
-		for _, version := range crd.Spec.Versions {
-			if !version.Served {
-				continue
-			}
-			builtinGVKRs = append(builtinGVKRs, newTypeMeta(
-				crd.Spec.Group,
-				version.Name,
-				crd.Spec.Names.Kind,
-				crd.Spec.Names.Singular,
-				crd.Spec.Names.Plural,
-				resourceScopeToRESTScope(crd.Spec.Scope),
-			))
-		}
-	}
-}
 
 // Describes which handler triggered enqueueLogicalCluster.
 type ctrlOp string
@@ -157,6 +116,12 @@ func NewController(
 		getAPIBinding: func(clusterName logicalcluster.Name, name string) (*apisv1alpha2.APIBinding, error) {
 			return apiBindingInformer.Lister().Cluster(clusterName).Get(name)
 		},
+	}
+
+	var err error
+	c.state.builtinTypes, err = NewBuiltinTypesController(ctx, crdInformer)
+	if err != nil {
+		return nil, err
 	}
 
 	_, _ = logicalClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -572,11 +537,6 @@ func (c *Controller) process(ctx context.Context, key string, item queueItem) er
 	typeMetaToAdd, err := gatherGVKRs(item.ToAdd, c.gatherGVKRsForBoundResource)
 	if err != nil {
 		return err
-	}
-
-	if item.Op == opCreate {
-		// This is a new LogicalCluster, we need to add all built-in types too.
-		typeMetaToAdd = append(typeMetaToAdd, builtinGVKRs...)
 	}
 
 	// Finally, store the new mappings in the RESTMapper for this LogicalCluster.

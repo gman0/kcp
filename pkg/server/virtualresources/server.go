@@ -319,7 +319,7 @@ func (s *Server) getVirtualResourceURL(ctx context.Context, apiExportCluster log
 	sliceMapping, err := s.drm.ForCluster(apiExportCluster).RESTMapping(schema.GroupKind{
 		Group: ptr.Deref(virtual.Reference.APIGroup, ""),
 		Kind:  virtual.Reference.Kind,
-	}, "v1alpha1") // HACK: we need to be able to discover the latest version.
+	})
 	if err != nil {
 		return "", err
 	}
