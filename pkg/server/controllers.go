@@ -1678,28 +1678,6 @@ func (s *Server) installDynamicRESTMapper(ctx context.Context, config *rest.Conf
 		return err
 	}
 
-	builtinTypesController, err := dynamicrestmapper.NewBuiltinTypesController(
-		ctx, s.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
-	)
-	if err != nil {
-		return err
-	}
-
-	err = s.registerController(&controllerWrapper{
-		Name: dynamicrestmapper.BuiltinTypesControllerName,
-		Wait: func(ctx context.Context, s *Server) error {
-			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
-				return s.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced(), nil
-			})
-		},
-		Runner: func(ctx context.Context) {
-			builtinTypesController.Start(ctx, 2)
-		},
-	})
-	if err != nil {
-		return err
-	}
-
 	return s.registerController(&controllerWrapper{
 		Name: dynamicrestmapper.ControllerName,
 		Wait: func(ctx context.Context, s *Server) error {

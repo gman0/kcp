@@ -17,6 +17,8 @@ limitations under the License.
 package dynamicrestmapper
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -48,7 +50,6 @@ func (m *DefaultRESTMapper) add(typeMeta typeMeta) {
 			if typeMeta.Version > m.defaultGroupVersions[i].Version {
 				m.defaultGroupVersions[i].Version = typeMeta.Group
 			}
-
 			foundDefaultVersion = true
 			break
 		}
@@ -76,7 +77,8 @@ func (m *DefaultRESTMapper) remove(typeMeta typeMeta) {
 	delete(m.kindToPluralResource, kind)
 	delete(m.kindToScope, kind)
 
-	// TODO: consider cleaning up defaultGroupVersions if the group has no resources anymore.
+	// TODO: consider cleaning up defaultGroupVersions if the group has no resources anymore,
+	// otherwise we won't be able to add an older version -- probably pretty rare case?
 }
 
 func (m *DefaultRESTMapper) getGVKR(gvr schema.GroupVersionResource) typeMeta {

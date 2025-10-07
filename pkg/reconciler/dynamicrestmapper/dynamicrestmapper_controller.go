@@ -118,11 +118,13 @@ func NewController(
 		},
 	}
 
+	// Run the auxilliary controller for built-in types.
 	var err error
 	c.state.builtinTypes, err = NewBuiltinTypesController(ctx, crdInformer)
 	if err != nil {
 		return nil, err
 	}
+	go c.state.builtinTypes.Start(ctx, 2)
 
 	_, _ = logicalClusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
