@@ -652,7 +652,7 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 	c.ApiExtensions.ExtraConfig.Informers = c.ApiExtensionsSharedInformerFactory
 	c.ApiExtensions.ExtraConfig.TableConverterProvider = NewTableConverterProvider()
 
-	if kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) && !opts.Virtual.Enabled {
+	if kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) {
 		// We need an aggregating version discovery for CRDs that is RESTstorage-aware.
 		// The apiextensions apiserver sources its data from the apiBindingAwareCRDClusterLister.
 		// With the onset of virtual resources, not all bound CRDs use CRD storage, and as a consequence,
@@ -679,10 +679,12 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 		virtualResourcesConfig.SkipOpenAPIInstallation = true
 		// vwClientConfig is used by the proxy handler to proxy the client requests to the virtual workspace.
 		vwClientConfig := rest.CopyConfig(c.GenericConfig.LoopbackClientConfig)
-		vwClientConfig.TLSClientConfig = rest.TLSClientConfig{
-			CAFile:   opts.Extra.ShardVirtualWorkspaceCAFile,
-			CertFile: opts.Extra.ShardClientCertFile,
-			KeyFile:  opts.Extra.ShardClientKeyFile,
+		if !opts.Virtual.Enabled {
+			vwClientConfig.TLSClientConfig = rest.TLSClientConfig{
+				CAFile:   opts.Extra.ShardVirtualWorkspaceCAFile,
+				CertFile: opts.Extra.ShardClientCertFile,
+				KeyFile:  opts.Extra.ShardClientKeyFile,
+			}
 		}
 
 		c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig,

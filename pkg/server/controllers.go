@@ -1769,7 +1769,7 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 }
 
 func (s *Server) installCachedResourceEndpointSliceController(ctx context.Context, config *rest.Config) error {
-	if !kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) || s.Options.Virtual.Enabled {
+	if !kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) {
 		return nil
 	}
 

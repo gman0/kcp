@@ -74,6 +74,8 @@ func WithVirtualWorkspacesProxy(apiHandler http.Handler, shardVirtualWorkspaceUR
 			return
 		}
 
+		fmt.Printf("\n\n\n### WithVirtualWorkspacesProxy\n\n\n")
+
 		if shardVirtualWorkspaceURL == nil || transport == nil {
 			// This handler func is only installed when these are both set. If this happens, it means we've regressed
 			// in the installation of this handler func, and a panic is appropriate.

@@ -312,6 +312,12 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Printf("=== Incoming Request Headers ===\n")
+	for k, v := range r.Header {
+		fmt.Printf("=== %s: %v\n", k, v)
+	}
+	fmt.Printf("===============================\n")
+
 	vrHandler.ServeHTTP(w, r)
 }
 

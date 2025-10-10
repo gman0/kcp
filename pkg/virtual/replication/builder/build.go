@@ -104,6 +104,8 @@ func BuildVirtualWorkspace(
 
 	cachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
+			fmt.Printf("### REPLICATION VW url=%q\n", urlPath)
+
 			targetCluster, apiDomain, prefixToStrip, apiExportIdentity, ok := digestURL(urlPath, rootPathPrefix)
 			if !ok {
 				return false, "", requestContext
@@ -355,8 +357,10 @@ func digestURL(urlPath, rootPathPrefix string) (
 	return cluster, key, strings.TrimSuffix(urlPath, realPath), apiExportIdentity, true
 }
 
-func newAuth(deepSARClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
-	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(deepSARClient)
+func newAuth(kubeClusterClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
+	fmt.Printf("### REPLICATION VW newAuth\n")
+
+	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(kubeClusterClient)
 	wrappedResourceAuthorizer = authorization.NewDecorator("virtual.replication.wrappedresource.authorization.kcp.io", wrappedResourceAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
 
 	return wrappedResourceAuthorizer

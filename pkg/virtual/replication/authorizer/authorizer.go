@@ -19,6 +19,7 @@ package authorizer
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"slices"
 
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -47,22 +48,29 @@ func NewWrappedResourceAuthorizer(kubeClusterClient kcpkubeclientset.ClusterInte
 }
 
 func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authorizer.Attributes) (authorizer.Decision, string, error) {
+	fmt.Printf("### wrappedResourceAuthorizer 0\n")
+	debug.PrintStack()
+
 	targetCluster, err := genericapirequest.ValidClusterFrom(ctx)
 	if err != nil {
+		fmt.Printf("### wrappedResourceAuthorizer 1\n")
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error getting valid cluster from context: %w", err)
 	}
 
 	parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
 	if err != nil {
+		fmt.Printf("### wrappedResourceAuthorizer 2\n")
 		return authorizer.DecisionNoOpinion, "",
 			fmt.Errorf("invalid API domain key")
 	}
 
 	if !slices.Contains(readOnlyVerbs, attr.GetVerb()) {
+		fmt.Printf("### wrappedResourceAuthorizer 3\n")
 		return authorizer.DecisionDeny, "write access to CachedResource is not allowed from virtual workspace", nil
 	}
 
 	if targetCluster.Wildcard || attr.GetResource() == "" {
+		fmt.Printf("### wrappedResourceAuthorizer 4\n")
 		// If the target is the wildcard cluster or it's a non-resource URL request,
 		// we can skip checking the APIBinding in the target cluster.
 		return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %s|%s, workspace: %q allowed for wildcard or non-resource requests",
@@ -71,20 +79,26 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 
 	authz, err := a.newDelegatedAuthorizer(targetCluster.Name)
 	if err != nil {
+		fmt.Printf("### wrappedResourceAuthorizer 5\n")
 		return authorizer.DecisionNoOpinion, "", err
 	}
 
+	fmt.Printf("### wrappedResourceAuthorizer attr=%#v, attr.User=%#v\n", attr, attr.GetUser())
+
 	dec, reason, err := authz.Authorize(ctx, attr)
 	if err != nil {
+		fmt.Printf("### wrappedResourceAuthorizer 6\n")
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error authorizing RBAC in workspace %q for CachedResource %s|%s: %w",
 			targetCluster.Name, parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, err)
 	}
 
-	if dec == authorizer.DecisionAllow {
+	if dec == authorizer.DecisionAllow || dec == authorizer.DecisionNoOpinion {
+		fmt.Printf("### wrappedResourceAuthorizer 7 reason=%q\n", reason)
 		return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
 			parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
 	}
 
+	fmt.Printf("### wrappedResourceAuthorizer 8\n")
 	return authorizer.DecisionDeny, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
 		parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
 }

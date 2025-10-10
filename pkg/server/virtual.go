@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"fmt"
 	"net/http"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,6 +81,7 @@ func newVirtualConfig(
 	authorizationOptions.AlwaysAllowGroups = o.Authorization.AlwaysAllowGroups
 	authorizationOptions.AlwaysAllowPaths = o.Authorization.AlwaysAllowPaths
 	if err := authorizationOptions.ApplyTo(&recommendedConfig.Config, func() []virtualrootapiserver.NamedVirtualWorkspace {
+		fmt.Printf("### pkg/server/virtual.go:84\n")
 		return c.Extra.VirtualWorkspaces
 	}); err != nil {
 		return nil, err

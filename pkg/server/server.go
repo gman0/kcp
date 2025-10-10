@@ -118,7 +118,7 @@ func NewServer(c CompletedConfig) (*Server, error) {
 
 	gcpDelegate := s.ApiExtensions.GenericAPIServer
 
-	if kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) && !s.Options.Virtual.Enabled {
+	if kcpfeatures.DefaultFeatureGate.Enabled(kcpfeatures.CacheAPIs) {
 		s.VirtualResources, err = virtualresources.NewServer(c.VirtualResources, s.ApiExtensions.GenericAPIServer, s.DynRESTMapper)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create virtual resources server: %v", err)

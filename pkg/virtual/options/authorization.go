@@ -17,6 +17,8 @@ limitations under the License.
 package options
 
 import (
+	"fmt"
+
 	"github.com/spf13/pflag"
 
 	"k8s.io/apiserver/pkg/authentication/user"
@@ -81,6 +83,8 @@ func (s *Authorization) AddFlags(fs *pflag.FlagSet) {
 }
 
 func (s *Authorization) ApplyTo(config *genericapiserver.Config, virtualWorkspaces func() []rootapiserver.NamedVirtualWorkspace) error {
+	fmt.Printf("### pkg/virtual/options/authorization.go Authentication.ApplyTo\n")
+
 	var authorizers []authorizer.Authorizer
 
 	// group authorizer

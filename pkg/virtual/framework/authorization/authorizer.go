@@ -39,17 +39,23 @@ type virtualWorkspaceAuthorizer struct {
 }
 
 func (a *virtualWorkspaceAuthorizer) Authorize(ctx context.Context, attrs authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
+	fmt.Printf("### framework.authorization attrs=%#v ; attrs.User=%#v\n", attrs, attrs.GetUser())
+
 	virtualWorkspaceName, _ := virtualcontext.VirtualWorkspaceNameFrom(ctx)
 	if virtualWorkspaceName == "" {
+		fmt.Printf("### framework.authorization 1\n")
 		return authorizer.DecisionNoOpinion, "Path not resolved to a valid virtual workspace", nil
 	}
 
 	for _, vw := range a.virtualWorkspaces() {
+
+		fmt.Printf("### framework.authorization 2\n")
 		if vw.Name == virtualWorkspaceName {
+			fmt.Printf("### framework.authorization 3\n")
 			return vw.VirtualWorkspace.Authorize(ctx, attrs)
 		}
 	}
-
+	fmt.Printf("### framework.authorization 4\n")
 	// This should never happen if a virtual workspace name has been set in the context by the
 	// ResolveRootPath method of one of the virtual workspaces.
 	return authorizer.DecisionNoOpinion, "", fmt.Errorf("virtual Workspace %q not found", virtualWorkspaceName)
