@@ -19,9 +19,9 @@ package authorizer
 import (
 	"context"
 	"fmt"
-	"runtime/debug"
 	"slices"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 
@@ -29,76 +29,110 @@ import (
 	"github.com/kcp-dev/logicalcluster/v3"
 
 	"github.com/kcp-dev/kcp/pkg/authorization/delegated"
+	"github.com/kcp-dev/kcp/pkg/indexers"
+	"github.com/kcp-dev/kcp/pkg/informer"
 	dynamiccontext "github.com/kcp-dev/kcp/pkg/virtual/framework/dynamic/context"
+	vrcontext "github.com/kcp-dev/kcp/pkg/virtual/framework/virtualresource/context"
 	"github.com/kcp-dev/kcp/pkg/virtual/replication/apidomainkey"
+	apisv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha1"
+	apisv1alpha2 "github.com/kcp-dev/kcp/sdk/apis/apis/v1alpha2"
+	cachev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/cache/v1alpha1"
+	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
 type wrappedResourceAuthorizer struct {
 	newDelegatedAuthorizer func(clusterName logicalcluster.Name) (authorizer.Authorizer, error)
+
+	getAPIExportsByIdentity func(identity string) ([]*apisv1alpha2.APIExport, error)
+	getCachedResource       func(cluster logicalcluster.Name, name string) (*cachev1alpha1.CachedResource, error)
 }
 
 var readOnlyVerbs = []string{"get", "list", "watch"}
 
-func NewWrappedResourceAuthorizer(kubeClusterClient kcpkubeclientset.ClusterInterface) authorizer.Authorizer {
+// NewWrappedResourceAuthorizer creates an authorizer for CachedResources, where the verb in request
+// must be one of the read-only verbs, and the user must have suitable permissions to the associated APIExport's
+// content subresource -- similar to APIExport VW content authorizer.
+func NewWrappedResourceAuthorizer(
+	kubeClusterClient kcpkubeclientset.ClusterInterface,
+	localKcpInformers kcpinformers.SharedInformerFactory,
+	globalKcpInformers kcpinformers.SharedInformerFactory,
+) authorizer.Authorizer {
 	return &wrappedResourceAuthorizer{
 		newDelegatedAuthorizer: func(clusterName logicalcluster.Name) (authorizer.Authorizer, error) {
 			return delegated.NewDelegatedAuthorizer(clusterName, kubeClusterClient, delegated.Options{})
+		},
+		getCachedResource: informer.NewScopedGetterWithFallback(localKcpInformers.Cache().V1alpha1().CachedResources().Lister(), globalKcpInformers.Cache().V1alpha1().CachedResources().Lister()),
+		getAPIExportsByIdentity: func(identity string) ([]*apisv1alpha2.APIExport, error) {
+			return indexers.ByIndex[*apisv1alpha2.APIExport](globalKcpInformers.Apis().V1alpha2().APIExports().Informer().GetIndexer(), indexers.APIExportByIdentity, identity)
 		},
 	}
 }
 
 func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authorizer.Attributes) (authorizer.Decision, string, error) {
-	fmt.Printf("### wrappedResourceAuthorizer 0\n")
-	debug.PrintStack()
-
-	targetCluster, err := genericapirequest.ValidClusterFrom(ctx)
+	_, err := genericapirequest.ValidClusterFrom(ctx)
 	if err != nil {
-		fmt.Printf("### wrappedResourceAuthorizer 1\n")
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error getting valid cluster from context: %w", err)
 	}
 
 	parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
 	if err != nil {
-		fmt.Printf("### wrappedResourceAuthorizer 2\n")
 		return authorizer.DecisionNoOpinion, "",
 			fmt.Errorf("invalid API domain key")
 	}
 
 	if !slices.Contains(readOnlyVerbs, attr.GetVerb()) {
-		fmt.Printf("### wrappedResourceAuthorizer 3\n")
 		return authorizer.DecisionDeny, "write access to CachedResource is not allowed from virtual workspace", nil
 	}
 
-	if targetCluster.Wildcard || attr.GetResource() == "" {
-		fmt.Printf("### wrappedResourceAuthorizer 4\n")
-		// If the target is the wildcard cluster or it's a non-resource URL request,
-		// we can skip checking the APIBinding in the target cluster.
-		return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %s|%s, workspace: %q allowed for wildcard or non-resource requests",
-			parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name), nil
-	}
-
-	authz, err := a.newDelegatedAuthorizer(targetCluster.Name)
+	cachedResource, err := a.getCachedResource(parsedKey.CachedResourceCluster, parsedKey.CachedResourceName)
 	if err != nil {
-		fmt.Printf("### wrappedResourceAuthorizer 5\n")
-		return authorizer.DecisionNoOpinion, "", err
+		return authorizer.DecisionNoOpinion, "failed to retrieve CachedResource", err
 	}
 
-	fmt.Printf("### wrappedResourceAuthorizer attr=%#v, attr.User=%#v\n", attr, attr.GetUser())
+	apiExportIdentity, hasAPIExportIdentity := vrcontext.VirtualResourceAPIExportIdentityFrom(ctx)
+	if !hasAPIExportIdentity {
+		return authorizer.DecisionNoOpinion, "APIExport identity missing in context", nil
+	}
 
-	dec, reason, err := authz.Authorize(ctx, attr)
+	candidateExports, err := a.getAPIExportsByIdentity(apiExportIdentity)
 	if err != nil {
-		fmt.Printf("### wrappedResourceAuthorizer 6\n")
-		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error authorizing RBAC in workspace %q for CachedResource %s|%s: %w",
-			targetCluster.Name, parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, err)
+		return authorizer.DecisionDeny, "failed to list APIExports by identity", err
 	}
 
-	if dec == authorizer.DecisionAllow || dec == authorizer.DecisionNoOpinion {
-		fmt.Printf("### wrappedResourceAuthorizer 7 reason=%q\n", reason)
-		return authorizer.DecisionAllow, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
-			parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
+	SARAttributes := authorizer.AttributesRecord{
+		APIGroup:        apisv1alpha1.SchemeGroupVersion.Group,
+		APIVersion:      apisv1alpha1.SchemeGroupVersion.Version,
+		User:            attr.GetUser(),
+		Verb:            attr.GetVerb(),
+		Resource:        "apiexports",
+		ResourceRequest: true,
+		Subresource:     "content",
 	}
 
-	fmt.Printf("### wrappedResourceAuthorizer 8\n")
-	return authorizer.DecisionDeny, fmt.Sprintf("CachedResource: %s|%s, workspace: %q RBAC decision: %v",
-		parsedKey.CachedResourceCluster.String(), parsedKey.CachedResourceName, targetCluster.Name, reason), nil
+	wrappedGVR := schema.GroupVersionResource(cachedResource.Spec.GroupVersionResource)
+	for _, export := range candidateExports {
+		for _, res := range export.Spec.Resources {
+			if res.Storage.Virtual != nil &&
+				res.Storage.Virtual.IdentityHash == cachedResource.Status.IdentityHash &&
+				res.Group == wrappedGVR.Group &&
+				res.Name == wrappedGVR.Resource {
+				authz, err := a.newDelegatedAuthorizer(logicalcluster.From(export))
+				if err != nil {
+					return authorizer.DecisionNoOpinion, "",
+						fmt.Errorf("error creating delegated authorizer for API export %q, workspace %q: %w", export.Name, logicalcluster.From(export), err)
+				}
+				SARAttributes.Name = export.Name
+				dec, _, err := authz.Authorize(ctx, SARAttributes)
+				if err != nil {
+					return authorizer.DecisionNoOpinion, "",
+						fmt.Errorf("error authorizing RBAC in API export %q, workspace %q: %w", export.Name, logicalcluster.From(export), err)
+				}
+				if dec == authorizer.DecisionAllow {
+					return authorizer.DecisionAllow, "", nil
+				}
+			}
+		}
+	}
+
+	return authorizer.DecisionNoOpinion, "no suitable APIExport to accept the request", nil
 }

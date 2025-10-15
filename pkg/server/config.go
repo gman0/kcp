@@ -687,7 +687,9 @@ func NewConfig(ctx context.Context, opts kcpserveroptions.CompletedOptions) (*Co
 			}
 		}
 
-		c.VirtualResources, err = virtualresources.NewConfig(&virtualResourcesConfig, vwClientConfig,
+		c.VirtualResources, err = virtualresources.NewConfig(
+			&virtualResourcesConfig,
+			vwClientConfig,
 			c.CacheDynamicClient,
 			c.ShardVirtualWorkspaceURL,
 			c.ApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),

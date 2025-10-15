@@ -104,8 +104,6 @@ func BuildVirtualWorkspace(
 
 	cachedResourceContent := &virtualworkspacesdynamic.DynamicVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, requestContext context.Context) (accepted bool, prefixToStrip string, completedContext context.Context) {
-			fmt.Printf("### REPLICATION VW url=%q\n", urlPath)
-
 			targetCluster, apiDomain, prefixToStrip, apiExportIdentity, ok := digestURL(urlPath, rootPathPrefix)
 			if !ok {
 				return false, "", requestContext
@@ -120,7 +118,7 @@ func BuildVirtualWorkspace(
 			completedContext = vrcontext.WithVirtualResourceAPIExportIdentity(completedContext, apiExportIdentity)
 			return true, prefixToStrip, completedContext
 		}),
-		Authorizer: newAuth(kubeClusterClient),
+		Authorizer: newAuth(kubeClusterClient, localKcpInformers, globalKcpInformers),
 		ReadyChecker: framework.ReadyFunc(func() error {
 			select {
 			case <-readyCh:
@@ -357,10 +355,12 @@ func digestURL(urlPath, rootPathPrefix string) (
 	return cluster, key, strings.TrimSuffix(urlPath, realPath), apiExportIdentity, true
 }
 
-func newAuth(kubeClusterClient kcpkubernetesclientset.ClusterInterface) authorizer.Authorizer {
-	fmt.Printf("### REPLICATION VW newAuth\n")
-
-	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(kubeClusterClient)
+func newAuth(
+	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
+	localKcpInformers kcpinformers.SharedInformerFactory,
+	globalKcpInformers kcpinformers.SharedInformerFactory,
+) authorizer.Authorizer {
+	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(kubeClusterClient, localKcpInformers, globalKcpInformers)
 	wrappedResourceAuthorizer = authorization.NewDecorator("virtual.replication.wrappedresource.authorization.kcp.io", wrappedResourceAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
 
 	return wrappedResourceAuthorizer

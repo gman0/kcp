@@ -78,8 +78,6 @@ func NewBoundAPIAuthorizer(delegate authorizer.Authorizer, apiBindingInformer ap
 }
 
 func (a *boundAPIAuthorizer) Authorize(ctx context.Context, attr authorizer.Attributes) (authorizer.Decision, string, error) {
-	fmt.Printf("### APIEXPORT VW boundAPIAuthorizer 0\n")
-
 	targetCluster, err := genericapirequest.ValidClusterFrom(ctx)
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error getting valid cluster from context: %w", err)

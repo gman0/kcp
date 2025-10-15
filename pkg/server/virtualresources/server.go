@@ -18,7 +18,6 @@ package virtualresources
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -65,7 +64,6 @@ type Server struct {
 	Extra            *ExtraConfig
 	drm              *dynamicrestmapper.DynamicRESTMapper
 	delegate         http.Handler
-	vwTlsConfig      *tls.Config
 
 	getCRD                       func(cluster logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error)
 	getUnstructuredEndpointSlice func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error)
@@ -114,18 +112,11 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		},
 	}
 
-	tlsConfig, err := rest.TLSConfigFor(c.Extra.VWClientConfig)
-	if err != nil {
-		return nil, err
-	}
-	s.vwTlsConfig = tlsConfig
-
+	var err error
 	s.GenericAPIServer, err = c.Generic.New("virtual-resources-root-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
 	}
-
-	// s.GenericAPIServer.AddPostStartHookOrDie()
 
 	// We don't do discovery at all because it needs to be aggregated with other CRD-based resources.
 	s.GenericAPIServer.DiscoveryGroupManager = nil
@@ -302,7 +293,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vrHandler, err := newProxy(clusterNameOrWildcard.String(), vrEndpointURL, apiExport.Status.IdentityHash, s.vwTlsConfig)
+	vrHandler, err := newVirtualResourceHandler(s.Extra.VWClientConfig, vrEndpointURL, apiExport.Status.IdentityHash, clusterNameOrWildcard.String())
 	if err != nil {
 		utilruntime.HandleError(err)
 		responsewriters.ErrorNegotiated(
@@ -311,12 +302,6 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-
-	fmt.Printf("=== Incoming Request Headers ===\n")
-	for k, v := range r.Header {
-		fmt.Printf("=== %s: %v\n", k, v)
-	}
-	fmt.Printf("===============================\n")
 
 	vrHandler.ServeHTTP(w, r)
 }
@@ -384,18 +369,21 @@ func (s *Server) getAPIBindingForRequest(
 	return nil, nil
 }
 
-func newProxy(clusterNameOrWildcard string, vwURL, apiExportIdentity string, vwTLSConfig *tls.Config) (http.Handler, error) {
+func newVirtualResourceHandler(cfg *rest.Config, vwURL, apiExportIdentity, clusterNameOrWildcard string) (http.Handler, error) {
 	scopedURL, err := url.Parse(virtualResourceURLWithCluster(vwURL, apiExportIdentity, clusterNameOrWildcard))
 	if err != nil {
 		return nil, err
 	}
 
-	handler := httputil.NewSingleHostReverseProxy(scopedURL)
-	handler.Transport = &http.Transport{
-		TLSClientConfig: vwTLSConfig,
+	tr, err := rest.TransportFor(cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	return handler, nil
+	proxy := httputil.NewSingleHostReverseProxy(scopedURL)
+	proxy.Transport = tr
+
+	return proxy, nil
 }
 
 func virtualResourceURLWithCluster(vwURL, apiExportIdentity string, clusterNameOrWildcard string) string {

@@ -170,7 +170,6 @@ func Run(ctx context.Context, o *options.Options) error {
 	}
 
 	if err := o.Authorization.ApplyTo(&recommendedConfig.Config, func() []virtualrootapiserver.NamedVirtualWorkspace {
-		fmt.Printf("### cmd/virtual-workspaces/command/cmd.go:173\n")
 		return rootAPIServerConfig.Extra.VirtualWorkspaces
 	}); err != nil {
 		return err
