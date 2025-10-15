@@ -19,11 +19,9 @@ package authorizer
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 
 	kcpkubeclientset "github.com/kcp-dev/client-go/kubernetes"
 	"github.com/kcp-dev/logicalcluster/v3"
@@ -40,24 +38,27 @@ import (
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
 )
 
-type wrappedResourceAuthorizer struct {
+type apiExportsContentAuthorizer struct {
+	delegate authorizer.Authorizer
+
 	newDelegatedAuthorizer func(clusterName logicalcluster.Name) (authorizer.Authorizer, error)
 
 	getAPIExportsByIdentity func(identity string) ([]*apisv1alpha2.APIExport, error)
 	getCachedResource       func(cluster logicalcluster.Name, name string) (*cachev1alpha1.CachedResource, error)
 }
 
-var readOnlyVerbs = []string{"get", "list", "watch"}
-
-// NewWrappedResourceAuthorizer creates an authorizer for CachedResources, where the verb in request
-// must be one of the read-only verbs, and the user must have suitable permissions to the associated APIExport's
-// content subresource -- similar to APIExport VW content authorizer.
-func NewWrappedResourceAuthorizer(
+// NewAPIExportsContentAuthorizer creates an authorizer that checks that the user has suitable permissions
+// to the associated APIExport's content subresource -- similar to APIExport VW content authorizer.
+// The APIExports are retrieved by their identity, possibly in different workspaces. The user making the request
+// must have apiexports/content permissions to all of them in order for the request to be allowed.
+func NewAPIExportsContentAuthorizer(
+	delegate authorizer.Authorizer,
 	kubeClusterClient kcpkubeclientset.ClusterInterface,
 	localKcpInformers kcpinformers.SharedInformerFactory,
 	globalKcpInformers kcpinformers.SharedInformerFactory,
 ) authorizer.Authorizer {
-	return &wrappedResourceAuthorizer{
+	return &apiExportsContentAuthorizer{
+		delegate: delegate,
 		newDelegatedAuthorizer: func(clusterName logicalcluster.Name) (authorizer.Authorizer, error) {
 			return delegated.NewDelegatedAuthorizer(clusterName, kubeClusterClient, delegated.Options{})
 		},
@@ -68,20 +69,11 @@ func NewWrappedResourceAuthorizer(
 	}
 }
 
-func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authorizer.Attributes) (authorizer.Decision, string, error) {
-	_, err := genericapirequest.ValidClusterFrom(ctx)
-	if err != nil {
-		return authorizer.DecisionNoOpinion, "", fmt.Errorf("error getting valid cluster from context: %w", err)
-	}
-
+func (a *apiExportsContentAuthorizer) Authorize(ctx context.Context, attr authorizer.Attributes) (authorizer.Decision, string, error) {
 	parsedKey, err := apidomainkey.Parse(dynamiccontext.APIDomainKeyFrom(ctx))
 	if err != nil {
 		return authorizer.DecisionNoOpinion, "",
 			fmt.Errorf("invalid API domain key")
-	}
-
-	if !slices.Contains(readOnlyVerbs, attr.GetVerb()) {
-		return authorizer.DecisionDeny, "write access to CachedResource is not allowed from virtual workspace", nil
 	}
 
 	cachedResource, err := a.getCachedResource(parsedKey.CachedResourceCluster, parsedKey.CachedResourceName)
@@ -122,17 +114,18 @@ func (a *wrappedResourceAuthorizer) Authorize(ctx context.Context, attr authoriz
 						fmt.Errorf("error creating delegated authorizer for API export %q, workspace %q: %w", export.Name, logicalcluster.From(export), err)
 				}
 				SARAttributes.Name = export.Name
-				dec, _, err := authz.Authorize(ctx, SARAttributes)
+				dec, reason, err := authz.Authorize(ctx, SARAttributes)
+				fmt.Printf("### apiExportsContentAuthorizer dec=%v reason=%q err=%v\n", dec, reason, err)
 				if err != nil {
 					return authorizer.DecisionNoOpinion, "",
 						fmt.Errorf("error authorizing RBAC in API export %q, workspace %q: %w", export.Name, logicalcluster.From(export), err)
 				}
-				if dec == authorizer.DecisionAllow {
-					return authorizer.DecisionAllow, "", nil
+				if dec != authorizer.DecisionAllow {
+					return authorizer.DecisionDeny, reason, nil
 				}
 			}
 		}
 	}
 
-	return authorizer.DecisionNoOpinion, "no suitable APIExport to accept the request", nil
+	return a.delegate.Authorize(ctx, attr)
 }

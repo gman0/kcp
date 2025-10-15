@@ -360,10 +360,13 @@ func newAuth(
 	localKcpInformers kcpinformers.SharedInformerFactory,
 	globalKcpInformers kcpinformers.SharedInformerFactory,
 ) authorizer.Authorizer {
-	wrappedResourceAuthorizer := replicationauthorizer.NewWrappedResourceAuthorizer(kubeClusterClient, localKcpInformers, globalKcpInformers)
-	wrappedResourceAuthorizer = authorization.NewDecorator("virtual.replication.wrappedresource.authorization.kcp.io", wrappedResourceAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
+	localAuthorizer := replicationauthorizer.NewLocalAuthorizer(kubeClusterClient)
+	localAuthorizer = authorization.NewDecorator("virtual.replication.local.authorization.kcp.io", localAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
 
-	return wrappedResourceAuthorizer
+	apiExportsContentAuthorizer := replicationauthorizer.NewAPIExportsContentAuthorizer(localAuthorizer, kubeClusterClient, localKcpInformers, globalKcpInformers)
+	apiExportsContentAuthorizer = authorization.NewDecorator("virtual.replication.apiexportscontent.authorization.kcp.io", apiExportsContentAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
+
+	return apiExportsContentAuthorizer
 }
 
 var _ apidefinition.APIDefinitionSetGetter = &singleResourceAPIDefinitionSetProvider{}
