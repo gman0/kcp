@@ -136,6 +136,7 @@ func (a *maximalPermissionAuthorizer) Authorize(ctx context.Context, attr author
 				apiExportProvidingClaimedResource.Name, logicalcluster.From(apiExportProvidingClaimedResource), reason), nil
 		}
 	}
+
 	return authorizer.DecisionAllow, "all claimed API exports granted access", nil
 }
 
