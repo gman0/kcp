@@ -232,7 +232,7 @@ func TestCachedResources(t *testing.T) {
 				return slices.ContainsFunc(groupList.Groups, func(e metav1.APIGroup) bool {
 					return e.Name == wildwestv1alpha1.SchemeGroupVersion.Group
 				}), fmt.Sprintf("wildwest.dev group not found in %q", consumerPath)
-			}, wait.ForeverTestTimeout, time.Second*1, "waiting for wildwest.dev group in %q", resourceName, consumerPath)
+			}, wait.ForeverTestTimeout, time.Second*1, "waiting for wildwest.dev group in %q", consumerPath)
 			kcptestinghelpers.Eventually(t, func() (bool, string) {
 				resourceList, err := kcpClusterClient.Cluster(consumerPath).Discovery().ServerResourcesForGroupVersion("wildwest.dev/v1alpha1")
 				if err != nil {
