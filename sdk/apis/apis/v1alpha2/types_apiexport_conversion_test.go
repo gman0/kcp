@@ -92,6 +92,7 @@ func TestConvertV1Alpha2APIExports(t *testing.T) {
 				}},
 			},
 		},
+		// TODO: add ResourceSchemaStorage.Virtual test
 	}
 
 	scheme := runtime.NewScheme()

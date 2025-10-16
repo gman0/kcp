@@ -118,7 +118,7 @@ func BuildVirtualWorkspace(
 			completedContext = vrcontext.WithVirtualResourceAPIExportIdentity(completedContext, apiExportIdentity)
 			return true, prefixToStrip, completedContext
 		}),
-		Authorizer: newAuth(kubeClusterClient, localKcpInformers, globalKcpInformers),
+		Authorizer: newAuth(kubeClusterClient, kubeClusterClient, localKcpInformers, globalKcpInformers),
 		ReadyChecker: framework.ReadyFunc(func() error {
 			select {
 			case <-readyCh:
@@ -357,10 +357,11 @@ func digestURL(urlPath, rootPathPrefix string) (
 
 func newAuth(
 	kubeClusterClient kcpkubernetesclientset.ClusterInterface,
+	deepSARClient kcpkubernetesclientset.ClusterInterface,
 	localKcpInformers kcpinformers.SharedInformerFactory,
 	globalKcpInformers kcpinformers.SharedInformerFactory,
 ) authorizer.Authorizer {
-	localAuthorizer := replicationauthorizer.NewLocalAuthorizer(kubeClusterClient)
+	localAuthorizer := replicationauthorizer.NewLocalAuthorizer(deepSARClient)
 	localAuthorizer = authorization.NewDecorator("virtual.replication.local.authorization.kcp.io", localAuthorizer).AddAuditLogging().AddAnonymization().AddReasonAnnotation()
 
 	apiExportsContentAuthorizer := replicationauthorizer.NewAPIExportsContentAuthorizer(localAuthorizer, kubeClusterClient, localKcpInformers, globalKcpInformers)
