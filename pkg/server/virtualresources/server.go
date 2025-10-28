@@ -41,6 +41,8 @@ import (
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
+	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
+	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/endpointslice"
 	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/reconciler/dynamicrestmapper"
@@ -77,26 +79,8 @@ func NewServer(c CompletedConfig, delegationTarget genericapiserver.DelegationTa
 		delegate: delegationTarget.UnprotectedHandler(),
 
 		getUnstructuredEndpointSlice: func(ctx context.Context, cluster logicalcluster.Name, gvr schema.GroupVersionResource, name string) (*unstructured.Unstructured, error) {
-			list, err := c.Extra.DynamicClusterClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
-			if err != nil {
-				return nil, err
-			}
-
-			if len(list.Items) == 0 {
-				return nil, apierrors.NewNotFound(gvr.GroupResource(), name)
-			}
-
-			var slice *unstructured.Unstructured
-			for _, item := range list.Items {
-				if item.GetName() == name {
-					if slice != nil {
-						return nil, apierrors.NewInternalError(fmt.Errorf("multiple objects found"))
-					}
-					slice = &item
-				}
-			}
-
-			return slice, nil
+			// TODO(gman0): consider adding a LRU cache.
+			return c.Extra.DynamicClusterClient.Cluster(cluster.Path()).Resource(gvr).Get(ctx, name, metav1.GetOptions{})
 		},
 		getCRD: func(clusterName logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error) {
 			return c.Extra.CRDLister.Lister().Cluster(clusterName).Get(name)
@@ -152,7 +136,7 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx := cacheclient.WithShardInContext(r.Context(), shard.Name(s.Extra.ShardName))
 	requestInfo, ok := genericapirequest.RequestInfoFrom(ctx)
 	if !ok {
 		responsewriters.ErrorNegotiated(
