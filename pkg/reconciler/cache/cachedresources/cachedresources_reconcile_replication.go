@@ -76,7 +76,7 @@ func (r *replication) reconcile(ctx context.Context, cachedResource *cachev1alph
 		// Global informer is based on the CachedResource type and we construct index based on the schema labels.
 		controllerCtx, cancel := context.WithCancel(ctx)
 
-		global := r.cacheKcpInformers.Cache().V1alpha1().CachedObjects()
+		cachedObjectsInformer := r.cacheKcpInformers.Cache().V1alpha1().CachedObjects()
 
 		// Local informer is based on the specific types we want to replicate.
 		local, err := r.discoveringDynamicKcpInformers.ClusterWithContext(ctx, cluster).ForResource(gvr)
@@ -92,11 +92,9 @@ func (r *replication) reconcile(ctx context.Context, cachedResource *cachev1alph
 			return reconcileStatusStopAndRequeue, err
 		}
 		replicated := &replicationcontroller.ReplicatedGVR{
-			Kind:   replicatedKind.Kind,
-			Local:  local.Informer(),
-			Global: global.Informer(),
+			Kind:  replicatedKind.Kind,
+			Local: local.Informer(),
 		}
-		replicationcontroller.InstallIndexers(replicated)
 		callback := func() {
 			r.callback(cachedResource)
 		}
@@ -105,6 +103,7 @@ func (r *replication) reconcile(ctx context.Context, cachedResource *cachev1alph
 			r.shardName,
 			r.dynamicClusterClient,
 			r.kcpCacheClient,
+			cachedObjectsInformer,
 			gvr,
 			replicated,
 			callback,
@@ -116,9 +115,8 @@ func (r *replication) reconcile(ctx context.Context, cachedResource *cachev1alph
 		}
 
 		go replicated.Local.Run(ctx.Done())
-		go replicated.Global.Run(ctx.Done())
 
-		if !cache.WaitForCacheSync(ctx.Done(), replicated.Local.HasSynced, replicated.Global.HasSynced) {
+		if !cache.WaitForCacheSync(ctx.Done(), replicated.Local.HasSynced, cachedObjectsInformer.Informer().HasSynced) {
 			cancel()
 			return reconcileStatusContinue, fmt.Errorf("failed to wait for informers to sync")
 		}
