@@ -154,7 +154,7 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 			}
 			annotations[genericrequest.ShardAnnotationKey] = c.shardName
 			annotations[AnnotationKeyOriginalResourceUID] = string(obj.GetUID())
-			annotations[AnnotationKeyOriginalResourceVersion] = string(obj.GetResourceVersion())
+			annotations[AnnotationKeyOriginalResourceVersion] = obj.GetResourceVersion()
 			obj.SetAnnotations(annotations)
 
 			return obj, nil
