@@ -53,6 +53,7 @@ import (
 	"github.com/kcp-dev/kcp/pkg/admission/initializers"
 	"github.com/kcp-dev/kcp/pkg/admission/kubequota"
 	kcpfeatures "github.com/kcp-dev/kcp/pkg/features"
+	"github.com/kcp-dev/kcp/pkg/tombstone"
 )
 
 const PluginName = "KCPMutatingAdmissionPolicy"
@@ -125,11 +126,7 @@ func (k *KubeMutatingAdmissionPolicy) SetKcpInformers(local, global kcpinformers
 	_, _ = local.Core().V1alpha1().LogicalClusters().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			DeleteFunc: func(obj interface{}) {
-				cl, ok := obj.(*corev1alpha1.LogicalCluster)
-				if !ok {
-					return
-				}
-
+				cl := tombstone.Obj[*corev1alpha1.LogicalCluster](obj)
 				clName := logicalcluster.Name(cl.Annotations[logicalcluster.AnnotationKey])
 
 				k.delegatesLock.Lock()
@@ -250,6 +247,7 @@ func (k *KubeMutatingAdmissionPolicy) getOrCreateDelegate(policyClusterName, tar
 
 	plugin, err := mutating.NewPlugin(nil)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
