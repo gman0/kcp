@@ -25,6 +25,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 	apisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
@@ -72,7 +73,7 @@ func TestNameConflictCheckerGetBoundCRDs(t *testing.T) {
 		"export2-schema3": {ObjectMeta: metav1.ObjectMeta{UID: "e2-s3"}},
 	}
 
-	ncc, err := newConflictChecker("root:org:ws",
+	ncc, err := newConflictChecker(klog.Background(), "root:org:ws",
 		func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIBinding, error) {
 			return []*apisv1alpha2.APIBinding{
 				newAPIBinding,
@@ -257,7 +258,7 @@ func TestCRDs(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			t.Parallel()
-			c, err := newConflictChecker(logicalcluster.From(scenario.binding),
+			c, err := newConflictChecker(klog.Background(), logicalcluster.From(scenario.binding),
 				func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIBinding, error) {
 					return nil, nil
 				},

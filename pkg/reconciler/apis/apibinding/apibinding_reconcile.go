@@ -327,7 +327,7 @@ func (r *bindingReconciler) reconcile(ctx context.Context, apiBinding *apisv1alp
 		return reconcileStatusContinue, err
 	}
 
-	checker, err := newConflictChecker(logicalcluster.From(apiBinding), r.listAPIBindings, r.getAPIResourceSchema, r.getCRD, r.listCRDs)
+	checker, err := newConflictChecker(logger, logicalcluster.From(apiBinding), r.listAPIBindings, r.getAPIResourceSchema, r.getCRD, r.listCRDs)
 	if err != nil {
 		return reconcileStatusContinue, err
 	}

@@ -21,7 +21,9 @@ import (
 	"sort"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/logicalcluster/v3"
 	apisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
@@ -47,7 +49,7 @@ type conflictChecker struct {
 }
 
 // newConflictChecker creates a CRD conflict checker for the given cluster.
-func newConflictChecker(clusterName logicalcluster.Name,
+func newConflictChecker(logger klog.Logger, clusterName logicalcluster.Name,
 	listAPIBindings func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIBinding, error),
 	getAPIResourceSchema func(clusterName logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error),
 	getCRD func(clusterName logicalcluster.Name, name string) (*apiextensionsv1.CustomResourceDefinition, error),
@@ -70,6 +72,10 @@ func newConflictChecker(clusterName logicalcluster.Name,
 	for _, b := range bindings {
 		for _, br := range b.Status.BoundResources {
 			crd, err := ncc.getCRD(SystemBoundCRDsClusterName, br.Schema.UID)
+			if errors.IsNotFound(err) {
+				logger.V(4).Info("bound CRD not found, skipping", "binding", b.Name, "schema", br.Schema.UID)
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
