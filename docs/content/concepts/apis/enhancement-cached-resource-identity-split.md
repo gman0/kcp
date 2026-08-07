@@ -25,7 +25,7 @@ The identity hash is the public discriminator: two workspaces that independently
 
 ### Problems
 
-**No cross-workspace identity delegation.** When a service provider wants multiple workspaces to replicate the same resource under a shared, well-known identity hash (e.g., a provider shard and a DR shard), they must copy the raw identity secret. There is no first-class way to grant another workspace the right to replicate under a given identity without exposing the private key.
+**No cross-workspace identity delegation.** Because the identity hash is the etcd namespace prefix, multiple workspaces replicating under the same identity hash have their objects aggregated under a single prefix in the cache — enabling a consumer to list and watch the resource across all contributing workspaces in one query. Today there is no first-class way for an identity owner to grant another workspace the right to replicate under that identity without copying the raw secret, so this cross-workspace aggregation pattern is impossible to enable safely.
 
 **Coupling of definition and activation.** Creating the current object immediately starts replication. There is no way to define the identity up front (e.g., as part of API-definition bootstrapping) and let consumers opt in to replication separately, with auditable per-workspace lifecycle.
 
