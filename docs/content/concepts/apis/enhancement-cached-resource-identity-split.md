@@ -21,11 +21,11 @@ A single `ClusterCachedResource` object does two things at once:
 1. It establishes a group-resource ↔ identity binding (the identity key is a secret whose SHA-256 hash appears in every etcd path for objects replicated under that resource).
 2. It immediately triggers replication of matching objects into the cache.
 
-The identity hash is the public discriminator: two workspaces that independently cache `cpuflavors.cloud.example.com` will store their copies under different paths in etcd precisely because they have different identities. The identity **key** (the private secret) must never leak, but there is currently no mechanism for one workspace to assert "only I may replicate under this identity hash."
+The identity hash is the public discriminator: two workspaces that independently cache `cpuflavors.cloud.example.com` will store their copies under different paths in etcd precisely because they have different identities. The identity **key** (the private secret) is what grants the ability to replicate under a given hash — whoever holds it can write to that prefix.
 
 ### Problems
 
-**No cross-workspace identity delegation.** Because the identity hash is the etcd namespace prefix, multiple workspaces replicating under the same identity hash have their objects aggregated under a single prefix in the cache — enabling a consumer to list and watch the resource across all contributing workspaces in one query. Today there is no first-class way for an identity owner to grant another workspace the right to replicate under that identity without copying the raw secret, so this cross-workspace aggregation pattern is impossible to enable safely.
+**No cross-workspace identity delegation.** Because the identity hash is the etcd namespace prefix, multiple workspaces replicating under the same identity hash have their objects aggregated under a single prefix in the cache — enabling a consumer to list and watch the resource across all contributing workspaces in one query. Today the only way to let another workspace contribute to the same prefix is to hand over the raw secret, which defeats the purpose of keeping it private. There is no first-class way to delegate that right safely.
 
 **Coupling of definition and activation.** Creating the current object immediately starts replication. There is no way to define the identity up front (e.g., as part of API-definition bootstrapping) and let consumers opt in to replication separately, with auditable per-workspace lifecycle.
 
