@@ -2,7 +2,15 @@
 
 ## Status
 
-Draft
+Draft.
+
+## Implementation status
+
+Not yet implemented. The following changes are pending:
+
+- **`spec.version` removal.** `ClusterCachedResourceSpec` still embeds `GroupVersionResource` which includes a `Version` field. The admission uniqueness check still keys on the full GVR.
+- **`spec.identity` immutability.** The admission plugin (`pkg/admission/clustercachedresource/admission.go`) does not yet enforce immutability of `spec.identity.secretRef` once the object is `Ready`.
+- **`status.identityHashes`.** Only the singular `status.identityHash` scalar exists. The `[]string` set field and the corresponding cache-server index update are not yet added.
 
 ## Summary
 

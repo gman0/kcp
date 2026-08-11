@@ -2,7 +2,14 @@
 
 ## Status
 
-Draft
+Draft.
+
+## Implementation status
+
+Not yet implemented. The following changes are pending:
+
+- **`list`+`watch` SAR checks.** The `ClusterCachedResource` admission plugin (`pkg/admission/clustercachedresource/admission.go`) does not yet issue `SubjectAccessReview` calls for the target resource on pre-create.
+- **`CachedAPIsRBAC` feature gate.** The gate does not yet exist; no gating logic is wired into the admission path.
 
 ## Summary
 
