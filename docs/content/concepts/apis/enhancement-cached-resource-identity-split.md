@@ -140,7 +140,7 @@ Identity rotation is not implemented by this enhancement, but the design is laid
 No change to the storage format. The consumer controller resolves the definition's identity hash and constructs the etcd key as today:
 
 ```
-/<prefix>/<group>/<resource>:<identityHash>/<shard>/...
+/<prefix>/<group>/<resource>/<identityHash>/<shard>/...
 ```
 
 Version has never appeared in this path; the cache server stores whichever version is the storage version of the resource. This is consistent with removing version from the API surface entirely.
