@@ -56,11 +56,11 @@ func Register(plugins *admission.Plugins) {
 			p := &ClusterCachedResourceAdmission{
 				Handler: admission.NewHandler(admission.Create),
 			}
-			p.listClusterCachedResourcesByGVR = func(cluster logicalcluster.Name, gvr schema.GroupVersionResource) ([]*cachev1alpha1.ClusterCachedResource, error) {
+			p.listClusterCachedResourcesByGR = func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*cachev1alpha1.ClusterCachedResource, error) {
 				return indexers.ByIndex[*cachev1alpha1.ClusterCachedResource](
 					p.localClusterCachedResourcesIndexer,
-					clustercachedresourcesreconciler.ByGVRAndLogicalCluster,
-					clustercachedresourcesreconciler.GVRAndLogicalClusterKey(gvr, cluster),
+					clustercachedresourcesreconciler.ByGRAndLogicalCluster,
+					clustercachedresourcesreconciler.GRAndLogicalClusterKey(gr, cluster),
 				)
 			}
 
@@ -72,7 +72,7 @@ func Register(plugins *admission.Plugins) {
 type ClusterCachedResourceAdmission struct {
 	*admission.Handler
 
-	listClusterCachedResourcesByGVR    func(cluster logicalcluster.Name, gvr schema.GroupVersionResource) ([]*cachev1alpha1.ClusterCachedResource, error)
+	listClusterCachedResourcesByGR     func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*cachev1alpha1.ClusterCachedResource, error)
 	localClusterCachedResourcesIndexer cache.Indexer
 
 	dynamicRESTMapper *dynamicrestmapper.DynamicRESTMapper
@@ -85,7 +85,7 @@ func (adm *ClusterCachedResourceAdmission) SetKcpInformers(local, global kcpinfo
 	adm.localClusterCachedResourcesIndexer = local.Cache().V1alpha1().ClusterCachedResources().Informer().GetIndexer()
 
 	indexers.AddIfNotPresentOrDie(local.Cache().V1alpha1().ClusterCachedResources().Informer().GetIndexer(), cache.Indexers{
-		clustercachedresourcesreconciler.ByGVRAndLogicalCluster: clustercachedresourcesreconciler.IndexByGVRAndLogicalCluster,
+		clustercachedresourcesreconciler.ByGRAndLogicalCluster: clustercachedresourcesreconciler.IndexByGRAndLogicalCluster,
 	})
 }
 
@@ -129,13 +129,16 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 		return apierrors.NewInternalError(err)
 	}
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gr := schema.GroupResource{
+		Group:    clusterCachedResource.Spec.Group,
+		Resource: clusterCachedResource.Spec.Resource,
+	}
 
-	// We check that the resource in the ClusterCachedResource is cluster-scoped.
-	// This is only advisory as the real check is done by ClusterCachedResource's controller,
-	// which sets a condition if the resource is not cluster-scoped.
+	// Advisory scope check — use a partial GVR (no version) so the REST mapper resolves
+	// the preferred version. Errors are ignored: the controller will set a condition if needed.
+	partialGVR := schema.GroupVersionResource{Group: gr.Group, Resource: gr.Resource}
 	scopedDynRESTMapper := adm.dynamicRESTMapper.ForCluster(clusterName)
-	kind, err := scopedDynRESTMapper.KindFor(gvr)
+	kind, err := scopedDynRESTMapper.KindFor(partialGVR)
 	if err == nil {
 		mapping, err := scopedDynRESTMapper.RESTMapping(kind.GroupKind(), kind.Version)
 		if err == nil {
@@ -143,7 +146,7 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 				return admission.NewForbidden(a,
 					field.Invalid(
 						field.NewPath("spec"),
-						gvr.GroupResource().String(),
+						gr.String(),
 						"Resource referenced in ClusterCachedResource must be cluster-scoped",
 					),
 				)
@@ -151,12 +154,12 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 		}
 	}
 
-	existing, err := adm.listClusterCachedResourcesByGVR(clusterName, gvr)
+	existing, err := adm.listClusterCachedResourcesByGR(clusterName, gr)
 	if err != nil {
 		return err
 	}
 
-	// Make sure there is at most one ClusterCachedResource per GVR. An entry that
+	// Make sure there is at most one ClusterCachedResource per group+resource. An entry that
 	// matches the incoming object's name is not a real conflict — it is a
 	// re-apply of the same object, which the storage layer will surface
 	// naturally as AlreadyExists. Rejecting here would mask that error
@@ -168,8 +171,8 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 		return admission.NewForbidden(a,
 			field.Invalid(
 				field.NewPath("spec"),
-				fmt.Sprintf("%s.%s.%s", gvr.Group, gvr.Version, gvr.Resource),
-				fmt.Sprintf("ClusterCachedResource with this GVR already exists in the %q workspace", clusterName)),
+				gr.String(),
+				fmt.Sprintf("ClusterCachedResource for this group+resource already exists in the %q workspace", clusterName)),
 		)
 	}
 

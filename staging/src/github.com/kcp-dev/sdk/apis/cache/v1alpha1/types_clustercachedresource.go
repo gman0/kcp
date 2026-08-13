@@ -46,8 +46,9 @@ type ClusterCachedResource struct {
 
 // ClusterCachedResourceSpec defines the desired state of ClusterCachedResource.
 type ClusterCachedResourceSpec struct {
-	// GroupVersionResource is the fully qualified name of the resource to be published.
-	GroupVersionResource `json:",inline"`
+	// GroupResource is the group and resource name of the resource to be published.
+	// The version to replicate is discovered automatically from the API server's preferred version.
+	GroupResource `json:",inline"`
 
 	// identity points to a secret that contains the API identity in the 'key' file.
 	// The API identity allows access to ClusterCachedResource's resources via the APIExport.
@@ -76,18 +77,15 @@ type Identity struct {
 	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
 }
 
-// GroupVersionResource identifies a resource.
-type GroupVersionResource struct {
+// GroupResource identifies a resource by group and resource name.
+// The version is not part of the spec; it is discovered at runtime from the API server's preferred version.
+type GroupResource struct {
 	// group is the name of an API group.
 	// For core groups this is the empty string '""'.
 	//
 	// +kubebuilder:validation:Pattern=`^(|[a-z0-9]([-a-z0-9]*[a-z0-9](\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?)$`
 	// +optional
 	Group string `json:"group,omitempty"`
-
-	// version is the version of the resource.
-	// +optional
-	Version string `json:"version,omitempty"`
 
 	// resource is the name of the resource.
 	// Note: it is worth noting that you can not ask for permissions for resource provided by a CRD
@@ -158,6 +156,13 @@ type ClusterCachedResourceStatus struct {
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
 
+	// ReplicatedVersions lists the API versions that currently have objects stored in the cache.
+	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
+	// objects have been drained. This field drives the set of versions served by the synthetic
+	// CRD in the cache server.
+	// +optional
+	ReplicatedVersions []string `json:"replicatedVersions,omitempty"`
+
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//
 	// +kubebuilder:default=Initializing
@@ -209,10 +214,10 @@ func (in *ClusterCachedResource) GetConditions() conditionsv1alpha1.Conditions {
 	return in.Status.Conditions
 }
 
-func (in GroupVersionResource) GetGroup() string {
+func (in GroupResource) GetGroup() string {
 	return in.Group
 }
 
-func (in GroupVersionResource) GetResource() string {
+func (in GroupResource) GetResource() string {
 	return in.Resource
 }

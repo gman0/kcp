@@ -28,11 +28,11 @@ import (
 
 // counters counts the number of resources in the local and cache and updates the status.
 type counter struct {
-	listSelectedLocalResources         func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error)
-	listSelectedClusterCachedResources func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error)
+	listSelectedLocalResources         func(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error)
+	listSelectedClusterCachedResources func(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error)
 }
 
-func (r *counter) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *counter) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	if clusterCachedResource.Status.ResourceCounts == nil {
 		clusterCachedResource.Status.ResourceCounts = &cachev1alpha1.ResourceCount{
 			Cache: 0,
@@ -40,12 +40,12 @@ func (r *counter) reconcile(ctx context.Context, clusterCachedResource *cachev1a
 		}
 	}
 
-	selectedLocalResources, err := r.listSelectedLocalResources(ctx, clusterCachedResource)
+	selectedLocalResources, err := r.listSelectedLocalResources(ctx, rctx, clusterCachedResource)
 	if err != nil && !errors.IsNotFound(err) {
 		return reconcileStatusContinue, err
 	}
 
-	selectedCacheResources, err := r.listSelectedClusterCachedResources(ctx, clusterCachedResource)
+	selectedCacheResources, err := r.listSelectedClusterCachedResources(ctx, rctx, clusterCachedResource)
 	if err != nil && !errors.IsNotFound(err) {
 		return reconcileStatusContinue, err
 	}

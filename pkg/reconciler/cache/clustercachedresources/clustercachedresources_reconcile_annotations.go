@@ -42,19 +42,18 @@ type reconcileResourceMetadata struct {
 	getRESTScope func(cluster logicalcluster.Name, gvr schema.GroupVersionResource) (meta.RESTScope, error)
 }
 
-func (r *reconcileResourceMetadata) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *reconcileResourceMetadata) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	if !clusterCachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
 	clusterName := logicalcluster.From(clusterCachedResource)
 
-	kind, err := r.getKind(clusterName, gvr)
+	kind, err := r.getKind(clusterName, rctx.resolvedGVR)
 	if err != nil {
 		return reconcileStatusStopAndRequeue, err
 	}
-	restScope, err := r.getRESTScope(clusterName, gvr)
+	restScope, err := r.getRESTScope(clusterName, rctx.resolvedGVR)
 	if err != nil {
 		return reconcileStatusStopAndRequeue, err
 	}

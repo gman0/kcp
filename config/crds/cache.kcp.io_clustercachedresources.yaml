@@ -137,9 +137,6 @@ spec:
                   not provided by an api export.
                 pattern: ^[a-z][-a-z0-9]*[a-z0-9]$
                 type: string
-              version:
-                description: version is the version of the resource.
-                type: string
             required:
             - resource
             type: object
@@ -205,6 +202,15 @@ spec:
                 - Deleting
                 - Deleted
                 type: string
+              replicatedVersions:
+                description: |-
+                  ReplicatedVersions lists the API versions that currently have objects stored in the cache.
+                  Analogous to CRD.status.storedVersions: a version is removed only after all its cached
+                  objects have been drained. This field drives the set of versions served by the synthetic
+                  CRD in the cache server.
+                items:
+                  type: string
+                type: array
               resourceCounts:
                 description: ResourceCount is the number of resources that match the
                   label selector

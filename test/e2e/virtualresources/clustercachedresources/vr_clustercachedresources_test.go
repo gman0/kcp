@@ -133,9 +133,8 @@ func TestClusterCachedResources(t *testing.T) {
 				Name: gr.String(),
 			},
 			Spec: cachev1alpha1.ClusterCachedResourceSpec{
-				GroupVersionResource: cachev1alpha1.GroupVersionResource{
+				GroupResource: cachev1alpha1.GroupResource{
 					Group:    "wildwest.dev",
-					Version:  "v1alpha1",
 					Resource: resourceName,
 				},
 			},

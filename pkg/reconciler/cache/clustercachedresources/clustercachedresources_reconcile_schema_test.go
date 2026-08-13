@@ -36,6 +36,7 @@ func TestSchema(t *testing.T) {
 	tests := map[string]struct {
 		ClusterCachedResource *cachev1alpha1.ClusterCachedResource
 		reconciler            *validSchema
+		resolvedGVR           schema.GroupVersionResource
 		expectedErr           error
 		expectedStatus        reconcileStatus
 		expectedConditions    conditionsv1alpha1.Conditions
@@ -43,13 +44,13 @@ func TestSchema(t *testing.T) {
 		"resource not found": {
 			ClusterCachedResource: &cachev1alpha1.ClusterCachedResource{
 				Spec: cachev1alpha1.ClusterCachedResourceSpec{
-					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+					GroupResource: cachev1alpha1.GroupResource{
 						Group:    "none",
-						Version:  "v1",
 						Resource: "nonexistent",
 					},
 				},
 			},
+			resolvedGVR: schema.GroupVersionResource{Group: "none", Version: "v1", Resource: "nonexistent"},
 			reconciler: &validSchema{
 				getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 					return nil, &meta.NoResourceMatchError{PartialResource: gvr}
@@ -60,13 +61,13 @@ func TestSchema(t *testing.T) {
 		"resource is namespace-scoped and check fails": {
 			ClusterCachedResource: &cachev1alpha1.ClusterCachedResource{
 				Spec: cachev1alpha1.ClusterCachedResourceSpec{
-					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+					GroupResource: cachev1alpha1.GroupResource{
 						Group:    "foo.dev",
-						Version:  "v1",
 						Resource: "namespaced",
 					},
 				},
 			},
+			resolvedGVR: schema.GroupVersionResource{Group: "foo.dev", Version: "v1", Resource: "namespaced"},
 			reconciler: &validSchema{
 				getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 					return meta.RESTScopeNamespace, nil
@@ -85,13 +86,13 @@ func TestSchema(t *testing.T) {
 		"resource is cluster-scoped and check succeeds": {
 			ClusterCachedResource: &cachev1alpha1.ClusterCachedResource{
 				Spec: cachev1alpha1.ClusterCachedResourceSpec{
-					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+					GroupResource: cachev1alpha1.GroupResource{
 						Group:    "foo.dev",
-						Version:  "v1",
 						Resource: "clusterscoped",
 					},
 				},
 			},
+			resolvedGVR: schema.GroupVersionResource{Group: "foo.dev", Version: "v1", Resource: "clusterscoped"},
 			reconciler: &validSchema{
 				getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 					return meta.RESTScopeRoot, nil
@@ -104,7 +105,8 @@ func TestSchema(t *testing.T) {
 	for testName, tt := range tests {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			status, err := tt.reconciler.reconcile(context.Background(), tt.ClusterCachedResource)
+			rctx := &reconcileContext{resolvedGVR: tt.resolvedGVR}
+			status, err := tt.reconciler.reconcile(context.Background(), rctx, tt.ClusterCachedResource)
 
 			resetLastTransitionTime(tt.expectedConditions)
 			resetLastTransitionTime(tt.ClusterCachedResource.Status.Conditions)

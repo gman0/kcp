@@ -154,7 +154,7 @@ func (c *crdLister) List(ctx context.Context, selector labels.Selector) ([]*apie
 			cr.Status.IdentityHash == "" {
 			continue
 		}
-		crs, err := c.listClusterCachedResourcesByIdentityAndGR(cr.Status.IdentityHash, schema.GroupVersionResource(cr.Spec.GroupVersionResource).GroupResource())
+		crs, err := c.listClusterCachedResourcesByIdentityAndGR(cr.Status.IdentityHash, schema.GroupResource{Group: cr.Spec.Group, Resource: cr.Spec.Resource})
 		if err != nil {
 			return nil, err
 		}
@@ -356,10 +356,11 @@ func (c *crdClusterLister) synthesizeCRDForClusterCachedResources(crs []*cachev1
 	scope := apiextensionsv1.ResourceScope(crs[0].Annotations[clustercachedresources.AnnotationResourceScope])
 	identity := crs[0].Status.IdentityHash
 
-	versionSet := make(map[string]struct{}, len(crs))
+	versionSet := make(map[string]struct{})
 	for _, cr := range crs {
-		gvr := schema.GroupVersionResource(cr.Spec.GroupVersionResource)
-		versionSet[gvr.Version] = struct{}{}
+		for _, v := range cr.Status.ReplicatedVersions {
+			versionSet[v] = struct{}{}
+		}
 	}
 	if len(versionSet) == 0 {
 		return nil, apierrors.NewNotFound(apiextensionsv1.Resource("customresourcedefinitions"), gr.String())

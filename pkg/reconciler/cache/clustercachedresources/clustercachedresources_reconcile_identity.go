@@ -40,7 +40,7 @@ type identityReconciler struct {
 	secretNamespace string
 }
 
-func (r *identityReconciler) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *identityReconciler) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	if !clusterCachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}

@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -45,6 +46,7 @@ import (
 	cacheinformers "github.com/kcp-dev/sdk/client/informers/externalversions/cache/v1alpha1"
 	cachev1alpha1listers "github.com/kcp-dev/sdk/client/listers/cache/v1alpha1"
 
+	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	replicationcontroller "github.com/kcp-dev/kcp/pkg/reconciler/cache/clustercachedresources/replication"
@@ -210,6 +212,26 @@ func (c *Controller) Start(ctx context.Context, numThreads int) {
 	logger.Info("Starting controller")
 	defer logger.Info("Shutting down controller")
 
+	// When a GVR disappears from the local API (e.g. a CRD version is removed), re-enqueue
+	// all ClusterCachedResources that reference that group+resource so they re-discover the
+	// new preferred version.
+	c.localDiscoveringDynamicKcpInformers.AddGVRLifecycleHandler(ctx, informer.GVRLifecycleHandlerFuncs{
+		RemovedFunc: func(gvr schema.GroupVersionResource) {
+			ccrs, err := indexers.ByIndex[*cachev1alpha1.ClusterCachedResource](
+				c.ClusterCachedResourceIndexer,
+				ByGroupResource,
+				GroupResourceKey(gvr.GroupResource()),
+			)
+			if err != nil {
+				utilruntime.HandleError(fmt.Errorf("failed to list ClusterCachedResources for removed GVR %v: %w", gvr, err))
+				return
+			}
+			for _, ccr := range ccrs {
+				c.enqueue(ccr)
+			}
+		},
+	})
+
 	for range numThreads {
 		go wait.Until(func() { c.startWorker(ctx) }, time.Second, ctx.Done())
 	}
@@ -289,6 +311,7 @@ func newRegistry() *controllerRegistry {
 	return &controllerRegistry{
 		controllers: make(map[string]*replicationcontroller.Controller),
 		cancels:     make(map[string]context.CancelFunc),
+		gvrs:        make(map[string]schema.GroupVersionResource),
 	}
 }
 
@@ -296,19 +319,28 @@ type controllerRegistry struct {
 	mu          sync.RWMutex
 	controllers map[string]*replicationcontroller.Controller
 	cancels     map[string]context.CancelFunc
+	gvrs        map[string]schema.GroupVersionResource
 }
 
-func (c *controllerRegistry) register(name string, controller *replicationcontroller.Controller, cancel context.CancelFunc) {
+func (c *controllerRegistry) register(name string, controller *replicationcontroller.Controller, cancel context.CancelFunc, gvr schema.GroupVersionResource) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.controllers[name] = controller
 	c.cancels[name] = cancel
+	c.gvrs[name] = gvr
 }
 
 func (c *controllerRegistry) get(name string) *replicationcontroller.Controller {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.controllers[name]
+}
+
+func (c *controllerRegistry) getGVR(name string) (schema.GroupVersionResource, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	gvr, ok := c.gvrs[name]
+	return gvr, ok
 }
 
 func (c *controllerRegistry) unregister(name string) {
@@ -321,4 +353,5 @@ func (c *controllerRegistry) unregister(name string) {
 	}
 	delete(c.controllers, name)
 	delete(c.cancels, name)
+	delete(c.gvrs, name)
 }

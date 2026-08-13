@@ -104,25 +104,25 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 		return err
 	}
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gr := schema.GroupResource{Group: clusterCachedResource.Spec.Group, Resource: clusterCachedResource.Spec.Resource}
 
-	hasVersionMatch := false
+	hasServedVersion := false
 	for i := range sch.Spec.Versions {
-		if sch.Spec.Versions[i].Served && sch.Spec.Versions[i].Name == gvr.Version {
-			hasVersionMatch = true
+		if sch.Spec.Versions[i].Served {
+			hasServedVersion = true
 			break
 		}
 	}
-	if !hasVersionMatch {
-		logger.Error(nil, "referenced APIResourceSchema doesn't serve required version", "gvr", gvr.String())
-		return fmt.Errorf("APIResourceSchema %s|%s doesn't serve %s", logicalcluster.From(sch), sch.Name, gvr)
+	if !hasServedVersion {
+		logger.Error(nil, "referenced APIResourceSchema has no served versions", "gr", gr.String())
+		return fmt.Errorf("APIResourceSchema %s|%s has no served versions", logicalcluster.From(sch), sch.Name)
 	}
 
-	logger.Info("creating API definition", "gvr", gvr)
+	logger.Info("creating API definition", "gr", gr)
 	apiDefinition, err := c.createAPIDefinition(sch, clusterCachedResource, export)
 	if err != nil {
 		// TODO(ncdc): would be nice to expose some sort of user-visible error
-		logger.Error(err, "error creating api definition", "gvr", gvr)
+		logger.Error(err, "error creating api definition", "gr", gr)
 		return err
 	}
 
@@ -131,7 +131,7 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 		if !version.Served {
 			continue
 		}
-		apiSet[gvr.GroupResource().WithVersion(version.Name)] = apiResourceSchemaApiDefinition{
+		apiSet[gr.WithVersion(version.Name)] = apiResourceSchemaApiDefinition{
 			APIDefinition: apiDefinition,
 			UID:           sch.UID,
 			IdentityHash:  clusterCachedResource.Status.IdentityHash,

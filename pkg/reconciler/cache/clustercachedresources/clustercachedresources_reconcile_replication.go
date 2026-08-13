@@ -19,9 +19,9 @@ package clustercachedresources
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
@@ -52,26 +52,41 @@ type replication struct {
 	controllerRegistry                   *controllerRegistry
 }
 
-func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *replication) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	logger := klog.FromContext(ctx)
 	logger.Info("reconciling cached resource", "ClusterCachedResource", clusterCachedResource.Name)
 
-	gvr := schema.GroupVersionResource{
-		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
-		Resource: clusterCachedResource.Spec.Resource,
-	}
+	gvr := rctx.resolvedGVR
 	cluster := logicalcluster.From(clusterCachedResource)
+
+	// Controller is keyed by name only — version is no longer part of the key.
+	controllerName := fmt.Sprintf("%s.%s", cluster, clusterCachedResource.Name)
 
 	var resourceLabelSelector labels.Selector
 	if clusterCachedResource.Spec.LabelSelector != nil {
 		resourceLabelSelector = labels.SelectorFromSet(clusterCachedResource.Spec.LabelSelector.MatchLabels)
 	}
 
-	clusterName := logicalcluster.From(clusterCachedResource)
-	controllerName := fmt.Sprintf("%s.%s.%s.%s.%s", clusterName, gvr.Version, gvr.Resource, gvr.Group, clusterCachedResource.Name)
-	// TODO: Add locking here when multiple workers are supported.
 	controller := r.controllerRegistry.get(controllerName)
+
+	// If a controller exists but its GVR differs from the resolved GVR, tear it down so we
+	// restart with the new preferred version.
+	if controller != nil {
+		if activeGVR, ok := r.controllerRegistry.getGVR(controllerName); ok && activeGVR != gvr {
+			logger.Info("preferred version changed, restarting replication controller",
+				"old", activeGVR.Version, "new", gvr.Version)
+			r.controllerRegistry.unregister(controllerName) // cancels the controller's context
+			r.localDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+			r.globalDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+			controller = nil
+		}
+	}
+
+	// Track the current version in status.ReplicatedVersions.
+	if gvr.Version != "" && !slices.Contains(clusterCachedResource.Status.ReplicatedVersions, gvr.Version) {
+		clusterCachedResource.Status.ReplicatedVersions = append(clusterCachedResource.Status.ReplicatedVersions, gvr.Version)
+	}
+
 	// We setup controller even if we are deleting. This is to ensure that we can purge the cache.
 	// If for some reason was dead, we will recreate it.
 	danglingResources := clusterCachedResource.Status.ResourceCounts != nil && clusterCachedResource.Status.ResourceCounts.Cache > 0
@@ -97,7 +112,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 			cancel()
 			return reconcileStatusStopAndRequeue, err
 		}
-		replicatedKind, err := r.dynRESTMapper.ForCluster(clusterName).KindFor(gvr)
+		replicatedKind, err := r.dynRESTMapper.ForCluster(cluster).KindFor(gvr)
 		if err != nil {
 			logger.Error(err, "Failed to get Kind for resource", "resource", gvr)
 			cancel()
@@ -134,7 +149,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		go replicated.Local.Run(ctx.Done())
 		go replicated.Global.Run(ctx.Done())
 
-		r.controllerRegistry.register(controllerName, c, cancel)
+		r.controllerRegistry.register(controllerName, c, cancel, gvr)
 		if clusterCachedResource.Status.Phase != cachev1alpha1.ClusterCachedResourcePhaseDeleting {
 			conditions.MarkTrue(clusterCachedResource, cachev1alpha1.ReplicationStarted)
 			clusterCachedResource.Status.Phase = cachev1alpha1.ClusterCachedResourcePhaseReady

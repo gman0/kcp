@@ -18,6 +18,7 @@ package builder
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -40,9 +41,9 @@ func provideReadOnlyRestStorage(
 ) (apidefinition.APIDefinition, error) {
 	ctx, cancelFn := context.WithCancel(context.Background())
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gr := schema.GroupResource{Group: clusterCachedResource.Spec.Group, Resource: clusterCachedResource.Spec.Resource}
 	identities := map[schema.GroupResource]string{
-		gvr.GroupResource(): clusterCachedResource.Status.IdentityHash,
+		gr: clusterCachedResource.Status.IdentityHash,
 	}
 
 	clientFunc := forwardingregistry.DynamicClusterClientFunc(func(_ context.Context) (kcpdynamic.ClusterInterface, error) {
@@ -60,7 +61,19 @@ func provideReadOnlyRestStorage(
 		return nil, err
 	}
 
-	def, err := apiserver.CreateServingInfoFor(mainConfig, apiResourceSchema, clusterCachedResource.Spec.Version, restProvider)
+	var preferredVersion string
+	for _, v := range apiResourceSchema.Spec.Versions {
+		if v.Served {
+			preferredVersion = v.Name
+			break
+		}
+	}
+	if preferredVersion == "" {
+		cancelFn()
+		return nil, fmt.Errorf("APIResourceSchema %s has no served versions", apiResourceSchema.Name)
+	}
+
+	def, err := apiserver.CreateServingInfoFor(mainConfig, apiResourceSchema, preferredVersion, restProvider)
 	if err != nil {
 		cancelFn()
 		return nil, err
