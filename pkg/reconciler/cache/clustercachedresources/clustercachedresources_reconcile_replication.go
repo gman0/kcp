@@ -102,7 +102,6 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		}
 
 		controllerCtx, cancel := context.WithCancel(ctx)
-
 		global, err := r.globalDiscoveringDynamicKcpInformers.ForResource(gvr)
 		if err != nil {
 			logger.Error(err, "Failed to get global informer for resource", "resource", gvr)
@@ -148,6 +147,12 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		)
 		if err != nil {
 			cancel()
+			// The informer may have been stopped by a previous controller teardown but not
+			// yet removed from the factory (ForgetResource is called asynchronously by the
+			// goroutine after c.Start returns). Remove it now so the next reconcile gets a
+			// fresh informer instead of the already-stopped one.
+			r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+			r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 			return reconcileStatusContinue, err
 		}
 
