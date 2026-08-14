@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
@@ -37,7 +38,6 @@ import (
 	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/logging"
-	replicationcontroller "github.com/kcp-dev/kcp/pkg/reconciler/cache/clustercachedresources/replication"
 )
 
 type reconcileStatus int
@@ -52,16 +52,29 @@ type reconciler interface {
 	reconcile(ctx context.Context, workspace *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error)
 }
 
-// reconcile reconciles the workspace objects. It is intended to be single reconciler for all the
-// workspace replated operations. For now it has single reconciler that updates the status of the
-// workspace based on the mount status.
 func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (bool, error) {
 	reconcilers := []reconciler{
+		// finalizer must be first: when it adds/removes the finalizer it returns StopAndRequeue,
+		// ensuring metadata changes are committed alone before versionResolver (a status change) runs.
 		&finalizer{},
+		&identityReconciler{
+			ensureSecretNamespaceExists: c.ensureSecretNamespaceExists,
+			getSecret:                   c.getSecret,
+			createIdentitySecret:        c.createIdentitySecret,
+			secretNamespace:             c.secretNamespace,
+		},
+		&versionResolver{
+			getServedGVKs: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]schema.GroupVersionKind, error) {
+				return c.dynRESTMapper.ForCluster(cluster).KindsFor(gr.WithVersion(""))
+			},
+			controllerRegistry:                   c.controllerRegistry,
+			localDiscoveringDynamicKcpInformers:  c.localDiscoveringDynamicKcpInformers,
+			globalDiscoveringDynamicKcpInformers: c.globalDiscoveringDynamicKcpInformers,
+		},
 		&validSchema{
 			getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 				scopedMapper := c.dynRESTMapper.ForCluster(logicalcluster.From(clusterCachedResource))
-				kind, err := scopedMapper.KindFor(schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource))
+				kind, err := scopedMapper.KindFor(gvr)
 				if err != nil {
 					return nil, err
 				}
@@ -88,12 +101,6 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 				return m.Scope, nil
 			},
 		},
-		&identityReconciler{
-			ensureSecretNamespaceExists: c.ensureSecretNamespaceExists,
-			getSecret:                   c.getSecret,
-			createIdentitySecret:        c.createIdentitySecret,
-			secretNamespace:             c.secretNamespace,
-		},
 		&purge{
 			deleteSelectedCacheResources: func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
 				return c.deleteSelectedCacheResources(ctx, cluster, clusterCachedResource)
@@ -117,6 +124,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 			globalDiscoveringDynamicKcpInformers: c.globalDiscoveringDynamicKcpInformers,
 			requeueSelf:                          c.enqueue,
 			controllerRegistry:                   c.controllerRegistry,
+			cacheApiExtensionsClusterClient:      c.cacheApiExtensionsClusterClient,
 		},
 	}
 
@@ -143,56 +151,58 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 }
 
 func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
-	gvr := schema.GroupVersionResource{
-		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
-		Resource: clusterCachedResource.Spec.Resource,
+	listOpts := metav1.ListOptions{}
+	if clusterCachedResource.Spec.LabelSelector != nil {
+		listOpts.LabelSelector = labels.SelectorFromSet(clusterCachedResource.Spec.LabelSelector.MatchLabels).String()
 	}
 
-	selection := replicationcontroller.SelectionFor(clusterCachedResource)
-
-	resources, err := c.localDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, selection.ListOptions())
+	gvr := schema.GroupVersionResource{
+		Group:    clusterCachedResource.Spec.Group,
+		Version:  clusterCachedResource.Status.StorageVersion,
+		Resource: clusterCachedResource.Spec.Resource,
+	}
+	resources, err := c.localDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, listOpts)
 	if err != nil {
 		return nil, err
 	}
-	// Names cannot go into the list options, so they are applied here.
-	resources.Items = selection.Filter(resources.Items)
 
 	return resources, nil
 }
 
 func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
-	gvr := schema.GroupVersionResource{
-		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
-		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
+	if clusterCachedResource.Status.StorageVersion == "" || clusterCachedResource.Status.IdentityHash == "" {
+		return nil
 	}
-	if gvr.Group == "" {
-		gvr.Group = "core"
+	return c.deleteCacheResourcesForVersion(ctx, cluster, clusterCachedResource.Status.StorageVersion, clusterCachedResource)
+}
+
+func (c *Controller) deleteCacheResourcesForVersion(ctx context.Context, cluster logicalcluster.Name, version string, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
+	group := clusterCachedResource.Spec.Group
+	if group == "" {
+		group = "core"
+	}
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
 
 	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
-	err := c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
-	return err
+	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 }
 
 func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
+	group := clusterCachedResource.Spec.Group
+	if group == "" {
+		group = "core"
+	}
 	gvr := schema.GroupVersionResource{
-		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
+		Group:    group,
+		Version:  clusterCachedResource.Status.StorageVersion,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
-	if gvr.Group == "" {
-		gvr.Group = "core"
-	}
-
 	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
-	resources, err := c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return resources, nil
+	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
 }
 
 func (c *Controller) ensureSecretNamespaceExists(ctx context.Context, clusterName logicalcluster.Name, defaultSecretNamespace string) {

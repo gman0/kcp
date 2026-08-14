@@ -19,6 +19,7 @@ package replication
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -83,6 +84,8 @@ func NewController(
 ) (*Controller, error) {
 	c := &Controller{
 		shardName: shardName,
+		cluster:   cluster,
+		gvr:       gvr,
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{
@@ -98,9 +101,19 @@ func NewController(
 		selection:                       selection,
 	}
 
-	localHandler, err := c.replicated.Local.AddEventHandler(cache.FilteringResourceEventHandler{
+	if err := c.installHandlers(gvr, replicated.Local, replicated.Global); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// installHandlers registers event handlers for the given GVR on local and global informers.
+// Must be called with c.mu held.
+func (c *Controller) installHandlers(gvr schema.GroupVersionResource, local, global cache.SharedIndexInformer) error {
+	localHandler, err := local.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			return getClusterNameFromObj(obj) == cluster
+			return getClusterNameFromObj(obj) == c.cluster
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj interface{}) { c.enqueueObject(obj, gvr, "local") },
@@ -109,15 +122,15 @@ func NewController(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	c.onShutdownFuncs = append(c.onShutdownFuncs, func() {
-		_ = c.replicated.Local.RemoveEventHandler(localHandler)
+		_ = local.RemoveEventHandler(localHandler)
 	})
 
-	globalHandler, err := c.replicated.Global.AddEventHandler(cache.FilteringResourceEventHandler{
+	globalHandler, err := global.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			return getClusterNameFromObj(obj) == cluster
+			return getClusterNameFromObj(obj) == c.cluster
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj interface{}) { c.enqueueObject(obj, gvr, "global") },
@@ -126,13 +139,21 @@ func NewController(
 		},
 	})
 	if err != nil {
-		return nil, err
+		_ = local.RemoveEventHandler(localHandler)
+		c.onShutdownFuncs = c.onShutdownFuncs[:len(c.onShutdownFuncs)-1]
+		return err
 	}
 	c.onShutdownFuncs = append(c.onShutdownFuncs, func() {
-		_ = c.replicated.Global.RemoveEventHandler(globalHandler)
+		_ = global.RemoveEventHandler(globalHandler)
 	})
+	return nil
+}
 
-	return c, nil
+// CurrentGVR returns the GVR this controller is currently replicating.
+func (c *Controller) CurrentGVR() schema.GroupVersionResource {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gvr
 }
 
 func (c *Controller) enqueueObject(obj interface{}, gvr schema.GroupVersionResource, source string) {
@@ -154,6 +175,8 @@ func (c *Controller) Start(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
 	defer func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		for _, cleanupFunc := range c.onShutdownFuncs {
 			cleanupFunc()
 		}
@@ -210,15 +233,31 @@ func (c *Controller) SetDeleted(ctx context.Context) {
 	c.deleted = true
 }
 
+// Shutdown removes event handlers and drains the queue. It is safe to call even if Start was
+// never called. Start's own defers call the same cleanup, so double-calling is harmless.
+func (c *Controller) Shutdown() {
+	c.mu.Lock()
+	funcs := c.onShutdownFuncs
+	c.mu.Unlock()
+	for _, f := range funcs {
+		f()
+	}
+	c.queue.ShutDown()
+}
+
 type Controller struct {
 	shardName string
+	cluster   logicalcluster.Name // logical cluster being replicated; used by UpdateGVR's filter closures
 	queue     workqueue.TypedRateLimitingInterface[string]
 
 	localDynamicClusterClient       kcpdynamic.ClusterInterface
 	globalDynamicClusterClient      kcpdynamic.ClusterInterface
 	cacheApiExtensionsClusterClient kcpapiextensionsclientset.ClusterInterface
 
+	// mu protects replicated, gvr, and onShutdownFuncs against concurrent UpdateGVR calls.
+	mu         sync.Mutex
 	replicated *ReplicatedGVR
+	gvr        schema.GroupVersionResource
 
 	// requeueSelf is called when we want to trigger parent object reconciliation.
 	// Cache state is being managed by child controller, so we need to trigger parent object reconciliation

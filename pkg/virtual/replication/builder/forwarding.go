@@ -35,14 +35,15 @@ func provideReadOnlyRestStorage(
 	mainConfig genericapiserver.CompletedConfig,
 	cacheDynamicClusterClient kcpdynamic.ClusterInterface,
 	apiResourceSchema *apisv1alpha1.APIResourceSchema,
+	version string,
 	clusterCachedResource *cachev1alpha1.ClusterCachedResource,
 	export *apisv1alpha2.APIExport,
 ) (apidefinition.APIDefinition, error) {
 	ctx, cancelFn := context.WithCancel(context.Background())
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gr := schema.GroupResource(clusterCachedResource.Spec.GroupResource)
 	identities := map[schema.GroupResource]string{
-		gvr.GroupResource(): clusterCachedResource.Status.IdentityHash,
+		gr: clusterCachedResource.Status.IdentityHash,
 	}
 
 	clientFunc := forwardingregistry.DynamicClusterClientFunc(func(_ context.Context) (kcpdynamic.ClusterInterface, error) {
@@ -60,7 +61,7 @@ func provideReadOnlyRestStorage(
 		return nil, err
 	}
 
-	def, err := apiserver.CreateServingInfoFor(mainConfig, apiResourceSchema, clusterCachedResource.Spec.Version, restProvider)
+	def, err := apiserver.CreateServingInfoFor(mainConfig, apiResourceSchema, version, restProvider)
 	if err != nil {
 		cancelFn()
 		return nil, err

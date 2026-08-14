@@ -27,8 +27,11 @@ import (
 //
 // ClusterCachedResourceSpec defines the desired state of ClusterCachedResource.
 type ClusterCachedResourceSpecApplyConfiguration struct {
-	// GroupVersionResource is the fully qualified name of the resource to be published.
-	GroupVersionResourceApplyConfiguration `json:",inline"`
+	// GroupResource is the group and resource name of the resource to be published.
+	GroupResourceApplyConfiguration `json:",inline"`
+	// version is the version of the resource to replicate and store.
+	// The effective version is in .status.storageVersion.
+	Version *string `json:"version,omitempty"`
 	// identity points to a secret that contains the API identity in the 'key' file.
 	// The API identity allows access to ClusterCachedResource's resources via the APIExport.
 	//
@@ -63,15 +66,7 @@ func ClusterCachedResourceSpec() *ClusterCachedResourceSpecApplyConfiguration {
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Group field is set to the value of the last call.
 func (b *ClusterCachedResourceSpecApplyConfiguration) WithGroup(value string) *ClusterCachedResourceSpecApplyConfiguration {
-	b.GroupVersionResourceApplyConfiguration.Group = &value
-	return b
-}
-
-// WithVersion sets the Version field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Version field is set to the value of the last call.
-func (b *ClusterCachedResourceSpecApplyConfiguration) WithVersion(value string) *ClusterCachedResourceSpecApplyConfiguration {
-	b.GroupVersionResourceApplyConfiguration.Version = &value
+	b.GroupResourceApplyConfiguration.Group = &value
 	return b
 }
 
@@ -79,7 +74,15 @@ func (b *ClusterCachedResourceSpecApplyConfiguration) WithVersion(value string) 
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Resource field is set to the value of the last call.
 func (b *ClusterCachedResourceSpecApplyConfiguration) WithResource(value string) *ClusterCachedResourceSpecApplyConfiguration {
-	b.GroupVersionResourceApplyConfiguration.Resource = &value
+	b.GroupResourceApplyConfiguration.Resource = &value
+	return b
+}
+
+// WithVersion sets the Version field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Version field is set to the value of the last call.
+func (b *ClusterCachedResourceSpecApplyConfiguration) WithVersion(value string) *ClusterCachedResourceSpecApplyConfiguration {
+	b.Version = &value
 	return b
 }
 

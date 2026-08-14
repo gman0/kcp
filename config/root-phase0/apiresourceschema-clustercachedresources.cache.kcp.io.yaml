@@ -1,7 +1,7 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260814-239feb181.clustercachedresources.cache.kcp.io
+  name: v260819-b4fe2e383.clustercachedresources.cache.kcp.io
 spec:
   group: cache.kcp.io
   names:
@@ -149,11 +149,18 @@ spec:
               pattern: ^[a-z][-a-z0-9]*[a-z0-9]$
               type: string
             version:
-              description: version is the version of the resource.
+              description: |-
+                version is the version of the resource to replicate and store.
+                The effective version is in .status.storageVersion.
+              pattern: ^v[0-9]+(alpha[0-9]+|beta[0-9]+)?$
               type: string
           required:
           - resource
+          - version
           type: object
+          x-kubernetes-validations:
+          - message: API group and resource must not be changed
+            rule: self.resource == oldSelf.resource && self.group == oldSelf.group
         status:
           description: ClusterCachedResourceStatus defines the observed state of ClusterCachedResource.
           properties:
@@ -227,6 +234,18 @@ spec:
               - cache
               - local
               type: object
+            storageVersion:
+              description: StorageVersion is the API version currently being replicated.
+              type: string
+            storedVersions:
+              description: |-
+                StoredVersions lists all versions of cached resources that were ever persisted. Tracking
+                these versions allows a migration path for stored versions in etcd. The field is mutable
+                so a migration controller can finish a migration to another version (ensuring no old objects
+                are left in storage), and then remove the rest of the versions from this list.
+              items:
+                type: string
+              type: array
           type: object
       required:
       - spec
