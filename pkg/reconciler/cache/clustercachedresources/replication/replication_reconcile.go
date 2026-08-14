@@ -52,8 +52,23 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 	}
 	gvrParts := strings.SplitN(keyParts[0], ".", 3)
 	gvrFromKey := schema.GroupVersionResource{Version: gvrParts[0], Resource: gvrParts[1], Group: gvrParts[2]}
+
+	// Snapshot replicated and currentGVR under the lock to prevent data races with UpdateGVR.
+	c.mu.Lock()
+	replicated := c.replicated
+	currentGVRVersion := c.gvr.Version
+	c.mu.Unlock()
+
+	// Discard events whose version no longer matches the active GVR. After a version switch
+	// via UpdateGVR the queue may still contain old-version keys; processing them against the
+	// new informer store would produce spurious "not found" results and risk incorrect
+	// cache-object deletion.
+	if gvrFromKey.Version != currentGVRVersion {
+		return nil
+	}
+
 	gvrWithIdentity := gvrFromKey
-	gvrWithIdentity.Resource += ":" + c.replicated.Identity
+	gvrWithIdentity.Resource += ":" + replicated.Identity
 
 	// Key will present in the form of namespace/name in the current logical cluster.
 	key := keyParts[1]
@@ -64,7 +79,7 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 		getLocalPartialObjectMetadata: func(cluster logicalcluster.Name, namespace, name string) (*unstructured.Unstructured, error) {
 			gvr := gvrFromKey
 			key := kcpcache.ToClusterAwareKey(cluster.String(), namespace, name)
-			obj, exists, err := c.replicated.Local.GetIndexer().GetByKey(key)
+			obj, exists, err := replicated.Local.GetIndexer().GetByKey(key)
 			if !exists {
 				return nil, apierrors.NewNotFound(gvr.GroupResource(), name)
 			} else if err != nil {
@@ -76,14 +91,14 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 				return nil, err
 			}
 
-			if c.replicated.Filter != nil && !c.replicated.Filter(u) {
+			if replicated.Filter != nil && !replicated.Filter(u) {
 				return nil, apierrors.NewNotFound(gvr.GroupResource(), name)
 			}
 
 			if _, ok := obj.(*unstructured.Unstructured); ok {
 				u = u.DeepCopy()
 			}
-			u.SetKind(c.replicated.Kind)
+			u.SetKind(replicated.Kind)
 			u.SetAPIVersion(gvr.GroupVersion().String())
 			return u, nil
 		},
@@ -91,7 +106,7 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 			gvr := gvrFromKey
 			key := shardAndLogicalClusterAndNamespaceKey(c.shardName, cluster, namespace, name)
 
-			objs, err := c.replicated.Global.GetIndexer().ByIndex(byShardAndLogicalClusterAndNamespaceAndName, key)
+			objs, err := replicated.Global.GetIndexer().ByIndex(byShardAndLogicalClusterAndNamespaceAndName, key)
 			if err != nil {
 				return nil, err
 			}
@@ -108,14 +123,14 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 				return nil, err
 			}
 
-			if c.replicated.Filter != nil && !c.replicated.Filter(u) {
+			if replicated.Filter != nil && !replicated.Filter(u) {
 				return nil, apierrors.NewNotFound(gvr.GroupResource(), name)
 			}
 
 			if _, ok := obj.(*unstructured.Unstructured); ok {
 				u = u.DeepCopy()
 			}
-			u.SetKind(c.replicated.Kind)
+			u.SetKind(replicated.Kind)
 			u.SetAPIVersion(gvr.GroupVersion().String())
 			return u, nil
 		},
@@ -130,7 +145,7 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 				return nil, err
 			}
 
-			obj.SetKind(c.replicated.Kind)
+			obj.SetKind(replicated.Kind)
 			obj.SetAPIVersion(gvr.GroupVersion().String())
 			return obj, nil
 		},

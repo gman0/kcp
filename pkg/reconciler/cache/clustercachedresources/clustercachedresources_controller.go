@@ -315,7 +315,7 @@ func newRegistry() *controllerRegistry {
 	return &controllerRegistry{
 		controllers: make(map[string]*replicationcontroller.Controller),
 		cancels:     make(map[string]context.CancelFunc),
-		gvrs:        make(map[string]schema.GroupVersionResource),
+		ctxs:        make(map[string]context.Context),
 	}
 }
 
@@ -323,15 +323,15 @@ type controllerRegistry struct {
 	mu          sync.RWMutex
 	controllers map[string]*replicationcontroller.Controller
 	cancels     map[string]context.CancelFunc
-	gvrs        map[string]schema.GroupVersionResource
+	ctxs        map[string]context.Context // controller lifetime contexts, for deriving informer sub-contexts on GVR update
 }
 
-func (c *controllerRegistry) register(name string, controller *replicationcontroller.Controller, cancel context.CancelFunc, gvr schema.GroupVersionResource) {
+func (c *controllerRegistry) register(name string, controller *replicationcontroller.Controller, cancel context.CancelFunc, ctx context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.controllers[name] = controller
 	c.cancels[name] = cancel
-	c.gvrs[name] = gvr
+	c.ctxs[name] = ctx
 }
 
 func (c *controllerRegistry) get(name string) *replicationcontroller.Controller {
@@ -340,11 +340,11 @@ func (c *controllerRegistry) get(name string) *replicationcontroller.Controller 
 	return c.controllers[name]
 }
 
-func (c *controllerRegistry) getGVR(name string) (schema.GroupVersionResource, bool) {
+func (c *controllerRegistry) getCtx(name string) (context.Context, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	gvr, ok := c.gvrs[name]
-	return gvr, ok
+	ctx, ok := c.ctxs[name]
+	return ctx, ok
 }
 
 func (c *controllerRegistry) unregister(name string) {
@@ -357,5 +357,5 @@ func (c *controllerRegistry) unregister(name string) {
 	}
 	delete(c.controllers, name)
 	delete(c.cancels, name)
-	delete(c.gvrs, name)
+	delete(c.ctxs, name)
 }

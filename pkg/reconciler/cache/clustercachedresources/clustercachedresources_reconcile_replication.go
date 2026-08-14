@@ -64,8 +64,9 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	}
 	cluster := logicalcluster.From(clusterCachedResource)
 
-	// Controller is keyed by name only — version is no longer part of the key.
-	controllerName := fmt.Sprintf("%s.%s", cluster, clusterCachedResource.Name)
+	// Controller is keyed by (cluster, group, resource) — version is not part of the identity.
+	// Version changes are handled in-place via UpdateGVR without restarting the controller.
+	controllerName := fmt.Sprintf("%s.%s.%s", cluster, gvr.Group, gvr.Resource)
 
 	var resourceLabelSelector labels.Selector
 	if clusterCachedResource.Spec.LabelSelector != nil {
@@ -74,16 +75,38 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 
 	controller := r.controllerRegistry.get(controllerName)
 
-	// If a controller exists but its GVR differs from the resolved GVR, tear it down so we
-	// restart with the new preferred version.
+	// If a controller exists but its GVR differs from the resolved GVR, update it in place.
 	if controller != nil {
-		if activeGVR, ok := r.controllerRegistry.getGVR(controllerName); ok && activeGVR != gvr {
-			logger.Info("preferred version changed, restarting replication controller",
+		if activeGVR := controller.CurrentGVR(); activeGVR != gvr {
+			logger.Info("preferred version changed, updating replication controller in place",
 				"old", activeGVR.Version, "new", gvr.Version)
-			r.controllerRegistry.unregister(controllerName) // cancels the controller's context
-			r.localDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
-			r.globalDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
-			controller = nil
+			controllerCtx, ok := r.controllerRegistry.getCtx(controllerName)
+			if !ok {
+				// Should not happen (controller in registry but no ctx). Tear down and re-create.
+				r.controllerRegistry.unregister(controllerName)
+				controller = nil
+			} else {
+				newGlobal, err := r.globalDiscoveringDynamicKcpInformers.ForResource(gvr)
+				if err != nil {
+					return reconcileStatusStopAndRequeue, err
+				}
+				newLocal, err := r.localDiscoveringDynamicKcpInformers.ForResource(gvr)
+				if err != nil {
+					return reconcileStatusStopAndRequeue, err
+				}
+				if updateErr := controller.UpdateGVR(gvr, newLocal.Informer(), newGlobal.Informer()); updateErr != nil {
+					// New informers are already stopped — forget them and fall through to re-create.
+					r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+					r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+					r.controllerRegistry.unregister(controllerName)
+					controller = nil
+				} else {
+					go newLocal.Informer().Run(controllerCtx.Done())
+					go newGlobal.Informer().Run(controllerCtx.Done())
+					r.localDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+					r.globalDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+				}
+			}
 		}
 	}
 
@@ -159,7 +182,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		go replicated.Local.Run(controllerCtx.Done())
 		go replicated.Global.Run(controllerCtx.Done())
 
-		r.controllerRegistry.register(controllerName, c, cancel, gvr)
+		r.controllerRegistry.register(controllerName, c, cancel, controllerCtx)
 		if clusterCachedResource.Status.Phase != cachev1alpha1.ClusterCachedResourcePhaseDeleting {
 			conditions.MarkTrue(clusterCachedResource, cachev1alpha1.ReplicationStarted)
 			clusterCachedResource.Status.Phase = cachev1alpha1.ClusterCachedResourcePhaseReady
@@ -198,7 +221,11 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		controller.SetDeleted(ctx)
 		return reconcileStatusStopAndRequeue, nil
 	case clusterCachedResource.Status.Phase == cachev1alpha1.ClusterCachedResourcePhaseDeleting && !danglingResources:
-		r.controllerRegistry.unregister(controllerName) // unregister will cancel the context. and things will
+		r.controllerRegistry.unregister(controllerName) // cancels the controller context
+		// Expel stopped informers from the factory so any immediate CCR re-creation gets
+		// fresh informers rather than the now-stopped ones.
+		r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+		r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 		clusterCachedResource.Status.Phase = cachev1alpha1.ClusterCachedResourcePhaseDeleted
 		return reconcileStatusStopAndRequeue, nil
 	default:
