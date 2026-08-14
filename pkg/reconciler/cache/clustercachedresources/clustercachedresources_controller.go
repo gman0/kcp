@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -45,6 +46,7 @@ import (
 	cacheinformers "github.com/kcp-dev/sdk/client/informers/externalversions/cache/v1alpha1"
 	cachev1alpha1listers "github.com/kcp-dev/sdk/client/listers/cache/v1alpha1"
 
+	"github.com/kcp-dev/kcp/pkg/indexers"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	replicationcontroller "github.com/kcp-dev/kcp/pkg/reconciler/cache/clustercachedresources/replication"
@@ -142,6 +144,10 @@ func NewController(
 		controllerRegistry: newRegistry(),
 	}
 
+	indexers.AddIfNotPresentOrDie(clusterCachedResourceInformer.Informer().GetIndexer(), cache.Indexers{
+		ByGroupResource: IndexByGroupResource,
+	})
+
 	_, _ = clusterCachedResourceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { c.enqueue(obj) },
 		UpdateFunc: func(_, obj interface{}) { c.enqueue(obj) },
@@ -209,6 +215,28 @@ func (c *Controller) Start(ctx context.Context, numThreads int) {
 	ctx = klog.NewContext(ctx, logger)
 	logger.Info("Starting controller")
 	defer logger.Info("Shutting down controller")
+
+	// When a GVR version is removed from the local API, re-enqueue all ClusterCachedResources
+	// that reference that group+resource. This triggers versionResolver to re-discover the
+	// remaining preferred version and versionDrainer to purge stale cached objects.
+	c.localDiscoveringDynamicKcpInformers.AddGVRLifecycleHandler(ctx, informer.GVRLifecycleHandlerFuncs{
+		RemovedFunc: func(gvr schema.GroupVersionResource) {
+			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_controller.go GVRLifecycleHandler RemovedFunc: gvr=%s\n", gvr)
+			ccrs, err := indexers.ByIndex[*cachev1alpha1.ClusterCachedResource](
+				c.ClusterCachedResourceIndexer,
+				ByGroupResource,
+				GroupResourceKey(gvr.GroupResource()),
+			)
+			if err != nil {
+				utilruntime.HandleError(fmt.Errorf("failed to list ClusterCachedResources for removed GVR %v: %w", gvr, err))
+				return
+			}
+			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_controller.go GVRLifecycleHandler RemovedFunc: gvr=%s enqueueing %d CCRs\n", gvr, len(ccrs))
+			for _, ccr := range ccrs {
+				c.enqueue(ccr)
+			}
+		},
+	})
 
 	for range numThreads {
 		go wait.Until(func() { c.startWorker(ctx) }, time.Second, ctx.Done())

@@ -19,6 +19,7 @@ package clustercachedresources
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
@@ -63,11 +64,33 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	cluster := logicalcluster.From(clusterCachedResource)
 
 	selection := replicationcontroller.SelectionFor(clusterCachedResource)
+	// Controller is keyed by (cluster, group, resource) — version is not part of the identity.
+	// On version changes the controller is torn down and recreated with the new GVR.
+	controllerName := fmt.Sprintf("%s.%s.%s", cluster, gvr.Group, gvr.Resource)
 
 	clusterName := logicalcluster.From(clusterCachedResource)
-	controllerName := fmt.Sprintf("%s.%s.%s.%s.%s", clusterName, gvr.Version, gvr.Resource, gvr.Group, clusterCachedResource.Name)
 	// TODO: Add locking here when multiple workers are supported.
 	controller := r.controllerRegistry.get(controllerName)
+
+	// If a controller exists but its GVR differs from the resolved GVR, tear it down
+	// completely. The old informer's watch stream is already dead (that is what triggered
+	// re-discovery). A full restart is clean and avoids stale queue keys.
+	if controller != nil {
+		if activeGVR := controller.CurrentGVR(); activeGVR != gvr {
+			logger.Info("preferred version changed, restarting replication controller",
+				"old", activeGVR.Version, "new", gvr.Version)
+			r.controllerRegistry.unregister(controllerName)
+			r.localDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+			r.globalDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+			controller = nil
+		}
+	}
+
+	// Track the current version in status.ReplicatedVersions.
+	if gvr.Version != "" && !slices.Contains(clusterCachedResource.Status.StoredVersions, gvr.Version) {
+		clusterCachedResource.Status.StoredVersions = append(clusterCachedResource.Status.StoredVersions, gvr.Version)
+	}
+
 	// We setup controller even if we are deleting. This is to ensure that we can purge the cache.
 	// If for some reason was dead, we will recreate it.
 	danglingResources := clusterCachedResource.Status.ResourceCounts != nil && clusterCachedResource.Status.ResourceCounts.Cache > 0
@@ -78,7 +101,6 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		}
 
 		controllerCtx, cancel := context.WithCancel(ctx)
-
 		global, err := r.globalDiscoveringDynamicKcpInformers.ForResource(gvr)
 		if err != nil {
 			logger.Error(err, "Failed to get global informer for resource", "resource", gvr)
@@ -124,6 +146,12 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		)
 		if err != nil {
 			cancel()
+			// The informer may have been stopped by a previous controller teardown but not
+			// yet removed from the factory (ForgetResource is called asynchronously by the
+			// goroutine after c.Start returns). Remove it now so the next reconcile gets a
+			// fresh informer instead of the already-stopped one.
+			r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+			r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 			return reconcileStatusContinue, err
 		}
 
@@ -162,7 +190,11 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		controller.SetDeleted(ctx)
 		return reconcileStatusStopAndRequeue, nil
 	case clusterCachedResource.Status.Phase == cachev1alpha1.ClusterCachedResourcePhaseDeleting && !danglingResources:
-		r.controllerRegistry.unregister(controllerName) // unregister will cancel the context. and things will
+		r.controllerRegistry.unregister(controllerName) // cancels the controller context
+		// Expel stopped informers from the factory so any immediate CCR re-creation gets
+		// fresh informers rather than the now-stopped ones.
+		r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+		r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 		clusterCachedResource.Status.Phase = cachev1alpha1.ClusterCachedResourcePhaseDeleted
 		return reconcileStatusStopAndRequeue, nil
 	default:

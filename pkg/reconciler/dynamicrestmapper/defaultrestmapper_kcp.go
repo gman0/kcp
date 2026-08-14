@@ -408,6 +408,9 @@ func (o kindByPreferredGroupVersion) Less(i, j int) bool {
 	if rhsIndex == -1 {
 		return true
 	}
+	if lhsIndex == -1 {
+		return false
+	}
 
 	return lhsIndex < rhsIndex
 }
@@ -445,6 +448,9 @@ func (o resourceByPreferredGroupVersion) Less(i, j int) bool {
 
 	if rhsIndex == -1 {
 		return true
+	}
+	if lhsIndex == -1 {
+		return false
 	}
 
 	return lhsIndex < rhsIndex

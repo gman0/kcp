@@ -152,9 +152,6 @@ spec:
                   not provided by an api export.
                 pattern: ^[a-z][-a-z0-9]*[a-z0-9]$
                 type: string
-              version:
-                description: version is the version of the resource.
-                type: string
             required:
             - resource
             type: object
@@ -232,6 +229,20 @@ spec:
                 - cache
                 - local
                 type: object
+              storageVersion:
+                description: |-
+                  StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
+                  preferred version for the group+resource in the spec. Updated on every reconcile.
+                type: string
+              storedVersions:
+                description: |-
+                  StoredVersions lists the API versions that currently have objects stored in the cache.
+                  Analogous to CRD.status.storedVersions: a version is removed only after all its cached
+                  objects have been drained. This field drives the set of versions served by the synthetic
+                  CRD in the cache server.
+                items:
+                  type: string
+                type: array
             type: object
         required:
         - spec

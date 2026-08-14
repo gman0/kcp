@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8sversion "k8s.io/apimachinery/pkg/version"
 )
 
 // This file adds mutable methods to our fork of upstream's DefaultRESTMapper.
@@ -149,4 +150,11 @@ func (m *DefaultRESTMapper) apply(toRemove []typeMeta, toAdd []typeMeta) {
 	for i := range toAdd {
 		m.add(toAdd[i])
 	}
+}
+
+// isPreferredAPIVersion reports whether Kubernetes API version a is semantically
+// preferred over b. Delegates to CompareKubeAwareVersionStrings which sorts by
+// GA > Beta > Alpha and then by major/minor version within each tier.
+func isPreferredAPIVersion(a, b string) bool {
+	return k8sversion.CompareKubeAwareVersionStrings(a, b) > 0
 }

@@ -46,8 +46,8 @@ type ClusterCachedResource struct {
 
 // ClusterCachedResourceSpec defines the desired state of ClusterCachedResource.
 type ClusterCachedResourceSpec struct {
-	// GroupVersionResource is the fully qualified name of the resource to be published.
-	GroupVersionResource `json:",inline"`
+	// GroupResource is the group and resource name of the resource to be published.
+	GroupResource `json:",inline"`
 
 	// identity points to a secret that contains the API identity in the 'key' file.
 	// The API identity allows access to ClusterCachedResource's resources via the APIExport.
@@ -91,17 +91,13 @@ type Identity struct {
 }
 
 // GroupVersionResource identifies a resource.
-type GroupVersionResource struct {
+type GroupResource struct {
 	// group is the name of an API group.
 	// For core groups this is the empty string '""'.
 	//
 	// +kubebuilder:validation:Pattern=`^(|[a-z0-9]([-a-z0-9]*[a-z0-9](\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?)$`
 	// +optional
 	Group string `json:"group,omitempty"`
-
-	// version is the version of the resource.
-	// +optional
-	Version string `json:"version,omitempty"`
 
 	// resource is the name of the resource.
 	// Note: it is worth noting that you can not ask for permissions for resource provided by a CRD
@@ -171,6 +167,18 @@ type ClusterCachedResourceStatus struct {
 	// ResourceCount is the number of resources that match the label selector
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
+
+	// StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
+	// preferred version for the group+resource in the spec. Updated on every reconcile.
+	// +optional
+	StorageVersion string `json:"storageVersion,omitempty"`
+
+	// StoredVersions lists the API versions that currently have objects stored in the cache.
+	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
+	// objects have been drained. This field drives the set of versions served by the synthetic
+	// CRD in the cache server.
+	// +optional
+	StoredVersions []string `json:"storedVersions,omitempty"`
 
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//
