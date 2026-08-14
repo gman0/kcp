@@ -156,6 +156,11 @@ type ClusterCachedResourceStatus struct {
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
 
+	// StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
+	// preferred version for the group+resource in the spec. Updated on every reconcile.
+	// +optional
+	StorageVersion string `json:"storageVersion,omitempty"`
+
 	// ReplicatedVersions lists the API versions that currently have objects stored in the cache.
 	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
 	// objects have been drained. This field drives the set of versions served by the synthetic

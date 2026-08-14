@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
@@ -52,11 +53,15 @@ type replication struct {
 	controllerRegistry                   *controllerRegistry
 }
 
-func (r *replication) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	logger := klog.FromContext(ctx)
 	logger.Info("reconciling cached resource", "ClusterCachedResource", clusterCachedResource.Name)
 
-	gvr := rctx.resolvedGVR
+	gvr := schema.GroupVersionResource{
+		Group:    clusterCachedResource.Spec.Group,
+		Version:  clusterCachedResource.Status.StorageVersion,
+		Resource: clusterCachedResource.Spec.Resource,
+	}
 	cluster := logicalcluster.From(clusterCachedResource)
 
 	// Controller is keyed by name only — version is no longer part of the key.
@@ -146,8 +151,8 @@ func (r *replication) reconcile(ctx context.Context, rctx *reconcileContext, clu
 			return reconcileStatusContinue, err
 		}
 
-		go replicated.Local.Run(ctx.Done())
-		go replicated.Global.Run(ctx.Done())
+		go replicated.Local.Run(controllerCtx.Done())
+		go replicated.Global.Run(controllerCtx.Done())
 
 		r.controllerRegistry.register(controllerName, c, cancel, gvr)
 		if clusterCachedResource.Status.Phase != cachev1alpha1.ClusterCachedResourcePhaseDeleting {
@@ -160,7 +165,14 @@ func (r *replication) reconcile(ctx context.Context, rctx *reconcileContext, clu
 
 			if !cache.WaitForCacheSync(controllerCtx.Done(), replicated.Local.HasSynced, replicated.Global.HasSynced) {
 				logger.Error(nil, "Informers failed to sync, removing controller", "controller", controllerName)
+				// Remove event handlers so the cancelled controller stops processing events.
+				// Start's defers do the same cleanup, but Start is never called on this path.
+				c.Shutdown()
 				r.controllerRegistry.unregister(controllerName)
+				// Remove stopped informers from the factory so the next reconcile gets fresh ones.
+				// Without this, ForResource returns the stopped informer and AddEventHandler fails.
+				r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+				r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 				requeueSelf()
 				return
 			}

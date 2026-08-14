@@ -114,7 +114,7 @@ func TestFinalizer_Reconcile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			finalizer := &finalizer{}
-			status, err := finalizer.reconcile(context.Background(), &reconcileContext{}, tt.ClusterCachedResource)
+			status, err := finalizer.reconcile(context.Background(), tt.ClusterCachedResource)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedStatus, status)
 			require.Equal(t, tt.expectedFinalizers, tt.ClusterCachedResource.Finalizers)

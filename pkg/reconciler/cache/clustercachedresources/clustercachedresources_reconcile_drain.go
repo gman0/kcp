@@ -37,7 +37,7 @@ type versionDrainer struct {
 	deleteCacheResourcesForVersion func(ctx context.Context, version string, ccr *cachev1alpha1.ClusterCachedResource) error
 }
 
-func (r *versionDrainer) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *versionDrainer) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	// Only drain during normal operation; deletion is handled by purge.
 	if !clusterCachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
@@ -47,7 +47,7 @@ func (r *versionDrainer) reconcile(ctx context.Context, rctx *reconcileContext, 
 	}
 
 	logger := klog.FromContext(ctx)
-	currentVersion := rctx.resolvedGVR.Version
+	currentVersion := clusterCachedResource.Status.StorageVersion
 
 	// Build the new list: keep current version and any stale version that is not yet empty.
 	retained := []string{currentVersion}

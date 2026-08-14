@@ -31,8 +31,14 @@ type validSchema struct {
 	getResourceScope func(gvr schema.GroupVersionResource) (meta.RESTScope, error)
 }
 
-func (r *validSchema) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
-	scope, err := r.getResourceScope(rctx.resolvedGVR)
+func (r *validSchema) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+	gvr := schema.GroupVersionResource{
+		Group:    clusterCachedResource.Spec.Group,
+		Version:  clusterCachedResource.Status.StorageVersion,
+		Resource: clusterCachedResource.Spec.Resource,
+	}
+
+	scope, err := r.getResourceScope(gvr)
 	if err != nil {
 		return reconcileStatusStopAndRequeue, err
 	}
@@ -47,7 +53,7 @@ func (r *validSchema) reconcile(ctx context.Context, rctx *reconcileContext, clu
 		cachev1alpha1.ResourceNotClusterScoped,
 		conditionsv1alpha1.ConditionSeverityError,
 		"Resource %s is not cluster-scoped",
-		rctx.resolvedGVR.GroupResource(),
+		gvr.GroupResource(),
 	)
 
 	return reconcileStatusStop, nil

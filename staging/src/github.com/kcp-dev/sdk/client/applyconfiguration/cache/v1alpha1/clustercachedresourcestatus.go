@@ -32,6 +32,9 @@ type ClusterCachedResourceStatusApplyConfiguration struct {
 	IdentityHash *string `json:"identityHash,omitempty"`
 	// ResourceCount is the number of resources that match the label selector
 	ResourceCounts *ResourceCountApplyConfiguration `json:"resourceCounts,omitempty"`
+	// StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
+	// preferred version for the group+resource in the spec. Updated on every reconcile.
+	StorageVersion *string `json:"storageVersion,omitempty"`
 	// ReplicatedVersions lists the API versions that currently have objects stored in the cache.
 	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
 	// objects have been drained. This field drives the set of versions served by the synthetic
@@ -62,6 +65,14 @@ func (b *ClusterCachedResourceStatusApplyConfiguration) WithIdentityHash(value s
 // If called multiple times, the ResourceCounts field is set to the value of the last call.
 func (b *ClusterCachedResourceStatusApplyConfiguration) WithResourceCounts(value *ResourceCountApplyConfiguration) *ClusterCachedResourceStatusApplyConfiguration {
 	b.ResourceCounts = value
+	return b
+}
+
+// WithStorageVersion sets the StorageVersion field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the StorageVersion field is set to the value of the last call.
+func (b *ClusterCachedResourceStatusApplyConfiguration) WithStorageVersion(value string) *ClusterCachedResourceStatusApplyConfiguration {
+	b.StorageVersion = &value
 	return b
 }
 

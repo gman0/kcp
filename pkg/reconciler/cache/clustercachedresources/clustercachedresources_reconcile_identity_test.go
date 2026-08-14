@@ -274,7 +274,7 @@ func TestReconcileIdentity(t *testing.T) {
 	for testName, tt := range tests {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			status, err := tt.reconciler.reconcile(context.Background(), &reconcileContext{}, tt.ClusterCachedResource)
+			status, err := tt.reconciler.reconcile(context.Background(), tt.ClusterCachedResource)
 
 			resetLastTransitionTime(tt.expectedConditions)
 			resetLastTransitionTime(tt.ClusterCachedResource.Status.Conditions)

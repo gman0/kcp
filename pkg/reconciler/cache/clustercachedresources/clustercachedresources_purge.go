@@ -24,15 +24,15 @@ import (
 
 // purge is a reconciler that purges the cache resources for a published resource.
 type purge struct {
-	deleteSelectedCacheResources func(ctx context.Context, rctx *reconcileContext, ClusterCachedResource *cachev1alpha1.ClusterCachedResource) error
+	deleteSelectedCacheResources func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error
 }
 
-func (r *purge) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *purge) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	if clusterCachedResource.DeletionTimestamp.IsZero() {
 		return reconcileStatusContinue, nil
 	}
 
-	err := r.deleteSelectedCacheResources(ctx, rctx, clusterCachedResource)
+	err := r.deleteSelectedCacheResources(ctx, clusterCachedResource)
 	if err != nil {
 		return reconcileStatusStopAndRequeue, err
 	}

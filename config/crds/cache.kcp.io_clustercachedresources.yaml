@@ -223,6 +223,11 @@ spec:
                 - cache
                 - local
                 type: object
+              storageVersion:
+                description: |-
+                  StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
+                  preferred version for the group+resource in the spec. Updated on every reconcile.
+                type: string
             type: object
         required:
         - spec

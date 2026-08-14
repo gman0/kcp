@@ -26,13 +26,13 @@ import (
 )
 
 // versionResolver is the first reconciler in the chain. It discovers the preferred API version
-// for the group+resource named in the spec and populates reconcileContext.resolvedGVR so that
-// all downstream reconcilers can use a complete GVR without re-doing discovery.
+// for the group+resource named in the spec and stores it in status.storageVersion so that all
+// downstream reconcilers can use a complete GVR without re-doing discovery.
 type versionResolver struct {
 	getPreferredGVR func(cluster logicalcluster.Name, gr schema.GroupResource) (schema.GroupVersionResource, error)
 }
 
-func (r *versionResolver) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *versionResolver) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	gr := schema.GroupResource{
 		Group:    clusterCachedResource.Spec.Group,
 		Resource: clusterCachedResource.Spec.Resource,
@@ -43,16 +43,21 @@ func (r *versionResolver) reconcile(ctx context.Context, rctx *reconcileContext,
 		// During deletion: if the resource is gone from the API but we still have stored versions,
 		// fall back to the first stored version so the purge and drain steps can proceed.
 		if !clusterCachedResource.DeletionTimestamp.IsZero() && len(clusterCachedResource.Status.ReplicatedVersions) > 0 {
-			rctx.resolvedGVR = schema.GroupVersionResource{
-				Group:    gr.Group,
-				Version:  clusterCachedResource.Status.ReplicatedVersions[0],
-				Resource: gr.Resource,
+			fallback := clusterCachedResource.Status.ReplicatedVersions[0]
+			if clusterCachedResource.Status.StorageVersion != fallback {
+				clusterCachedResource.Status.StorageVersion = fallback
+				return reconcileStatusStopAndRequeue, nil
 			}
 			return reconcileStatusContinue, nil
 		}
 		return reconcileStatusStopAndRequeue, err
 	}
 
-	rctx.resolvedGVR = gvr
-	return reconcileStatusContinue, nil
+	if clusterCachedResource.Status.StorageVersion == gvr.Version {
+		return reconcileStatusContinue, nil
+	}
+	// StorageVersion changed (or unset): commit the status update alone so that no
+	// metadata-changing reconciler runs in the same pass and trips the committer.
+	clusterCachedResource.Status.StorageVersion = gvr.Version
+	return reconcileStatusStopAndRequeue, nil
 }

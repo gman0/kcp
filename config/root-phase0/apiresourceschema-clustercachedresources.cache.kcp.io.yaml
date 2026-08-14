@@ -1,7 +1,7 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260813-239feb181.clustercachedresources.cache.kcp.io
+  name: v260814-60dd45477.clustercachedresources.cache.kcp.io
 spec:
   group: cache.kcp.io
   names:
@@ -218,6 +218,11 @@ spec:
               - cache
               - local
               type: object
+            storageVersion:
+              description: |-
+                StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
+                preferred version for the group+resource in the spec. Updated on every reconcile.
+              type: string
           type: object
       required:
       - spec

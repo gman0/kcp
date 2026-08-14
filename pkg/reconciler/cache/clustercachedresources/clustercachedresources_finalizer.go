@@ -29,7 +29,7 @@ import (
 // If is done deleting - it removes the finalizer.
 type finalizer struct{}
 
-func (r *finalizer) reconcile(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
+func (r *finalizer) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
 	switch {
 	case !clusterCachedResource.DeletionTimestamp.IsZero() && clusterCachedResource.Status.Phase == cachev1alpha1.ClusterCachedResourcePhaseDeleted: // case 1: Resource is in Deleted phase, remove finalizer
 		if slices.Contains(clusterCachedResource.Finalizers, cachev1alpha1.ClusterCachedResourceFinalizer) {

@@ -36,7 +36,6 @@ func TestSchema(t *testing.T) {
 	tests := map[string]struct {
 		ClusterCachedResource *cachev1alpha1.ClusterCachedResource
 		reconciler            *validSchema
-		resolvedGVR           schema.GroupVersionResource
 		expectedErr           error
 		expectedStatus        reconcileStatus
 		expectedConditions    conditionsv1alpha1.Conditions
@@ -49,8 +48,10 @@ func TestSchema(t *testing.T) {
 						Resource: "nonexistent",
 					},
 				},
+				Status: cachev1alpha1.ClusterCachedResourceStatus{
+					StorageVersion: "v1",
+				},
 			},
-			resolvedGVR: schema.GroupVersionResource{Group: "none", Version: "v1", Resource: "nonexistent"},
 			reconciler: &validSchema{
 				getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 					return nil, &meta.NoResourceMatchError{PartialResource: gvr}
@@ -66,8 +67,10 @@ func TestSchema(t *testing.T) {
 						Resource: "namespaced",
 					},
 				},
+				Status: cachev1alpha1.ClusterCachedResourceStatus{
+					StorageVersion: "v1",
+				},
 			},
-			resolvedGVR: schema.GroupVersionResource{Group: "foo.dev", Version: "v1", Resource: "namespaced"},
 			reconciler: &validSchema{
 				getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 					return meta.RESTScopeNamespace, nil
@@ -91,8 +94,10 @@ func TestSchema(t *testing.T) {
 						Resource: "clusterscoped",
 					},
 				},
+				Status: cachev1alpha1.ClusterCachedResourceStatus{
+					StorageVersion: "v1",
+				},
 			},
-			resolvedGVR: schema.GroupVersionResource{Group: "foo.dev", Version: "v1", Resource: "clusterscoped"},
 			reconciler: &validSchema{
 				getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 					return meta.RESTScopeRoot, nil
@@ -105,8 +110,7 @@ func TestSchema(t *testing.T) {
 	for testName, tt := range tests {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			rctx := &reconcileContext{resolvedGVR: tt.resolvedGVR}
-			status, err := tt.reconciler.reconcile(context.Background(), rctx, tt.ClusterCachedResource)
+			status, err := tt.reconciler.reconcile(context.Background(), tt.ClusterCachedResource)
 
 			resetLastTransitionTime(tt.expectedConditions)
 			resetLastTransitionTime(tt.ClusterCachedResource.Status.Conditions)

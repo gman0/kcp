@@ -134,15 +134,17 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 		Resource: clusterCachedResource.Spec.Resource,
 	}
 
-	// Advisory scope check — use a partial GVR (no version) so the REST mapper resolves
-	// the preferred version. Errors are ignored: the controller will set a condition if needed.
-	partialGVR := schema.GroupVersionResource{Group: gr.Group, Resource: gr.Resource}
-	scopedDynRESTMapper := adm.dynamicRESTMapper.ForCluster(clusterName)
-	kind, err := scopedDynRESTMapper.KindFor(partialGVR)
-	if err == nil {
-		mapping, err := scopedDynRESTMapper.RESTMapping(kind.GroupKind(), kind.Version)
-		if err == nil {
-			if mapping.Scope != meta.RESTScopeRoot {
+	// Advisory scope check: reject namespace-scoped resources early.
+	// Use KindsFor (not KindFor) to handle resources served at multiple versions.
+	// Scope is uniform across versions so the first result is sufficient.
+	// Errors are ignored; the controller's validSchema reconciler enforces this with a condition.
+	if adm.dynamicRESTMapper != nil {
+		scopedMapper := adm.dynamicRESTMapper.ForCluster(clusterName)
+		partialGVR := schema.GroupVersionResource{Group: gr.Group, Resource: gr.Resource}
+		kinds, err := scopedMapper.KindsFor(partialGVR)
+		if err == nil && len(kinds) > 0 {
+			mapping, err := scopedMapper.RESTMapping(kinds[0].GroupKind(), kinds[0].Version)
+			if err == nil && mapping.Scope.Name() != meta.RESTScopeNameRoot {
 				return admission.NewForbidden(a,
 					field.Invalid(
 						field.NewPath("spec"),

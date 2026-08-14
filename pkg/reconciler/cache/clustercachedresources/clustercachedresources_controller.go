@@ -144,6 +144,10 @@ func NewController(
 		controllerRegistry: newRegistry(),
 	}
 
+	indexers.AddIfNotPresentOrDie(clusterCachedResourceInformer.Informer().GetIndexer(), cache.Indexers{
+		ByGroupResource: IndexByGroupResource,
+	})
+
 	_, _ = clusterCachedResourceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { c.enqueue(obj) },
 		UpdateFunc: func(_, obj interface{}) { c.enqueue(obj) },
@@ -212,9 +216,9 @@ func (c *Controller) Start(ctx context.Context, numThreads int) {
 	logger.Info("Starting controller")
 	defer logger.Info("Shutting down controller")
 
-	// When a GVR disappears from the local API (e.g. a CRD version is removed), re-enqueue
-	// all ClusterCachedResources that reference that group+resource so they re-discover the
-	// new preferred version.
+	// When a GVR version is removed from the local API, re-enqueue all ClusterCachedResources
+	// that reference that group+resource. This triggers versionResolver to re-discover the
+	// remaining preferred version and versionDrainer to purge stale cached objects.
 	c.localDiscoveringDynamicKcpInformers.AddGVRLifecycleHandler(ctx, informer.GVRLifecycleHandlerFuncs{
 		RemovedFunc: func(gvr schema.GroupVersionResource) {
 			ccrs, err := indexers.ByIndex[*cachev1alpha1.ClusterCachedResource](

@@ -3381,6 +3381,13 @@ func schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceStatus(ref common.Refer
 							Ref:         ref(cachev1alpha1.ResourceCount{}.OpenAPIModelName()),
 						},
 					},
+					"storageVersion": {
+						SchemaProps: spec.SchemaProps{
+							Description: "StorageVersion is the API version currently being replicated, as resolved from the REST mapper's preferred version for the group+resource in the spec. Updated on every reconcile.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"replicatedVersions": {
 						SchemaProps: spec.SchemaProps{
 							Description: "ReplicatedVersions lists the API versions that currently have objects stored in the cache. Analogous to CRD.status.storedVersions: a version is removed only after all its cached objects have been drained. This field drives the set of versions served by the synthetic CRD in the cache server.",

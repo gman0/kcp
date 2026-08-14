@@ -211,6 +211,15 @@ func (c *Controller) SetDeleted(ctx context.Context) {
 	c.deleted = true
 }
 
+// Shutdown removes event handlers and drains the queue. It is safe to call even if Start was
+// never called. Start's own defers call the same cleanup, so double-calling is harmless.
+func (c *Controller) Shutdown() {
+	for _, f := range c.onShutdownFuncs {
+		f()
+	}
+	c.queue.ShutDown()
+}
+
 type Controller struct {
 	shardName string
 	queue     workqueue.TypedRateLimitingInterface[string]

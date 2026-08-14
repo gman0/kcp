@@ -18,6 +18,7 @@ package clustercachedresources
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,35 +49,34 @@ const (
 	reconcileStatusStop
 )
 
-// reconcileContext carries per-reconcile data derived from the ClusterCachedResource spec that
-// is not stored in the spec itself. It is populated by versionResolver and consumed by all
-// downstream reconcilers.
-type reconcileContext struct {
-	resolvedGVR schema.GroupVersionResource
-}
-
 type reconciler interface {
-	reconcile(ctx context.Context, rctx *reconcileContext, workspace *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error)
+	reconcile(ctx context.Context, workspace *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error)
 }
 
-// reconcile reconciles the workspace objects. It is intended to be single reconciler for all the
-// workspace replated operations. For now it has single reconciler that updates the status of the
-// workspace based on the mount status.
 func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (bool, error) {
-	rctx := &reconcileContext{}
-
 	reconcilers := []reconciler{
+		// finalizer must be first: when it adds/removes the finalizer it returns StopAndRequeue,
+		// ensuring metadata changes are committed alone before versionResolver (a status change) runs.
+		&finalizer{},
 		&versionResolver{
 			getPreferredGVR: func(cluster logicalcluster.Name, gr schema.GroupResource) (schema.GroupVersionResource, error) {
 				partialGVR := schema.GroupVersionResource{Group: gr.Group, Resource: gr.Resource}
-				gvk, err := c.dynRESTMapper.ForCluster(cluster).KindFor(partialGVR)
+				// Use KindsFor instead of KindFor: KindFor errors when multiple versions are served.
+				// KindsFor returns results sorted by defaultGroupVersions (the lexicographically largest
+				// version per group). For standard Kubernetes versioning (v1alpha1→v1alpha2→v1beta1→v1)
+				// this is only reliable when versions from different "tiers" coexist; for same-tier
+				// increments (v1alpha1 vs v1alpha2) it is correct. When only one version remains (the
+				// typical post-migration state), there is no ambiguity.
+				kinds, err := c.dynRESTMapper.ForCluster(cluster).KindsFor(partialGVR)
 				if err != nil {
 					return schema.GroupVersionResource{}, err
 				}
-				return schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: gr.Resource}, nil
+				if len(kinds) == 0 {
+					return schema.GroupVersionResource{}, fmt.Errorf("no kind found for %v", gr)
+				}
+				return schema.GroupVersionResource{Group: kinds[0].Group, Version: kinds[0].Version, Resource: gr.Resource}, nil
 			},
 		},
-		&finalizer{},
 		&validSchema{
 			getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 				scopedMapper := c.dynRESTMapper.ForCluster(logicalcluster.From(clusterCachedResource))
@@ -114,16 +114,16 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 			secretNamespace:             c.secretNamespace,
 		},
 		&purge{
-			deleteSelectedCacheResources: func(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
-				return c.deleteSelectedCacheResources(ctx, cluster, rctx, clusterCachedResource)
+			deleteSelectedCacheResources: func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
+				return c.deleteSelectedCacheResources(ctx, cluster, clusterCachedResource)
 			},
 		},
 		&counter{
-			listSelectedLocalResources: func(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
-				return c.listSelectedLocalResources(ctx, cluster, rctx, clusterCachedResource)
+			listSelectedLocalResources: func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
+				return c.listSelectedLocalResources(ctx, cluster, clusterCachedResource)
 			},
-			listSelectedClusterCachedResources: func(ctx context.Context, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
-				return c.listSelectedCacheResources(ctx, cluster, rctx, clusterCachedResource)
+			listSelectedClusterCachedResources: func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
+				return c.listSelectedCacheResources(ctx, cluster, clusterCachedResource)
 			},
 		},
 		&replication{
@@ -154,7 +154,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 	for _, r := range reconcilers {
 		var err error
 		var status reconcileStatus
-		status, err = r.reconcile(ctx, rctx, clusterCachedResource)
+		status, err = r.reconcile(ctx, clusterCachedResource)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -170,13 +170,18 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 	return requeue, utilerrors.NewAggregate(errs)
 }
 
-func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster logicalcluster.Name, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
+func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
 	listOpts := metav1.ListOptions{}
 	if clusterCachedResource.Spec.LabelSelector != nil {
 		listOpts.LabelSelector = labels.SelectorFromSet(clusterCachedResource.Spec.LabelSelector.MatchLabels).String()
 	}
 
-	resources, err := c.localDynamicClient.Cluster(cluster.Path()).Resource(rctx.resolvedGVR).List(ctx, listOpts)
+	gvr := schema.GroupVersionResource{
+		Group:    clusterCachedResource.Spec.Group,
+		Version:  clusterCachedResource.Status.StorageVersion,
+		Resource: clusterCachedResource.Spec.Resource,
+	}
+	resources, err := c.localDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, listOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -185,9 +190,9 @@ func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster log
 }
 
 // deleteSelectedCacheResources deletes cached objects for all versions tracked in status.ReplicatedVersions
-// plus the current resolvedGVR version. This ensures a complete purge during deletion.
-func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
-	versionsToDelete := map[string]struct{}{rctx.resolvedGVR.Version: {}}
+// plus the current storageVersion. This ensures a complete purge during deletion.
+func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
+	versionsToDelete := map[string]struct{}{clusterCachedResource.Status.StorageVersion: {}}
 	for _, v := range clusterCachedResource.Status.ReplicatedVersions {
 		versionsToDelete[v] = struct{}{}
 	}
@@ -216,8 +221,8 @@ func (c *Controller) deleteCacheResourcesForVersion(ctx context.Context, cluster
 	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 }
 
-func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, rctx *reconcileContext, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
-	return c.listCacheResourcesForVersion(ctx, cluster, rctx.resolvedGVR.Version, clusterCachedResource)
+func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
+	return c.listCacheResourcesForVersion(ctx, cluster, clusterCachedResource.Status.StorageVersion, clusterCachedResource)
 }
 
 func (c *Controller) listCacheResourcesForVersion(ctx context.Context, cluster logicalcluster.Name, version string, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
