@@ -21,8 +21,6 @@ import (
 	"fmt"
 	"slices"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
@@ -160,32 +158,6 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 			return reconcileStatusContinue, err
 		}
 
-		// TODO(FIXME): This watch-error-driven requeue is likely wrong — see isGVRGoneError.
-		/*watchErrHandler := func(_ context.Context, _ *cache.Reflector, err error) {
-			gone := isGVRGoneError(err)
-			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go watchErrHandler: gvr=%s err=%v gone=%v\n", gvr, err, gone)
-			if gone {
-				fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go watchErrHandler: requeueing CCR %s\n", clusterCachedResource.Name)
-				requeueSelf()
-			}
-		}
-		// SetWatchErrorHandlerWithContext must be called before the informer is started.
-		// Note: do NOT call cache.DefaultWatchErrorHandler here — the kcp apimachinery reflector
-		// passes nil for the *cache.Reflector argument, which causes a nil-pointer panic inside
-		// DefaultWatchErrorHandler when it accesses r.name.
-		if err := replicated.Local.SetWatchErrorHandlerWithContext(func(ctx context.Context, r *cache.Reflector, err error) {
-			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go local watch error handler: gvr=%s err=%v\n", gvr, err)
-			watchErrHandler(ctx, r, err)
-		}); err != nil {
-			logger.Error(err, "failed to set watch error handler on local informer")
-		}
-		if err := replicated.Global.SetWatchErrorHandlerWithContext(func(ctx context.Context, r *cache.Reflector, err error) {
-			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go global watch error handler: gvr=%s err=%v\n", gvr, err)
-			watchErrHandler(ctx, r, err)
-		}); err != nil {
-			logger.Error(err, "failed to set watch error handler on global informer")
-		}*/
-
 		go replicated.Local.Run(controllerCtx.Done())
 		go replicated.Global.Run(controllerCtx.Done())
 
@@ -238,15 +210,4 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	default:
 		return reconcileStatusContinue, nil
 	}
-}
-
-// TODO(FIXME): isGVRGoneError and the watch-error-handler approach below is almost certainly
-// wrong. Watch errors are noisy, transient, and not a reliable signal for "this GVR has been
-// permanently removed from the API". Driving version re-discovery off of them conflates
-// network blips, server restarts, and actual API removal. The right mechanism is a GVR
-// lifecycle event from the informer factory (like the RemovedFunc handler already wired in
-// clustercachedresources_controller.go), not a heuristic on reflector error strings.
-// This whole block needs to be rethought before it goes anywhere near production.
-func isGVRGoneError(err error) bool {
-	return apierrors.IsNotFound(err) || apierrors.IsGone(err) || meta.IsNoMatchError(err)
 }

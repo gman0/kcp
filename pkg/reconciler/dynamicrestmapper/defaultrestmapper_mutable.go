@@ -18,10 +18,9 @@ package dynamicrestmapper
 
 import (
 	"slices"
-	"strconv"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8sversion "k8s.io/apimachinery/pkg/version"
 )
 
 // This file adds mutable methods to our fork of upstream's DefaultRESTMapper.
@@ -154,58 +153,8 @@ func (m *DefaultRESTMapper) apply(toRemove []typeMeta, toAdd []typeMeta) {
 }
 
 // isPreferredAPIVersion reports whether Kubernetes API version a is semantically
-// preferred over b. Stability tiers (highest first): GA (v1, v2) > Beta (v1beta1)
-// > Alpha (v1alpha1) > non-standard. Within a tier, higher major/iteration wins.
+// preferred over b. Delegates to CompareKubeAwareVersionStrings which sorts by
+// GA > Beta > Alpha and then by major/minor version within each tier.
 func isPreferredAPIVersion(a, b string) bool {
-	aTier, aMajor, aIter := parseKubeAPIVersion(a)
-	bTier, bMajor, bIter := parseKubeAPIVersion(b)
-	if aTier != bTier {
-		return aTier > bTier
-	}
-	if aMajor != bMajor {
-		return aMajor > bMajor
-	}
-	return aIter > bIter
-}
-
-// parseKubeAPIVersion parses a Kubernetes API version string (v1, v1beta2, v1alpha3).
-// Returns (tier, major, iter): tier is 3 for GA, 2 for beta, 1 for alpha, 0 for other.
-func parseKubeAPIVersion(v string) (tier, major, iter int) {
-	if len(v) == 0 || v[0] != 'v' {
-		return 0, 0, 0
-	}
-	rest := v[1:]
-
-	end := 0
-	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
-		end++
-	}
-	if end == 0 {
-		return 0, 0, 0
-	}
-	maj, err := strconv.Atoi(rest[:end])
-	if err != nil {
-		return 0, 0, 0
-	}
-	rest = rest[end:]
-
-	if len(rest) == 0 {
-		return 3, maj, 0 // GA
-	}
-
-	var t int
-	switch {
-	case strings.HasPrefix(rest, "beta"):
-		t, rest = 2, rest[4:]
-	case strings.HasPrefix(rest, "alpha"):
-		t, rest = 1, rest[5:]
-	default:
-		return 0, 0, 0
-	}
-
-	it, err := strconv.Atoi(rest)
-	if err != nil || it < 0 {
-		return 0, 0, 0
-	}
-	return t, maj, it
+	return k8sversion.CompareKubeAwareVersionStrings(a, b) > 0
 }
