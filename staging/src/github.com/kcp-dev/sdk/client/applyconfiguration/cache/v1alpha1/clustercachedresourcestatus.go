@@ -35,11 +35,11 @@ type ClusterCachedResourceStatusApplyConfiguration struct {
 	// StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
 	// preferred version for the group+resource in the spec. Updated on every reconcile.
 	StorageVersion *string `json:"storageVersion,omitempty"`
-	// ReplicatedVersions lists the API versions that currently have objects stored in the cache.
+	// StoredVersions lists the API versions that currently have objects stored in the cache.
 	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
 	// objects have been drained. This field drives the set of versions served by the synthetic
 	// CRD in the cache server.
-	ReplicatedVersions []string `json:"replicatedVersions,omitempty"`
+	StoredVersions []string `json:"replicatedVersions,omitempty"`
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	Phase *cachev1alpha1.ClusterCachedResourcePhaseType `json:"phase,omitempty"`
 	// Current processing state of the Workspace.
@@ -76,12 +76,12 @@ func (b *ClusterCachedResourceStatusApplyConfiguration) WithStorageVersion(value
 	return b
 }
 
-// WithReplicatedVersions adds the given value to the ReplicatedVersions field in the declarative configuration
+// WithStoredVersions adds the given value to the StoredVersions field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the ReplicatedVersions field.
-func (b *ClusterCachedResourceStatusApplyConfiguration) WithReplicatedVersions(values ...string) *ClusterCachedResourceStatusApplyConfiguration {
+// If called multiple times, values provided by each call will be appended to the StoredVersions field.
+func (b *ClusterCachedResourceStatusApplyConfiguration) WithStoredVersions(values ...string) *ClusterCachedResourceStatusApplyConfiguration {
 	for i := range values {
-		b.ReplicatedVersions = append(b.ReplicatedVersions, values[i])
+		b.StoredVersions = append(b.StoredVersions, values[i])
 	}
 	return b
 }

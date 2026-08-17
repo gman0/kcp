@@ -3390,7 +3390,7 @@ func schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceStatus(ref common.Refer
 					},
 					"replicatedVersions": {
 						SchemaProps: spec.SchemaProps{
-							Description: "ReplicatedVersions lists the API versions that currently have objects stored in the cache. Analogous to CRD.status.storedVersions: a version is removed only after all its cached objects have been drained. This field drives the set of versions served by the synthetic CRD in the cache server.",
+							Description: "StoredVersions lists the API versions that currently have objects stored in the cache. Analogous to CRD.status.storedVersions: a version is removed only after all its cached objects have been drained. This field drives the set of versions served by the synthetic CRD in the cache server.",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
