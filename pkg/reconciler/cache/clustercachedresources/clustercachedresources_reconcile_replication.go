@@ -161,7 +161,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		}
 
 		// TODO(FIXME): This watch-error-driven requeue is likely wrong — see isGVRGoneError.
-		watchErrHandler := func(_ context.Context, _ *cache.Reflector, err error) {
+		/*watchErrHandler := func(_ context.Context, _ *cache.Reflector, err error) {
 			gone := isGVRGoneError(err)
 			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go watchErrHandler: gvr=%s err=%v gone=%v\n", gvr, err, gone)
 			if gone {
@@ -184,7 +184,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 			watchErrHandler(ctx, r, err)
 		}); err != nil {
 			logger.Error(err, "failed to set watch error handler on global informer")
-		}
+		}*/
 
 		go replicated.Local.Run(controllerCtx.Done())
 		go replicated.Global.Run(controllerCtx.Done())

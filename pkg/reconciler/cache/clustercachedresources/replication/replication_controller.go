@@ -157,7 +157,6 @@ func (c *Controller) CurrentGVR() schema.GroupVersionResource {
 	return c.gvr
 }
 
-
 func (c *Controller) enqueueObject(obj interface{}, gvr schema.GroupVersionResource, source string) {
 	key, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(obj)
 	if err != nil {

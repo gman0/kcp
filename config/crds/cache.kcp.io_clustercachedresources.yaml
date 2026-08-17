@@ -202,15 +202,6 @@ spec:
                 - Deleting
                 - Deleted
                 type: string
-              replicatedVersions:
-                description: |-
-                  StoredVersions lists the API versions that currently have objects stored in the cache.
-                  Analogous to CRD.status.storedVersions: a version is removed only after all its cached
-                  objects have been drained. This field drives the set of versions served by the synthetic
-                  CRD in the cache server.
-                items:
-                  type: string
-                type: array
               resourceCounts:
                 description: ResourceCount is the number of resources that match the
                   label selector
@@ -228,6 +219,15 @@ spec:
                   StorageVersion is the API version currently being replicated, as resolved from the REST mapper's
                   preferred version for the group+resource in the spec. Updated on every reconcile.
                 type: string
+              storedVersions:
+                description: |-
+                  StoredVersions lists the API versions that currently have objects stored in the cache.
+                  Analogous to CRD.status.storedVersions: a version is removed only after all its cached
+                  objects have been drained. This field drives the set of versions served by the synthetic
+                  CRD in the cache server.
+                items:
+                  type: string
+                type: array
             type: object
         required:
         - spec

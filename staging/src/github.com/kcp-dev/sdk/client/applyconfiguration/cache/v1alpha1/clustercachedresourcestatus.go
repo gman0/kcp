@@ -39,7 +39,7 @@ type ClusterCachedResourceStatusApplyConfiguration struct {
 	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
 	// objects have been drained. This field drives the set of versions served by the synthetic
 	// CRD in the cache server.
-	StoredVersions []string `json:"replicatedVersions,omitempty"`
+	StoredVersions []string `json:"storedVersions,omitempty"`
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	Phase *cachev1alpha1.ClusterCachedResourcePhaseType `json:"phase,omitempty"`
 	// Current processing state of the Workspace.
