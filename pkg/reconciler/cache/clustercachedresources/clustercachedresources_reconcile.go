@@ -193,7 +193,7 @@ func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster log
 // plus the current storageVersion. This ensures a complete purge during deletion.
 func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
 	versionsToDelete := map[string]struct{}{clusterCachedResource.Status.StorageVersion: {}}
-	for _, v := range clusterCachedResource.Status.ReplicatedVersions {
+	for _, v := range clusterCachedResource.Status.StoredVersions {
 		versionsToDelete[v] = struct{}{}
 	}
 

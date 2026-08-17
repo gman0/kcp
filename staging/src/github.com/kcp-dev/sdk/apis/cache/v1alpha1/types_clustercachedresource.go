@@ -161,12 +161,12 @@ type ClusterCachedResourceStatus struct {
 	// +optional
 	StorageVersion string `json:"storageVersion,omitempty"`
 
-	// ReplicatedVersions lists the API versions that currently have objects stored in the cache.
+	// StoredVersions lists the API versions that currently have objects stored in the cache.
 	// Analogous to CRD.status.storedVersions: a version is removed only after all its cached
 	// objects have been drained. This field drives the set of versions served by the synthetic
 	// CRD in the cache server.
 	// +optional
-	ReplicatedVersions []string `json:"replicatedVersions,omitempty"`
+	StoredVersions []string `json:"replicatedVersions,omitempty"`
 
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//

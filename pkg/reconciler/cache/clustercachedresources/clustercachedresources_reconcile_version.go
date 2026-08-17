@@ -42,8 +42,8 @@ func (r *versionResolver) reconcile(ctx context.Context, clusterCachedResource *
 	if err != nil {
 		// During deletion: if the resource is gone from the API but we still have stored versions,
 		// fall back to the first stored version so the purge and drain steps can proceed.
-		if !clusterCachedResource.DeletionTimestamp.IsZero() && len(clusterCachedResource.Status.ReplicatedVersions) > 0 {
-			fallback := clusterCachedResource.Status.ReplicatedVersions[0]
+		if !clusterCachedResource.DeletionTimestamp.IsZero() && len(clusterCachedResource.Status.StoredVersions) > 0 {
+			fallback := clusterCachedResource.Status.StoredVersions[0]
 			if clusterCachedResource.Status.StorageVersion != fallback {
 				clusterCachedResource.Status.StorageVersion = fallback
 				return reconcileStatusStopAndRequeue, nil

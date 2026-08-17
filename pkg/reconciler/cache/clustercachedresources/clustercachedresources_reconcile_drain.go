@@ -51,7 +51,7 @@ func (r *versionDrainer) reconcile(ctx context.Context, clusterCachedResource *c
 
 	// Build the new list: keep current version and any stale version that is not yet empty.
 	retained := []string{currentVersion}
-	for _, version := range clusterCachedResource.Status.ReplicatedVersions {
+	for _, version := range clusterCachedResource.Status.StoredVersions {
 		if version == currentVersion {
 			continue
 		}
@@ -74,6 +74,6 @@ func (r *versionDrainer) reconcile(ctx context.Context, clusterCachedResource *c
 		retained = append(retained, version)
 	}
 
-	clusterCachedResource.Status.ReplicatedVersions = retained
+	clusterCachedResource.Status.StoredVersions = retained
 	return reconcileStatusContinue, nil
 }

@@ -111,8 +111,8 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	}
 
 	// Track the current version in status.ReplicatedVersions.
-	if gvr.Version != "" && !slices.Contains(clusterCachedResource.Status.ReplicatedVersions, gvr.Version) {
-		clusterCachedResource.Status.ReplicatedVersions = append(clusterCachedResource.Status.ReplicatedVersions, gvr.Version)
+	if gvr.Version != "" && !slices.Contains(clusterCachedResource.Status.StoredVersions, gvr.Version) {
+		clusterCachedResource.Status.StoredVersions = append(clusterCachedResource.Status.StoredVersions, gvr.Version)
 	}
 
 	// We setup controller even if we are deleting. This is to ensure that we can purge the cache.
