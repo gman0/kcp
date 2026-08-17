@@ -166,7 +166,7 @@ type ClusterCachedResourceStatus struct {
 	// objects have been drained. This field drives the set of versions served by the synthetic
 	// CRD in the cache server.
 	// +optional
-	StoredVersions []string `json:"replicatedVersions,omitempty"`
+	StoredVersions []string `json:"storedVersions,omitempty"`
 
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//

@@ -162,19 +162,25 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 
 		// TODO(FIXME): This watch-error-driven requeue is likely wrong — see isGVRGoneError.
 		watchErrHandler := func(_ context.Context, _ *cache.Reflector, err error) {
-			if isGVRGoneError(err) {
+			gone := isGVRGoneError(err)
+			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go watchErrHandler: gvr=%s err=%v gone=%v\n", gvr, err, gone)
+			if gone {
+				fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go watchErrHandler: requeueing CCR %s\n", clusterCachedResource.Name)
 				requeueSelf()
 			}
 		}
 		// SetWatchErrorHandlerWithContext must be called before the informer is started.
+		// Note: do NOT call cache.DefaultWatchErrorHandler here — the kcp apimachinery reflector
+		// passes nil for the *cache.Reflector argument, which causes a nil-pointer panic inside
+		// DefaultWatchErrorHandler when it accesses r.name.
 		if err := replicated.Local.SetWatchErrorHandlerWithContext(func(ctx context.Context, r *cache.Reflector, err error) {
-			cache.DefaultWatchErrorHandler(ctx, r, err)
+			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go local watch error handler: gvr=%s err=%v\n", gvr, err)
 			watchErrHandler(ctx, r, err)
 		}); err != nil {
 			logger.Error(err, "failed to set watch error handler on local informer")
 		}
 		if err := replicated.Global.SetWatchErrorHandlerWithContext(func(ctx context.Context, r *cache.Reflector, err error) {
-			cache.DefaultWatchErrorHandler(ctx, r, err)
+			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_reconcile_replication.go global watch error handler: gvr=%s err=%v\n", gvr, err)
 			watchErrHandler(ctx, r, err)
 		}); err != nil {
 			logger.Error(err, "failed to set watch error handler on global informer")
