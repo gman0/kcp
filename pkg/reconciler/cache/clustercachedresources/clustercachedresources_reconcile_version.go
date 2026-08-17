@@ -40,14 +40,10 @@ func (r *versionResolver) reconcile(ctx context.Context, clusterCachedResource *
 
 	gvr, err := r.getPreferredGVR(logicalcluster.From(clusterCachedResource), gr)
 	if err != nil {
-		// During deletion: if the resource is gone from the API but we still have stored versions,
-		// fall back to the first stored version so the purge and drain steps can proceed.
-		if !clusterCachedResource.DeletionTimestamp.IsZero() && len(clusterCachedResource.Status.StoredVersions) > 0 {
-			fallback := clusterCachedResource.Status.StoredVersions[0]
-			if clusterCachedResource.Status.StorageVersion != fallback {
-				clusterCachedResource.Status.StorageVersion = fallback
-				return reconcileStatusStopAndRequeue, nil
-			}
+		// During deletion the source API may already be gone. Use the persisted StorageVersion
+		// so the chain can reach the purge reconciler. If StorageVersion was never set, nothing
+		// was ever replicated and there is nothing to purge — let the chain through anyway.
+		if !clusterCachedResource.DeletionTimestamp.IsZero() {
 			return reconcileStatusContinue, nil
 		}
 		return reconcileStatusStopAndRequeue, err

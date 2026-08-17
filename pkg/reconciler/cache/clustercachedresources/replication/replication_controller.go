@@ -157,41 +157,6 @@ func (c *Controller) CurrentGVR() schema.GroupVersionResource {
 	return c.gvr
 }
 
-// UpdateGVR atomically swaps the informers and event handlers to replicate a new GVR version.
-// It removes handlers from the old informers and installs them on the new ones, then updates
-// the replicated snapshot so workers use the new stores. Returns an error if either new informer
-// has already stopped (caller should ForgetResource and re-create the controller).
-func (c *Controller) UpdateGVR(gvr schema.GroupVersionResource, local, global cache.SharedIndexInformer) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Remove old event handlers.
-	for _, f := range c.onShutdownFuncs {
-		f()
-	}
-	c.onShutdownFuncs = c.onShutdownFuncs[:0]
-
-	// Ensure the required indexer is present on the new global store.
-	indexers.AddIfNotPresentOrDie(global.GetIndexer(), cache.Indexers{
-		byShardAndLogicalClusterAndNamespaceAndName: indexByShardAndLogicalClusterAndNamespaceAndName,
-	})
-
-	// Register handlers on the new informers.
-	if err := c.installHandlers(gvr, local, global); err != nil {
-		return err
-	}
-
-	// Swap the replicated snapshot so workers pick up the new stores.
-	c.replicated = &ReplicatedGVR{
-		Identity: c.replicated.Identity,
-		Kind:     c.replicated.Kind,
-		Filter:   c.replicated.Filter,
-		Local:    local,
-		Global:   global,
-	}
-	c.gvr = gvr
-	return nil
-}
 
 func (c *Controller) enqueueObject(obj interface{}, gvr schema.GroupVersionResource, source string) {
 	key, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(obj)

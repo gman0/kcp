@@ -138,14 +138,6 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 			controllerRegistry:                   c.controllerRegistry,
 			cacheApiExtensionsClusterClient:      c.cacheApiExtensionsClusterClient,
 		},
-		&versionDrainer{
-			listCacheResourcesForVersion: func(ctx context.Context, version string, ccr *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
-				return c.listCacheResourcesForVersion(ctx, cluster, version, ccr)
-			},
-			deleteCacheResourcesForVersion: func(ctx context.Context, version string, ccr *cachev1alpha1.ClusterCachedResource) error {
-				return c.deleteCacheResourcesForVersion(ctx, cluster, version, ccr)
-			},
-		},
 	}
 
 	var errs []error
@@ -189,21 +181,11 @@ func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster log
 	return resources, nil
 }
 
-// deleteSelectedCacheResources deletes cached objects for all versions tracked in status.ReplicatedVersions
-// plus the current storageVersion. This ensures a complete purge during deletion.
 func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
-	versionsToDelete := map[string]struct{}{clusterCachedResource.Status.StorageVersion: {}}
-	for _, v := range clusterCachedResource.Status.StoredVersions {
-		versionsToDelete[v] = struct{}{}
+	if clusterCachedResource.Status.StorageVersion == "" || clusterCachedResource.Status.IdentityHash == "" {
+		return nil
 	}
-
-	var errs []error
-	for version := range versionsToDelete {
-		if err := c.deleteCacheResourcesForVersion(ctx, cluster, version, clusterCachedResource); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return utilerrors.NewAggregate(errs)
+	return c.deleteCacheResourcesForVersion(ctx, cluster, clusterCachedResource.Status.StorageVersion, clusterCachedResource)
 }
 
 func (c *Controller) deleteCacheResourcesForVersion(ctx context.Context, cluster logicalcluster.Name, version string, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
@@ -222,27 +204,17 @@ func (c *Controller) deleteCacheResourcesForVersion(ctx context.Context, cluster
 }
 
 func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
-	return c.listCacheResourcesForVersion(ctx, cluster, clusterCachedResource.Status.StorageVersion, clusterCachedResource)
-}
-
-func (c *Controller) listCacheResourcesForVersion(ctx context.Context, cluster logicalcluster.Name, version string, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
 	group := clusterCachedResource.Spec.Group
 	if group == "" {
 		group = "core"
 	}
 	gvr := schema.GroupVersionResource{
 		Group:    group,
-		Version:  version,
+		Version:  clusterCachedResource.Status.StorageVersion,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
-
 	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
-	resources, err := c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return resources, nil
+	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
 }
 
 func (c *Controller) ensureSecretNamespaceExists(ctx context.Context, clusterName logicalcluster.Name, defaultSecretNamespace string) {

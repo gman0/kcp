@@ -315,7 +315,6 @@ func newRegistry() *controllerRegistry {
 	return &controllerRegistry{
 		controllers: make(map[string]*replicationcontroller.Controller),
 		cancels:     make(map[string]context.CancelFunc),
-		ctxs:        make(map[string]context.Context),
 	}
 }
 
@@ -323,28 +322,19 @@ type controllerRegistry struct {
 	mu          sync.RWMutex
 	controllers map[string]*replicationcontroller.Controller
 	cancels     map[string]context.CancelFunc
-	ctxs        map[string]context.Context // controller lifetime contexts, for deriving informer sub-contexts on GVR update
 }
 
-func (c *controllerRegistry) register(name string, controller *replicationcontroller.Controller, cancel context.CancelFunc, ctx context.Context) {
+func (c *controllerRegistry) register(name string, controller *replicationcontroller.Controller, cancel context.CancelFunc) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.controllers[name] = controller
 	c.cancels[name] = cancel
-	c.ctxs[name] = ctx
 }
 
 func (c *controllerRegistry) get(name string) *replicationcontroller.Controller {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.controllers[name]
-}
-
-func (c *controllerRegistry) getCtx(name string) (context.Context, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	ctx, ok := c.ctxs[name]
-	return ctx, ok
 }
 
 func (c *controllerRegistry) unregister(name string) {
@@ -357,5 +347,4 @@ func (c *controllerRegistry) unregister(name string) {
 	}
 	delete(c.controllers, name)
 	delete(c.cancels, name)
-	delete(c.ctxs, name)
 }
