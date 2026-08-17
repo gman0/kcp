@@ -60,20 +60,21 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 		&finalizer{},
 		&versionResolver{
 			getPreferredGVR: func(cluster logicalcluster.Name, gr schema.GroupResource) (schema.GroupVersionResource, error) {
-				partialGVR := schema.GroupVersionResource{Group: gr.Group, Resource: gr.Resource}
 				// Use KindsFor instead of KindFor: KindFor errors when multiple versions are served.
 				// KindsFor returns results sorted by defaultGroupVersions (the lexicographically largest
 				// version per group). For standard Kubernetes versioning (v1alpha1→v1alpha2→v1beta1→v1)
 				// this is only reliable when versions from different "tiers" coexist; for same-tier
 				// increments (v1alpha1 vs v1alpha2) it is correct. When only one version remains (the
 				// typical post-migration state), there is no ambiguity.
-				kinds, err := c.dynRESTMapper.ForCluster(cluster).KindsFor(partialGVR)
+				kinds, err := c.dynRESTMapper.ForCluster(cluster).KindsFor(gr.WithVersion(""))
 				if err != nil {
 					return schema.GroupVersionResource{}, err
 				}
 				if len(kinds) == 0 {
 					return schema.GroupVersionResource{}, fmt.Errorf("no kind found for %v", gr)
 				}
+				gvr := gr.WithVersion(kinds[0].Version)
+				fmt.Printf("### getPreferredGVR: selecting %#v from %#v\n", gvr, kinds)
 				return schema.GroupVersionResource{Group: kinds[0].Group, Version: kinds[0].Version, Resource: gr.Resource}, nil
 			},
 		},
