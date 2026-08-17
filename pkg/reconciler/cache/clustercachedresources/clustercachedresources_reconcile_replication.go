@@ -67,7 +67,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	cluster := logicalcluster.From(clusterCachedResource)
 
 	// Controller is keyed by (cluster, group, resource) — version is not part of the identity.
-	// Version changes are handled in-place via UpdateGVR without restarting the controller.
+	// On version changes the controller is torn down and recreated with the new GVR.
 	controllerName := fmt.Sprintf("%s.%s.%s", cluster, gvr.Group, gvr.Resource)
 
 	var resourceLabelSelector labels.Selector
