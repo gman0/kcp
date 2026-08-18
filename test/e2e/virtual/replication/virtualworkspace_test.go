@@ -124,7 +124,10 @@ func TestClusterCachedResourceVirtualWorkspace(t *testing.T) {
 			Name: gvr.GroupResource().String(),
 		},
 		Spec: cachev1alpha1.ClusterCachedResourceSpec{
-			GroupVersionResource: cachev1alpha1.GroupVersionResource(gvr),
+			GroupResource: cachev1alpha1.GroupResource{
+				Group:    gvr.Group,
+				Resource: gvr.Resource,
+			},
 		},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)

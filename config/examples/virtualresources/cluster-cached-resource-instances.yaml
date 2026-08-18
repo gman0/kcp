@@ -5,7 +5,6 @@ metadata:
 spec:
   resource: instances
   group: machines.svm.io
-  version: v1alpha1
   labelSelector:
     matchLabels:
       app.kubernetes.io/part-of: instances

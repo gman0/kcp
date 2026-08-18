@@ -56,14 +56,10 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	logger := klog.FromContext(ctx)
 	logger.Info("reconciling cached resource", "ClusterCachedResource", clusterCachedResource.Name)
 
-	gvr := schema.GroupVersionResource{
-		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
-		Resource: clusterCachedResource.Spec.Resource,
-	}
+	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
+		WithVersion(clusterCachedResource.Status.StorageVersion)
 	cluster := logicalcluster.From(clusterCachedResource)
 
-	selection := replicationcontroller.SelectionFor(clusterCachedResource)
 	// Controller is keyed by (cluster, group, resource) — version is not part of the identity.
 	// On version changes the controller is torn down and recreated with the new GVR.
 	controllerName := fmt.Sprintf("%s.%s.%s", cluster, gvr.Group, gvr.Resource)
@@ -71,6 +67,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	clusterName := logicalcluster.From(clusterCachedResource)
 	// TODO: Add locking here when multiple workers are supported.
 	controller := r.controllerRegistry.get(controllerName)
+	selection := replicationcontroller.SelectionFor(clusterCachedResource)
 
 	// If a controller exists but its GVR differs from the resolved GVR, tear it down
 	// completely. The old informer's watch stream is already dead (that is what triggered
@@ -169,7 +166,14 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 
 			if !cache.WaitForCacheSync(controllerCtx.Done(), replicated.Local.HasSynced, replicated.Global.HasSynced) {
 				logger.Error(nil, "Informers failed to sync, removing controller", "controller", controllerName)
+				// Remove event handlers so the cancelled controller stops processing events.
+				// Start's defers do the same cleanup, but Start is never called on this path.
+				c.Shutdown()
 				r.controllerRegistry.unregister(controllerName)
+				// Remove stopped informers from the factory so the next reconcile gets fresh ones.
+				// Without this, ForResource returns the stopped informer and AddEventHandler fails.
+				r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+				r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 				requeueSelf()
 				return
 			}

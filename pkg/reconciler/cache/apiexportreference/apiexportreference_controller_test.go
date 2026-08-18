@@ -164,7 +164,6 @@ func TestDesired(t *testing.T) {
 	require.Equal(t, "wildwest-provider", *got.OwnerReferences[0].Name)
 	require.Equal(t, e.UID, *got.OwnerReferences[0].UID)
 	require.Equal(t, "wildwest.dev", *got.Spec.Group)
-	require.Equal(t, "v1alpha1", *got.Spec.Version)
 	require.Equal(t, "sheriffs", *got.Spec.Resource)
 	require.Equal(t, []string{"one"}, got.Spec.Names)
 	require.Nil(t, got.Spec.Identity, "identity is not this controller's to manage")

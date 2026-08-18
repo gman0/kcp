@@ -221,7 +221,6 @@ func (c *Controller) Start(ctx context.Context, numThreads int) {
 	// remaining preferred version and versionDrainer to purge stale cached objects.
 	c.localDiscoveringDynamicKcpInformers.AddGVRLifecycleHandler(ctx, informer.GVRLifecycleHandlerFuncs{
 		RemovedFunc: func(gvr schema.GroupVersionResource) {
-			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_controller.go GVRLifecycleHandler RemovedFunc: gvr=%s\n", gvr)
 			ccrs, err := indexers.ByIndex[*cachev1alpha1.ClusterCachedResource](
 				c.ClusterCachedResourceIndexer,
 				ByGroupResource,
@@ -231,7 +230,6 @@ func (c *Controller) Start(ctx context.Context, numThreads int) {
 				utilruntime.HandleError(fmt.Errorf("failed to list ClusterCachedResources for removed GVR %v: %w", gvr, err))
 				return
 			}
-			fmt.Printf("### pkg/reconciler/cache/clustercachedresources/clustercachedresources_controller.go GVRLifecycleHandler RemovedFunc: gvr=%s enqueueing %d CCRs\n", gvr, len(ccrs))
 			for _, ccr := range ccrs {
 				c.enqueue(ccr)
 			}

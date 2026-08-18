@@ -231,10 +231,10 @@ func (in *ClusterCachedResource) GetConditions() conditionsv1alpha1.Conditions {
 	return in.Status.Conditions
 }
 
-func (in GroupVersionResource) GetGroup() string {
+func (in GroupResource) GetGroup() string {
 	return in.Group
 }
 
-func (in GroupVersionResource) GetResource() string {
+func (in GroupResource) GetResource() string {
 	return in.Resource
 }

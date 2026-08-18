@@ -220,7 +220,6 @@ func desired(export *apisv1alpha2.APIExport, ref resolved) *cachev1alpha1apply.C
 		}).
 		WithSpec(cachev1alpha1apply.ClusterCachedResourceSpec().
 			WithGroup(ref.gvr.Group).
-			WithVersion(ref.gvr.Version).
 			WithResource(ref.gvr.Resource).
 			// Only the object that was referenced. A ClusterCachedResource
 			// usually stands for a whole kind; here it stands for one object.
