@@ -18,7 +18,6 @@ package apireconciler
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -104,35 +103,24 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 		return err
 	}
 
-	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
-		WithVersion(clusterCachedResource.Status.StorageVersion)
-
-	hasVersionMatch := false
-	for i := range sch.Spec.Versions {
-		if sch.Spec.Versions[i].Served && sch.Spec.Versions[i].Name == gvr.Version {
-			hasVersionMatch = true
-			break
-		}
-	}
-	if !hasVersionMatch {
-		logger.Error(nil, "referenced APIResourceSchema doesn't serve required version", "gvr", gvr.String())
-		return fmt.Errorf("APIResourceSchema %s|%s doesn't serve %s", logicalcluster.From(sch), sch.Name, gvr)
-	}
-
-	logger.Info("creating API definition", "gvr", gvr)
-	apiDefinition, err := c.createAPIDefinition(sch, clusterCachedResource, export)
-	if err != nil {
-		// TODO(ncdc): would be nice to expose some sort of user-visible error
-		logger.Error(err, "error creating api definition", "gvr", gvr)
-		return err
-	}
-
+	gr := schema.GroupResource(clusterCachedResource.Spec.GroupResource)
 	apiSet := make(apidefinition.APIDefinitionSet)
+
 	for _, version := range sch.Spec.Versions {
 		if !version.Served {
 			continue
 		}
-		apiSet[gvr.GroupResource().WithVersion(version.Name)] = apiResourceSchemaApiDefinition{
+
+		gvr := gr.WithVersion(version.Name)
+		logger.Info("creating API definition", "gvr", gvr)
+
+		apiDefinition, err := c.createAPIDefinition(sch, version.Name, clusterCachedResource, export)
+		if err != nil {
+			// TODO(ncdc): would be nice to expose some sort of user-visible error
+			logger.Error(err, "error creating api definition", "gr", gr)
+			return err
+		}
+		apiSet[gvr] = apiResourceSchemaApiDefinition{
 			APIDefinition: apiDefinition,
 			UID:           sch.UID,
 			IdentityHash:  clusterCachedResource.Status.IdentityHash,
