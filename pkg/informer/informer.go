@@ -296,6 +296,20 @@ func (d *DiscoveringDynamicSharedInformerFactory) ClusterWithContext(ctx context
 	return informer
 }
 
+// ForgetResource stops and removes the informer for gvr. The informer's context must already
+// have been cancelled by the caller before invoking this method.
+func (d *GenericDiscoveringDynamicSharedInformerFactory[Informer, Lister, GenericInformer]) ForgetResource(gvr schema.GroupVersionResource) {
+	d.informersLock.Lock()
+	defer d.informersLock.Unlock()
+
+	if stop, ok := d.informerStops[gvr]; ok {
+		close(stop)
+	}
+	delete(d.informers, gvr)
+	delete(d.informerStops, gvr)
+	delete(d.startedInformers, gvr)
+}
+
 // PurgeCluster removes all objects belonging to the given logical cluster from all informer stores.
 func (d *DiscoveringDynamicSharedInformerFactory) PurgeCluster(cluster logicalcluster.Name) {
 	d.informersLock.RLock()

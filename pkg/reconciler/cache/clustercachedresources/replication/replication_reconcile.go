@@ -48,6 +48,7 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 	}
 	gvrParts := strings.SplitN(keyParts[0], ".", 3)
 	gvrFromKey := schema.GroupVersionResource{Version: gvrParts[0], Resource: gvrParts[1], Group: gvrParts[2]}
+
 	gvrWithIdentity := gvrFromKey
 	gvrWithIdentity.Resource += ":" + c.replicated.Identity
 

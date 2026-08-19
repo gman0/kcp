@@ -65,6 +65,20 @@ func (r *versionResolver) reconcile(ctx context.Context, ccr *cachev1alpha1.Clus
 		served.Insert(gvk.Version)
 	}
 
+	// Tear down the running controller if:
+	//   (a) its GVR version differs from spec.version (user changed the pin), or
+	//   (b) spec.version is no longer served (version removed from source).
+
+	controllerName := replicationControllerName(ccr)
+	if controller := r.controllerRegistry.get(controllerName); controller != nil {
+		activeGVR := controller.CurrentGVR()
+		if activeGVR.Version != desired || !served.Has(desired) {
+			r.controllerRegistry.unregister(controllerName)
+			r.localDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+			r.globalDiscoveringDynamicKcpInformers.ForgetResource(activeGVR)
+		}
+	}
+
 	if served.Has(desired) {
 		conditions.MarkTrue(ccr, cachev1alpha1.StorageVersionAvailable)
 		if ccr.Status.StorageVersion != desired {
