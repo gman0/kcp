@@ -34,8 +34,6 @@ import (
 	apisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
 	cachev1alpha1 "github.com/kcp-dev/sdk/apis/cache/v1alpha1"
 
-	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	replicationcontroller "github.com/kcp-dev/kcp/pkg/reconciler/cache/clustercachedresources/replication"
 )
@@ -52,9 +50,6 @@ type reconciler interface {
 	reconcile(ctx context.Context, workspace *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error)
 }
 
-// reconcile reconciles the workspace objects. It is intended to be single reconciler for all the
-// workspace replated operations. For now it has single reconciler that updates the status of the
-// workspace based on the mount status.
 func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (bool, error) {
 	reconcilers := []reconciler{
 		&finalizer{},
@@ -167,8 +162,6 @@ func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster l
 		Version:  clusterCachedResource.Spec.Version,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
-
-	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
 	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 }
 
@@ -178,7 +171,6 @@ func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster log
 		Version:  clusterCachedResource.Spec.Version,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
-	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
 	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
 }
 

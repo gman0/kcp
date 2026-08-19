@@ -32,7 +32,6 @@ import (
 	"k8s.io/klog/v2"
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
-	kcpapiextensionsclientset "github.com/kcp-dev/client-go/apiextensions/client"
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	"github.com/kcp-dev/logicalcluster/v3"
 	kcpclientset "github.com/kcp-dev/sdk/client/clientset/versioned/cluster"
@@ -74,7 +73,6 @@ func NewController(
 	localDynamicClusterClient kcpdynamic.ClusterInterface,
 	globalDynamicClusterClient kcpdynamic.ClusterInterface,
 	kcpCacheClient kcpclientset.ClusterInterface,
-	cacheApiExtensionsClusterClient kcpapiextensionsclientset.ClusterInterface,
 	cluster logicalcluster.Name,
 	gvr schema.GroupVersionResource,
 	replicated *ReplicatedGVR,
@@ -89,13 +87,12 @@ func NewController(
 				Name: ControllerName,
 			},
 		),
-		localDynamicClusterClient:       localDynamicClusterClient,
-		globalDynamicClusterClient:      globalDynamicClusterClient,
-		cacheApiExtensionsClusterClient: cacheApiExtensionsClusterClient,
-		replicated:                      replicated,
-		requeueSelf:                     requeueSelf,
-		onShutdownFuncs:                 make([]func(), 0),
-		selection:                       selection,
+		localDynamicClusterClient:  localDynamicClusterClient,
+		globalDynamicClusterClient: globalDynamicClusterClient,
+		replicated:                 replicated,
+		requeueSelf:                requeueSelf,
+		onShutdownFuncs:            make([]func(), 0),
+		selection:                  selection,
 	}
 
 	localHandler, err := c.replicated.Local.AddEventHandler(cache.FilteringResourceEventHandler{
@@ -214,9 +211,8 @@ type Controller struct {
 	shardName string
 	queue     workqueue.TypedRateLimitingInterface[string]
 
-	localDynamicClusterClient       kcpdynamic.ClusterInterface
-	globalDynamicClusterClient      kcpdynamic.ClusterInterface
-	cacheApiExtensionsClusterClient kcpapiextensionsclientset.ClusterInterface
+	localDynamicClusterClient  kcpdynamic.ClusterInterface
+	globalDynamicClusterClient kcpdynamic.ClusterInterface
 
 	replicated *ReplicatedGVR
 
