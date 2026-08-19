@@ -32,7 +32,8 @@ type validSchema struct {
 }
 
 func (r *validSchema) reconcile(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (reconcileStatus, error) {
-	wrappedGVR := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	wrappedGVR := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
+		WithVersion(clusterCachedResource.Status.StorageVersion)
 
 	scope, err := r.getResourceScope(wrappedGVR)
 	if err != nil {

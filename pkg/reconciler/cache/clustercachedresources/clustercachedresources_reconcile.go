@@ -61,7 +61,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 		&validSchema{
 			getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 				scopedMapper := c.dynRESTMapper.ForCluster(logicalcluster.From(clusterCachedResource))
-				kind, err := scopedMapper.KindFor(schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource))
+				kind, err := scopedMapper.KindFor(gvr)
 				if err != nil {
 					return nil, err
 				}
@@ -167,13 +167,9 @@ func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster l
 		Version:  clusterCachedResource.Spec.Version,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
-	if gvr.Group == "" {
-		gvr.Group = "core"
-	}
 
 	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
-	err := c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
-	return err
+	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 }
 
 func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
@@ -182,17 +178,8 @@ func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster log
 		Version:  clusterCachedResource.Spec.Version,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
-	if gvr.Group == "" {
-		gvr.Group = "core"
-	}
-
 	ctx = cacheclient.WithShardInContext(ctx, shard.New(c.shardName))
-	resources, err := c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return resources, nil
+	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})
 }
 
 func (c *Controller) ensureSecretNamespaceExists(ctx context.Context, clusterName logicalcluster.Name, defaultSecretNamespace string) {
