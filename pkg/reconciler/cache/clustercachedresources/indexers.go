@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	// ByGVRAndLogicalCluster is the name for the index that indexes by an object's gvr and logical cluster.
-	ByGVRAndLogicalCluster = "kcp-byGVRAndLogicalCluster"
+	// ByGRAndLogicalCluster is the name for the index that indexes by an object's group+resource and logical cluster.
+	ByGRAndLogicalCluster = "kcp-byGRAndLogicalCluster"
 
 	// ByIdentityAndGroupResource is the name for the index that indexes by an object's identity hash and group/resource.
 	ByIdentityAndGroupResource = "kcp-byIdentityAndGroupResource"
@@ -33,8 +33,8 @@ const (
 	ByGroupResource = "kcp-byGroupResource"
 )
 
-// IndexByShardAndLogicalClusterAndNamespace is an index function that indexes by an object's gvr and logical cluster.
-func IndexByGVRAndLogicalCluster(obj interface{}) ([]string, error) {
+// IndexByGRAndLogicalCluster is an index function that indexes by an object's group+resource and logical cluster.
+func IndexByGRAndLogicalCluster(obj interface{}) ([]string, error) {
 	clusterCachedResource := obj.(*cachev1alpha1.ClusterCachedResource)
 
 	if clusterCachedResource.Status.IdentityHash == "" {
@@ -47,8 +47,8 @@ func IndexByGVRAndLogicalCluster(obj interface{}) ([]string, error) {
 	}
 
 	return []string{
-		GVRAndLogicalClusterKey(
-			schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource),
+		GRAndLogicalClusterKey(
+			schema.GroupResource(clusterCachedResource.Spec.GroupResource),
 			logicalcluster.From(clusterCachedResource),
 		),
 	}, nil
@@ -68,8 +68,8 @@ func IndexByIdentityAndGroupResource(obj interface{}) ([]string, error) {
 		return []string{}, nil
 	}
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
-	return []string{IdentityAndGroupResourceKey(clusterCachedResource.Status.IdentityHash, gvr.GroupResource())}, nil
+	gr := schema.GroupResource(clusterCachedResource.Spec.GroupResource)
+	return []string{IdentityAndGroupResourceKey(clusterCachedResource.Status.IdentityHash, gr)}, nil
 }
 
 // IdentityAndGroupResourceKey creates an index key from an identity hash and group/resource.
@@ -88,23 +88,23 @@ func IndexByGroupResource(obj interface{}) ([]string, error) {
 		clusterCachedResource.Annotations[AnnotationResourceScope] == "" {
 		return []string{}, nil
 	}
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
-	return []string{GroupResourceKey(gvr.GroupResource())}, nil
+	gr := schema.GroupResource(clusterCachedResource.Spec.GroupResource)
+	return []string{GroupResourceKey(gr)}, nil
 }
 
-// GroupResourceKey creates an index key from an identity hash and group/resource.
+// GroupResourceKey creates an index key from a group/resource.
 func GroupResourceKey(gr schema.GroupResource) string {
 	return gr.String()
 }
 
-// GVRAndShardAndLogicalClusterAndNamespaceKey creates an index key from the given parameters.
-// Key will be in the form of version.resource.group|cluster.
-func GVRAndLogicalClusterKey(gvr schema.GroupVersionResource, cluster logicalcluster.Name) string {
+// GRAndLogicalClusterKey creates an index key from a group+resource and logical cluster.
+// Key will be in the form of resource.group|cluster.
+func GRAndLogicalClusterKey(gr schema.GroupResource, cluster logicalcluster.Name) string {
 	var key string
-	if gvr.Group == "" {
-		gvr.Group = "core"
+	if gr.Group == "" {
+		gr.Group = "core"
 	}
-	key += gvr.Version + "." + gvr.Resource + "." + gvr.Group
+	key += gr.Resource + "." + gr.Group
 	if !cluster.Empty() {
 		key += "|" + cluster.String()
 	}

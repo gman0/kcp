@@ -112,7 +112,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		cachev1alpha1.ClusterCachedResourceSpec{}.OpenAPIModelName():                  schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceSpec(ref),
 		cachev1alpha1.ClusterCachedResourceStatus{}.OpenAPIModelName():                schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceStatus(ref),
 		cachev1alpha1.ExportBindingReference{}.OpenAPIModelName():                     schema_sdk_apis_cache_v1alpha1_ExportBindingReference(ref),
-		cachev1alpha1.GroupVersionResource{}.OpenAPIModelName():                       schema_sdk_apis_cache_v1alpha1_GroupVersionResource(ref),
+		cachev1alpha1.GroupResource{}.OpenAPIModelName():                              schema_sdk_apis_cache_v1alpha1_GroupResource(ref),
 		cachev1alpha1.Identity{}.OpenAPIModelName():                                   schema_sdk_apis_cache_v1alpha1_Identity(ref),
 		cachev1alpha1.ResourceCount{}.OpenAPIModelName():                              schema_sdk_apis_cache_v1alpha1_ResourceCount(ref),
 		corev1alpha1.Endpoint{}.OpenAPIModelName():                                    schema_sdk_apis_core_v1alpha1_Endpoint(ref),
@@ -3332,16 +3332,17 @@ func schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceSpec(ref common.Referen
 							Format:      "",
 						},
 					},
-					"version": {
+					"resource": {
 						SchemaProps: spec.SchemaProps{
-							Description: "version is the version of the resource.",
+							Description: "resource is the name of the resource. Note: it is worth noting that you can not ask for permissions for resource provided by a CRD not provided by an api export.",
+							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
-					"resource": {
+					"version": {
 						SchemaProps: spec.SchemaProps{
-							Description: "resource is the name of the resource. Note: it is worth noting that you can not ask for permissions for resource provided by a CRD not provided by an api export.",
+							Description: "version is the version of the resource to replicate and store.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3380,7 +3381,7 @@ func schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceSpec(ref common.Referen
 						},
 					},
 				},
-				Required: []string{"resource"},
+				Required: []string{"resource", "version"},
 			},
 		},
 		Dependencies: []string{
@@ -3466,7 +3467,7 @@ func schema_sdk_apis_cache_v1alpha1_ExportBindingReference(ref common.ReferenceC
 	}
 }
 
-func schema_sdk_apis_cache_v1alpha1_GroupVersionResource(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_sdk_apis_cache_v1alpha1_GroupResource(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
@@ -3476,13 +3477,6 @@ func schema_sdk_apis_cache_v1alpha1_GroupVersionResource(ref common.ReferenceCal
 					"group": {
 						SchemaProps: spec.SchemaProps{
 							Description: "group is the name of an API group. For core groups this is the empty string '\"\"'.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"version": {
-						SchemaProps: spec.SchemaProps{
-							Description: "version is the version of the resource.",
 							Type:        []string{"string"},
 							Format:      "",
 						},

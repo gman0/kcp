@@ -55,11 +55,8 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	logger := klog.FromContext(ctx)
 	logger.Info("reconciling cached resource", "ClusterCachedResource", clusterCachedResource.Name)
 
-	gvr := schema.GroupVersionResource{
-		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
-		Resource: clusterCachedResource.Spec.Resource,
-	}
+	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
+		WithVersion(clusterCachedResource.Spec.Version)
 	cluster := logicalcluster.From(clusterCachedResource)
 
 	selection := replicationcontroller.SelectionFor(clusterCachedResource)

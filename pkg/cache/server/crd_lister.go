@@ -154,7 +154,7 @@ func (c *crdLister) List(ctx context.Context, selector labels.Selector) ([]*apie
 			cr.Status.IdentityHash == "" {
 			continue
 		}
-		crs, err := c.listClusterCachedResourcesByIdentityAndGR(cr.Status.IdentityHash, schema.GroupVersionResource(cr.Spec.GroupVersionResource).GroupResource())
+		crs, err := c.listClusterCachedResourcesByIdentityAndGR(cr.Status.IdentityHash, schema.GroupResource{Group: cr.Spec.Group, Resource: cr.Spec.Resource})
 		if err != nil {
 			return nil, err
 		}
@@ -358,7 +358,7 @@ func (c *crdClusterLister) synthesizeCRDForClusterCachedResources(crs []*cachev1
 
 	versionSet := make(map[string]struct{}, len(crs))
 	for _, cr := range crs {
-		gvr := schema.GroupVersionResource(cr.Spec.GroupVersionResource)
+		gvr := schema.GroupResource(cr.Spec.GroupResource).WithVersion(cr.Spec.Version)
 		versionSet[gvr.Version] = struct{}{}
 	}
 	if len(versionSet) == 0 {

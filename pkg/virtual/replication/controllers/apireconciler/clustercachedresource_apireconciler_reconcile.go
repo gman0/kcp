@@ -104,7 +104,7 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 		return err
 	}
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).WithVersion(clusterCachedResource.Spec.Version)
 
 	hasVersionMatch := false
 	for i := range sch.Spec.Versions {

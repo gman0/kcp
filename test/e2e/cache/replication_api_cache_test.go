@@ -252,11 +252,11 @@ func TestReplicationWithWildcardListing(t *testing.T) {
 							Name: "instances",
 						},
 						Spec: cachev1alpha1.ClusterCachedResourceSpec{
-							GroupVersionResource: cachev1alpha1.GroupVersionResource{
+							GroupResource: cachev1alpha1.GroupResource{
 								Group:    "machines.svm.io",
-								Version:  "v1alpha1",
 								Resource: "instances",
 							},
+							Version: "v1alpha1",
 							Identity: &cachev1alpha1.Identity{
 								SecretRef: &corev1.SecretReference{
 									Name:      "identity",

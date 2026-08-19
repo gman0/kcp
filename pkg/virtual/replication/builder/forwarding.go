@@ -40,9 +40,9 @@ func provideReadOnlyRestStorage(
 ) (apidefinition.APIDefinition, error) {
 	ctx, cancelFn := context.WithCancel(context.Background())
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gr := schema.GroupResource(clusterCachedResource.Spec.GroupResource)
 	identities := map[schema.GroupResource]string{
-		gvr.GroupResource(): clusterCachedResource.Status.IdentityHash,
+		gr: clusterCachedResource.Status.IdentityHash,
 	}
 
 	clientFunc := forwardingregistry.DynamicClusterClientFunc(func(_ context.Context) (kcpdynamic.ClusterInterface, error) {
