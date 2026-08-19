@@ -33,8 +33,6 @@ import (
 	"k8s.io/klog/v2"
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
-	kcpapiextensionsclientset "github.com/kcp-dev/client-go/apiextensions/client"
-	kcpapiextensionsinformers "github.com/kcp-dev/client-go/apiextensions/informers"
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	kcpcorev1informers "github.com/kcp-dev/client-go/informers/core/v1"
 	kcpkubernetesclientset "github.com/kcp-dev/client-go/kubernetes"
@@ -77,9 +75,6 @@ func NewController(
 	namespaceInformer kcpcorev1informers.NamespaceClusterInformer,
 	secretInformer kcpcorev1informers.SecretClusterInformer,
 
-	cacheApiExtensionsClusterClient kcpapiextensionsclientset.ClusterInterface,
-	cacheApiExtensionsClusterInformer kcpapiextensionsinformers.SharedInformerFactory,
-
 	dynRESTMapper *dynamicrestmapper.DynamicRESTMapper,
 
 	localDiscoveringDynamicKcpInformers *informer.DiscoveringDynamicSharedInformerFactory,
@@ -106,10 +101,8 @@ func NewController(
 		localDiscoveringDynamicKcpInformers:  localDiscoveringDynamicKcpInformers,
 		globalDiscoveringDynamicKcpInformers: globalDiscoveringDynamicKcpInformers,
 
-		ClusterCachedResourceLister:       clusterCachedResourceInformer.Lister(),
-		ClusterCachedResourceIndexer:      clusterCachedResourceInformer.Informer().GetIndexer(),
-		cacheApiExtensionsClusterClient:   cacheApiExtensionsClusterClient,
-		cacheApiExtensionsClusterInformer: cacheApiExtensionsClusterInformer,
+		ClusterCachedResourceLister:  clusterCachedResourceInformer.Lister(),
+		ClusterCachedResourceIndexer: clusterCachedResourceInformer.Informer().GetIndexer(),
 
 		commit: committer.NewCommitter[*cachev1alpha1.ClusterCachedResource, cachev1alpha1client.ClusterCachedResourceInterface, *cachev1alpha1.ClusterCachedResourceSpec, *cachev1alpha1.ClusterCachedResourceStatus](kcpClusterClient.CacheV1alpha1().ClusterCachedResources()),
 
@@ -182,9 +175,6 @@ type Controller struct {
 
 	getSecret    func(ctx context.Context, clusterName logicalcluster.Name, ns, name string) (*corev1.Secret, error)
 	createSecret func(ctx context.Context, clusterName logicalcluster.Path, secret *corev1.Secret) error
-
-	cacheApiExtensionsClusterClient   kcpapiextensionsclientset.ClusterInterface
-	cacheApiExtensionsClusterInformer kcpapiextensionsinformers.SharedInformerFactory
 
 	controllerRegistry *controllerRegistry
 
