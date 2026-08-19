@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -316,10 +317,10 @@ func crdNameToGroupResource(name string) (group, resource string) {
 	return group, resource
 }
 
-func buildSchemalessCRDVersions(versions map[string]struct{}) []apiextensionsv1.CustomResourceDefinitionVersion {
+func buildSchemalessCRDVersions(versions map[string]struct{}, storageVersion string) []apiextensionsv1.CustomResourceDefinitionVersion {
 	result := make([]apiextensionsv1.CustomResourceDefinitionVersion, 0, len(versions))
 	for v := range versions {
-		result = append(result, apiextensionsv1.CustomResourceDefinitionVersion{
+		crdVersion := apiextensionsv1.CustomResourceDefinitionVersion{
 			Name:   v,
 			Served: true,
 			Schema: &apiextensionsv1.CustomResourceValidation{
@@ -328,21 +329,28 @@ func buildSchemalessCRDVersions(versions map[string]struct{}) []apiextensionsv1.
 					XPreserveUnknownFields: ptr.To(true),
 				},
 			},
-		})
+		}
+		if v == storageVersion {
+			crdVersion.Storage = true
+		}
+		result = append(result, crdVersion)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return k8sversion.CompareKubeAwareVersionStrings(result[i].Name, result[j].Name) < 0
 	})
-	// The last element after sorting is it the storage version.
-	for i := range len(result) - 1 {
-		result[i].Storage = false
-	}
-	result[len(result)-1].Storage = true
 	return result
 }
 
-func syntheticCRDUID(identity string, gr schema.GroupResource, sortedVersions []string) types.UID {
-	h := sha256.Sum256([]byte(identity + "|" + gr.String() + "|" + strings.Join(sortedVersions, ",")))
+func syntheticCRDUID(identity string, gr schema.GroupResource, sortedVersions []string, storageVersion string) types.UID {
+	bs := bytes.Buffer{}
+	bs.Write([]byte(identity))
+	bs.Write([]byte(gr.String()))
+	for i := range sortedVersions {
+		bs.Write([]byte(sortedVersions[i]))
+	}
+	bs.Write([]byte(storageVersion))
+
+	h := sha256.Sum256(bs.Bytes())
 	return types.UID(kcpcrypto.Base36.BytesPad(h[:]))
 }
 
@@ -356,16 +364,21 @@ func (c *crdClusterLister) synthesizeCRDForClusterCachedResources(crs []*cachev1
 	scope := apiextensionsv1.ResourceScope(crs[0].Annotations[clustercachedresources.AnnotationResourceScope])
 	identity := crs[0].Status.IdentityHash
 
-	versionSet := make(map[string]struct{}, len(crs))
+	versionSet := make(map[string]struct{})
+	storageVersion := ""
 	for _, cr := range crs {
-		gvr := schema.GroupResource(cr.Spec.GroupResource).WithVersion(cr.Spec.Version)
-		versionSet[gvr.Version] = struct{}{}
+		if storageVersion == "" {
+			storageVersion = cr.Status.StorageVersion
+		}
+		for _, v := range cr.Status.StoredVersions {
+			versionSet[v] = struct{}{}
+		}
 	}
-	if len(versionSet) == 0 {
+	if storageVersion == "" || len(versionSet) == 0 {
 		return nil, apierrors.NewNotFound(apiextensionsv1.Resource("customresourcedefinitions"), gr.String())
 	}
 
-	versions := buildSchemalessCRDVersions(versionSet)
+	versions := buildSchemalessCRDVersions(versionSet, storageVersion)
 
 	// Content-addressable UID: changes when the served version set changes,
 	// forcing the apiextensions handler to rebuild serving info automatically.
@@ -373,7 +386,7 @@ func (c *crdClusterLister) synthesizeCRDForClusterCachedResources(crs []*cachev1
 	for i, v := range versions {
 		sortedVersionNames[i] = v.Name
 	}
-	uid := syntheticCRDUID(identity, gr, sortedVersionNames)
+	uid := syntheticCRDUID(identity, gr, sortedVersionNames, storageVersion)
 
 	names := apiextensionsv1.CustomResourceDefinitionNames{
 		Plural:   gr.Resource,
@@ -415,6 +428,7 @@ func (c *crdClusterLister) synthesizeCRDForClusterCachedResources(crs []*cachev1
 					Status: apiextensionsv1.ConditionTrue,
 				},
 			},
+			StoredVersions: sortedVersionNames,
 		},
 	}
 

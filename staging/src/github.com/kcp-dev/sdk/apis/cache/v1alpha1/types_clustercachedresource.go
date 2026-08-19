@@ -52,6 +52,7 @@ type ClusterCachedResourceSpec struct {
 	GroupResource `json:",inline"`
 
 	// version is the version of the resource to replicate and store.
+	// The effective version is in .status.storageVersion.
 	//
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^v[0-9]+(alpha[0-9]+|beta[0-9]+)?$`
@@ -175,6 +176,17 @@ type ClusterCachedResourceStatus struct {
 	// ResourceCount is the number of resources that match the label selector
 	// +optional
 	ResourceCounts *ResourceCount `json:"resourceCounts,omitempty"`
+
+	// StorageVersion is the API version currently being replicated.
+	// +optional
+	StorageVersion string `json:"storageVersion,omitempty"`
+
+	// StoredVersions lists all versions of cached resources that were ever persisted. Tracking
+	// these versions allows a migration path for stored versions in etcd. The field is mutable
+	// so a migration controller can finish a migration to another version (ensuring no old objects
+	// are left in storage), and then remove the rest of the versions from this list.
+	// +optional
+	StoredVersions []string `json:"storedVersions,omitempty"`
 
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	//
