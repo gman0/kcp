@@ -141,11 +141,12 @@ func BuildVirtualWorkspace(
 			apiReconciler, err := apireconciler.NewAPIReconciler(
 				localKcpInformers,
 				globalKcpInformers,
-				func(apiResourceSchema *apisv1alpha1.APIResourceSchema, clusterCachedResource *cachev1alpha1.ClusterCachedResource, export *apisv1alpha2.APIExport) (apidefinition.APIDefinition, error) {
+				func(apiResourceSchema *apisv1alpha1.APIResourceSchema, version string, clusterCachedResource *cachev1alpha1.ClusterCachedResource, export *apisv1alpha2.APIExport) (apidefinition.APIDefinition, error) {
 					return provideReadOnlyRestStorage(
 						mainConfig,
 						cacheDynamicClusterClient,
 						apiResourceSchema,
+						version,
 						clusterCachedResource,
 						export,
 					)

@@ -36,7 +36,7 @@ import (
 
 	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
 	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
-	"github.com/kcp-dev/kcp/pkg/reconciler/cache/replication"
+	"github.com/kcp-dev/kcp/pkg/reconciler/cache/clustercachedresources/replication"
 )
 
 func fixupAnnotations(obj *unstructured.Unstructured, cluster logicalcluster.Name) {
@@ -50,6 +50,7 @@ func fixupAnnotations(obj *unstructured.Unstructured, cluster logicalcluster.Nam
 	delete(annotations, shard.AnnotationKey)
 	delete(annotations, replication.AnnotationKeyOriginalResourceUID)
 	delete(annotations, replication.AnnotationKeyOriginalResourceVersion)
+	delete(annotations, replication.AnnotationKeyOriginalAPIVersion)
 
 	obj.SetAnnotations(annotations)
 }
