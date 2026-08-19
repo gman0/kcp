@@ -45,9 +45,17 @@ type ClusterCachedResource struct {
 }
 
 // ClusterCachedResourceSpec defines the desired state of ClusterCachedResource.
+//
+// +kubebuilder:validation:XValidation:rule="self.resource == oldSelf.resource && self.group == oldSelf.group",message="API group and resource must not be changed"
 type ClusterCachedResourceSpec struct {
-	// GroupVersionResource is the fully qualified name of the resource to be published.
-	GroupVersionResource `json:",inline"`
+	// GroupResource is the group and resource name of the resource to be published.
+	GroupResource `json:",inline"`
+
+	// version is the version of the resource to replicate and store.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^v[0-9]+(alpha[0-9]+|beta[0-9]+)?$`
+	Version string `json:"version"`
 
 	// identity points to a secret that contains the API identity in the 'key' file.
 	// The API identity allows access to ClusterCachedResource's resources via the APIExport.
@@ -91,17 +99,13 @@ type Identity struct {
 }
 
 // GroupVersionResource identifies a resource.
-type GroupVersionResource struct {
+type GroupResource struct {
 	// group is the name of an API group.
 	// For core groups this is the empty string '""'.
 	//
 	// +kubebuilder:validation:Pattern=`^(|[a-z0-9]([-a-z0-9]*[a-z0-9](\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?)$`
 	// +optional
 	Group string `json:"group,omitempty"`
-
-	// version is the version of the resource.
-	// +optional
-	Version string `json:"version,omitempty"`
 
 	// resource is the name of the resource.
 	// Note: it is worth noting that you can not ask for permissions for resource provided by a CRD
@@ -223,10 +227,10 @@ func (in *ClusterCachedResource) GetConditions() conditionsv1alpha1.Conditions {
 	return in.Status.Conditions
 }
 
-func (in GroupVersionResource) GetGroup() string {
+func (in GroupResource) GetGroup() string {
 	return in.Group
 }
 
-func (in GroupVersionResource) GetResource() string {
+func (in GroupResource) GetResource() string {
 	return in.Resource
 }

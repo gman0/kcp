@@ -72,11 +72,11 @@ func TestClusterCachedResourceEndpointSliceWithPath(t *testing.T) {
 			Name: sheriffsGR.String(),
 		},
 		Spec: cachev1alpha1.ClusterCachedResourceSpec{
-			GroupVersionResource: cachev1alpha1.GroupVersionResource{
+			GroupResource: cachev1alpha1.GroupResource{
 				Group:    "wildwest.dev",
-				Version:  "v1alpha1",
 				Resource: "sheriffs",
 			},
+			Version: "v1alpha1",
 		},
 	}
 

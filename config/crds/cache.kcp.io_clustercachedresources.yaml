@@ -154,10 +154,15 @@ spec:
                 type: string
               version:
                 description: version is the version of the resource.
+                pattern: ^v[0-9]+(alpha[0-9]+|beta[0-9]+)?$
                 type: string
             required:
             - resource
+            - version
             type: object
+            x-kubernetes-validations:
+            - message: API group and resource must not be changed
+              rule: self.resource == oldSelf.resource && self.group == oldSelf.group
           status:
             description: ClusterCachedResourceStatus defines the observed state of
               ClusterCachedResource.

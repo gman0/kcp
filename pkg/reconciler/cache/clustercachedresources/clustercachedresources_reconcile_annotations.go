@@ -47,7 +47,8 @@ func (r *reconcileResourceMetadata) reconcile(ctx context.Context, clusterCached
 		return reconcileStatusContinue, nil
 	}
 
-	gvr := schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource)
+	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
+		WithVersion(clusterCachedResource.Status.StorageVersion)
 	clusterName := logicalcluster.From(clusterCachedResource)
 
 	kind, err := r.getKind(clusterName, gvr)
