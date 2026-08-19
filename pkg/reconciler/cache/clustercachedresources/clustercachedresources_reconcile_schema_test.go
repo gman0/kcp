@@ -43,11 +43,11 @@ func TestSchema(t *testing.T) {
 		"resource not found": {
 			ClusterCachedResource: &cachev1alpha1.ClusterCachedResource{
 				Spec: cachev1alpha1.ClusterCachedResourceSpec{
-					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+					GroupResource: cachev1alpha1.GroupResource{
 						Group:    "none",
-						Version:  "v1",
 						Resource: "nonexistent",
 					},
+					Version: "v1",
 				},
 			},
 			reconciler: &validSchema{
@@ -60,11 +60,11 @@ func TestSchema(t *testing.T) {
 		"resource is namespace-scoped and check fails": {
 			ClusterCachedResource: &cachev1alpha1.ClusterCachedResource{
 				Spec: cachev1alpha1.ClusterCachedResourceSpec{
-					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+					GroupResource: cachev1alpha1.GroupResource{
 						Group:    "foo.dev",
-						Version:  "v1",
 						Resource: "namespaced",
 					},
+					Version: "v1",
 				},
 			},
 			reconciler: &validSchema{
@@ -85,11 +85,11 @@ func TestSchema(t *testing.T) {
 		"resource is cluster-scoped and check succeeds": {
 			ClusterCachedResource: &cachev1alpha1.ClusterCachedResource{
 				Spec: cachev1alpha1.ClusterCachedResourceSpec{
-					GroupVersionResource: cachev1alpha1.GroupVersionResource{
+					GroupResource: cachev1alpha1.GroupResource{
 						Group:    "foo.dev",
-						Version:  "v1",
 						Resource: "clusterscoped",
 					},
+					Version: "v1",
 				},
 			},
 			reconciler: &validSchema{

@@ -72,8 +72,8 @@ func (in ExportBindingReference) OpenAPIModelName() string {
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
-func (in GroupVersionResource) OpenAPIModelName() string {
-	return "com.github.kcp-dev.sdk.apis.cache.v1alpha1.GroupVersionResource"
+func (in GroupResource) OpenAPIModelName() string {
+	return "com.github.kcp-dev.sdk.apis.cache.v1alpha1.GroupResource"
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
