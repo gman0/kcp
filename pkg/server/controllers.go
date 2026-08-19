@@ -2179,6 +2179,7 @@ func (s *Server) addIndexersToInformers(_ context.Context) map[schema.GroupVersi
 		s.KcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 		s.CacheKcpSharedInformerFactory.Apis().V1alpha2().APIExports(),
 	)
+	clustercachedresources.InstallIndexers(s.KcpSharedInformerFactory.Cache().V1alpha1().ClusterCachedResources())
 	clustercachedresourceendpointslice.InstallIndexers(
 		s.CacheKcpSharedInformerFactory.Cache().V1alpha1().ClusterCachedResources(),
 		s.KcpSharedInformerFactory.Cache().V1alpha1().ClusterCachedResourceEndpointSlices(),

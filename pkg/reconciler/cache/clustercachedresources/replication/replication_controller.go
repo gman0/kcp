@@ -81,6 +81,7 @@ func NewController(
 ) (*Controller, error) {
 	c := &Controller{
 		shardName: shardName,
+		gvr:       gvr,
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{
@@ -123,6 +124,7 @@ func NewController(
 		},
 	})
 	if err != nil {
+		_ = c.replicated.Local.RemoveEventHandler(localHandler)
 		return nil, err
 	}
 	c.onShutdownFuncs = append(c.onShutdownFuncs, func() {
@@ -130,6 +132,11 @@ func NewController(
 	})
 
 	return c, nil
+}
+
+// CurrentGVR returns the GVR this controller is replicating.
+func (c *Controller) CurrentGVR() schema.GroupVersionResource {
+	return c.gvr
 }
 
 func (c *Controller) enqueueObject(obj interface{}, gvr schema.GroupVersionResource, source string) {
@@ -207,6 +214,15 @@ func (c *Controller) SetDeleted(ctx context.Context) {
 	c.deleted = true
 }
 
+// Shutdown removes event handlers and drains the queue. It is safe to call even if Start was
+// never called. Start's own defers call the same cleanup, so double-calling is harmless.
+func (c *Controller) Shutdown() {
+	for _, f := range c.onShutdownFuncs {
+		f()
+	}
+	c.queue.ShutDown()
+}
+
 type Controller struct {
 	shardName string
 	queue     workqueue.TypedRateLimitingInterface[string]
@@ -215,6 +231,7 @@ type Controller struct {
 	globalDynamicClusterClient kcpdynamic.ClusterInterface
 
 	replicated *ReplicatedGVR
+	gvr        schema.GroupVersionResource
 
 	// requeueSelf is called when we want to trigger parent object reconciliation.
 	// Cache state is being managed by child controller, so we need to trigger parent object reconciliation
@@ -225,6 +242,7 @@ type Controller struct {
 	// 3. requeueSelf is called to update parent object status.
 	requeueSelf func()
 	// onShutdownFuncs are cleanup functions that are called when the controller is stopped.
+	// All funcs in here are expected to be idempotent and thread-safe.
 	onShutdownFuncs []func()
 
 	// selection is which objects of the kind we replicate. It is set when the
