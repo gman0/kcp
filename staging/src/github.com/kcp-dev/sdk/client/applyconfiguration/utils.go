@@ -172,8 +172,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationcachev1alpha1.ClusterCachedResourceStatusApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("ExportBindingReference"):
 		return &applyconfigurationcachev1alpha1.ExportBindingReferenceApplyConfiguration{}
-	case cachev1alpha1.SchemeGroupVersion.WithKind("GroupVersionResource"):
-		return &applyconfigurationcachev1alpha1.GroupVersionResourceApplyConfiguration{}
+	case cachev1alpha1.SchemeGroupVersion.WithKind("GroupResource"):
+		return &applyconfigurationcachev1alpha1.GroupResourceApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("Identity"):
 		return &applyconfigurationcachev1alpha1.IdentityApplyConfiguration{}
 	case cachev1alpha1.SchemeGroupVersion.WithKind("ResourceCount"):
