@@ -61,7 +61,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 		&validSchema{
 			getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 				scopedMapper := c.dynRESTMapper.ForCluster(logicalcluster.From(clusterCachedResource))
-				kind, err := scopedMapper.KindFor(schema.GroupVersionResource(clusterCachedResource.Spec.GroupVersionResource))
+				kind, err := scopedMapper.KindFor(gvr)
 				if err != nil {
 					return nil, err
 				}
