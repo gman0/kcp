@@ -30,6 +30,7 @@ type ClusterCachedResourceSpecApplyConfiguration struct {
 	// GroupResource is the group and resource name of the resource to be published.
 	GroupResourceApplyConfiguration `json:",inline"`
 	// version is the version of the resource to replicate and store.
+	// The effective version is in .status.storageVersion.
 	Version *string `json:"version,omitempty"`
 	// identity points to a secret that contains the API identity in the 'key' file.
 	// The API identity allows access to ClusterCachedResource's resources via the APIExport.

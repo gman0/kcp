@@ -32,6 +32,13 @@ type ClusterCachedResourceStatusApplyConfiguration struct {
 	IdentityHash *string `json:"identityHash,omitempty"`
 	// ResourceCount is the number of resources that match the label selector
 	ResourceCounts *ResourceCountApplyConfiguration `json:"resourceCounts,omitempty"`
+	// StorageVersion is the API version currently being replicated.
+	StorageVersion *string `json:"storageVersion,omitempty"`
+	// StoredVersions lists all versions of cached resources that were ever persisted. Tracking
+	// these versions allows a migration path for stored versions in etcd. The field is mutable
+	// so a migration controller can finish a migration to another version (ensuring no old objects
+	// are left in storage), and then remove the rest of the versions from this list.
+	StoredVersions []string `json:"storedVersions,omitempty"`
 	// Phase of the workspace (Initializing, Ready, Unavailable).
 	Phase *cachev1alpha1.ClusterCachedResourcePhaseType `json:"phase,omitempty"`
 	// Current processing state of the Workspace.
@@ -57,6 +64,24 @@ func (b *ClusterCachedResourceStatusApplyConfiguration) WithIdentityHash(value s
 // If called multiple times, the ResourceCounts field is set to the value of the last call.
 func (b *ClusterCachedResourceStatusApplyConfiguration) WithResourceCounts(value *ResourceCountApplyConfiguration) *ClusterCachedResourceStatusApplyConfiguration {
 	b.ResourceCounts = value
+	return b
+}
+
+// WithStorageVersion sets the StorageVersion field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the StorageVersion field is set to the value of the last call.
+func (b *ClusterCachedResourceStatusApplyConfiguration) WithStorageVersion(value string) *ClusterCachedResourceStatusApplyConfiguration {
+	b.StorageVersion = &value
+	return b
+}
+
+// WithStoredVersions adds the given value to the StoredVersions field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the StoredVersions field.
+func (b *ClusterCachedResourceStatusApplyConfiguration) WithStoredVersions(values ...string) *ClusterCachedResourceStatusApplyConfiguration {
+	for i := range values {
+		b.StoredVersions = append(b.StoredVersions, values[i])
+	}
 	return b
 }
 

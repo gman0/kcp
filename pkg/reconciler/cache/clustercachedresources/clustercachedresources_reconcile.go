@@ -140,7 +140,7 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
+		Version:  clusterCachedResource.Status.StorageVersion,
 		Resource: clusterCachedResource.Spec.Resource,
 	}
 
@@ -157,9 +157,12 @@ func (c *Controller) listSelectedLocalResources(ctx context.Context, cluster log
 }
 
 func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {
+	if clusterCachedResource.Status.StorageVersion == "" || clusterCachedResource.Status.IdentityHash == "" {
+		return nil
+	}
 	gvr := schema.GroupVersionResource{
 		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
+		Version:  clusterCachedResource.Status.StorageVersion,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
 	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
@@ -168,7 +171,7 @@ func (c *Controller) deleteSelectedCacheResources(ctx context.Context, cluster l
 func (c *Controller) listSelectedCacheResources(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (*unstructured.UnstructuredList, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    clusterCachedResource.Spec.Group,
-		Version:  clusterCachedResource.Spec.Version,
+		Version:  clusterCachedResource.Status.StorageVersion,
 		Resource: clusterCachedResource.Spec.Resource + ":" + clusterCachedResource.Status.IdentityHash,
 	}
 	return c.globalDynamicClient.Cluster(cluster.Path()).Resource(gvr).List(ctx, metav1.ListOptions{})

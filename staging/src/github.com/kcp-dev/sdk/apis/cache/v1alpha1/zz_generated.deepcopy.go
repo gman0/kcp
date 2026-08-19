@@ -256,6 +256,11 @@ func (in *ClusterCachedResourceStatus) DeepCopyInto(out *ClusterCachedResourceSt
 		*out = new(ResourceCount)
 		**out = **in
 	}
+	if in.StoredVersions != nil {
+		in, out := &in.StoredVersions, &out.StoredVersions
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make(conditionsv1alpha1.Conditions, len(*in))
