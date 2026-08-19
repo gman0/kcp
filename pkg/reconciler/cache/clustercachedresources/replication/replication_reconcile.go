@@ -35,6 +35,17 @@ import (
 const (
 	AnnotationKeyOriginalResourceVersion = "cache.kcp.io/original-resource-version"
 	AnnotationKeyOriginalResourceUID     = "cache.kcp.io/original-resource-UID"
+	AnnotationKeyOriginalAPIVersion      = "cache.kcp.io/original-api-version"
+
+	//  AnnotationKeyOriginalAPIVersion is how we decide when to migrate an object:
+	//
+	//  - (1) We start with status.storageVersion: v1.
+	//  - (2) Local and global informers watch v1, and we're happily writing v1 to cache.
+	//  - (3) We annotate objects with cache.kcp.io/original-api-version: example.org/v1.
+	//  - (3) Now, user wants to migrate to v2, and sets spec.version: v2.
+	//  - (4) We (i.e. this controller) are restarted with v2, informers fetch this new version already.
+	//  - (5) We notice that obj's cache.kcp.io/original-api-version != localCopy.GetAPIVersion() (i.e. v1 != v2)
+	//  - (6) We write this obj, with cache.kcp.io/original-api-version: example.org/v2.
 )
 
 func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
@@ -234,7 +245,9 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 
 	if globalExists {
 		globalAnnotations := globalPartialObjMeta.GetAnnotations()
-		if globalAnnotations != nil && globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() {
+		if globalAnnotations != nil &&
+			globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() &&
+			globalAnnotations[AnnotationKeyOriginalAPIVersion] == localPartialObjMeta.GetAPIVersion() {
 			// Exit early: there were no changes on the resource.
 			logger.V(4).Info("Object is up to date")
 			return nil
@@ -256,7 +269,12 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 	}
 	ann[AnnotationKeyOriginalResourceUID] = string(localCopy.GetUID())
 	ann[AnnotationKeyOriginalResourceVersion] = localCopy.GetResourceVersion()
+	ann[AnnotationKeyOriginalAPIVersion] = localCopy.GetAPIVersion()
 	localCopy.SetAnnotations(ann)
+
+	// We don't need managed fields in cache, and they may contain old API versions
+	// that we are no longer serving. Better to remove them.
+	localCopy.SetManagedFields(nil)
 
 	if !globalExists {
 		logger.V(2).WithValues("kind", localPartialObjMeta.GetKind(), "namespace", localPartialObjMeta.GetNamespace(), "name", localPartialObjMeta.GetName()).Info("Creating object in global cache")
