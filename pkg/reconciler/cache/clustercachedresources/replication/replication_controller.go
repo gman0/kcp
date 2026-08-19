@@ -74,7 +74,6 @@ func NewController(
 	localDynamicClusterClient kcpdynamic.ClusterInterface,
 	globalDynamicClusterClient kcpdynamic.ClusterInterface,
 	kcpCacheClient kcpclientset.ClusterInterface,
-	cacheApiExtensionsClusterClient kcpapiextensionsclientset.ClusterInterface,
 	cluster logicalcluster.Name,
 	gvr schema.GroupVersionResource,
 	replicated *ReplicatedGVR,
@@ -89,13 +88,12 @@ func NewController(
 				Name: ControllerName,
 			},
 		),
-		localDynamicClusterClient:       localDynamicClusterClient,
-		globalDynamicClusterClient:      globalDynamicClusterClient,
-		cacheApiExtensionsClusterClient: cacheApiExtensionsClusterClient,
-		replicated:                      replicated,
-		requeueSelf:                     requeueSelf,
-		onShutdownFuncs:                 make([]func(), 0),
-		selection:                       selection,
+		localDynamicClusterClient:  localDynamicClusterClient,
+		globalDynamicClusterClient: globalDynamicClusterClient,
+		replicated:                 replicated,
+		requeueSelf:                requeueSelf,
+		onShutdownFuncs:            make([]func(), 0),
+		selection:                  selection,
 	}
 
 	localHandler, err := c.replicated.Local.AddEventHandler(cache.FilteringResourceEventHandler{
