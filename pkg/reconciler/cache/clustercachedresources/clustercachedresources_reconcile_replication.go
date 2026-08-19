@@ -118,6 +118,12 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		)
 		if err != nil {
 			cancel()
+			// The informer may have been stopped by a previous controller teardown but not
+			// yet removed from the factory (ForgetResource is called asynchronously by the
+			// goroutine after c.Start returns). Remove it now so the next reconcile gets a
+			// fresh informer instead of the already-stopped one.
+			r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+			r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 			return reconcileStatusContinue, err
 		}
 
@@ -135,7 +141,14 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 
 			if !cache.WaitForCacheSync(controllerCtx.Done(), replicated.Local.HasSynced, replicated.Global.HasSynced) {
 				logger.Error(nil, "Informers failed to sync, removing controller", "controller", controllerName)
+				// Remove event handlers so the cancelled controller stops processing events.
+				// Start's defers do the same cleanup, but Start is never called on this path.
+				c.Shutdown()
 				r.controllerRegistry.unregister(controllerName)
+				// Remove stopped informers from the factory so the next reconcile gets fresh ones.
+				// Without this, ForResource returns the stopped informer and AddEventHandler fails.
+				r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+				r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 				requeueSelf()
 				return
 			}
@@ -156,7 +169,11 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		controller.SetDeleted(ctx)
 		return reconcileStatusStopAndRequeue, nil
 	case clusterCachedResource.Status.Phase == cachev1alpha1.ClusterCachedResourcePhaseDeleting && !danglingResources:
-		r.controllerRegistry.unregister(controllerName) // unregister will cancel the context. and things will
+		r.controllerRegistry.unregister(controllerName) // cancels the controller context
+		// Expel stopped informers from the factory so any immediate CCR re-creation gets
+		// fresh informers rather than the now-stopped ones.
+		r.localDiscoveringDynamicKcpInformers.ForgetResource(gvr)
+		r.globalDiscoveringDynamicKcpInformers.ForgetResource(gvr)
 		clusterCachedResource.Status.Phase = cachev1alpha1.ClusterCachedResourcePhaseDeleted
 		return reconcileStatusStopAndRequeue, nil
 	default:
