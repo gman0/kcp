@@ -2001,8 +2001,6 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 		s.KubeClusterClient,
 		s.KubeSharedInformerFactory.Core().V1().Namespaces(),
 		s.KubeSharedInformerFactory.Core().V1().Secrets(),
-		s.CacheApiExtensionsClusterClient,
-		s.CacheApiExtensionsSharedInformerFactory,
 		s.completedConfig.DynamicRESTMapper,
 		s.PartialMetadataDDSIF,
 		s.CachePartialMetadataDDSIF,
@@ -2015,8 +2013,7 @@ func (s *Server) installCacheController(ctx context.Context, config *rest.Config
 		Name: clustercachedresources.ControllerName,
 		Wait: func(ctx context.Context, s *Server) error {
 			return wait.PollUntilContextCancel(ctx, waitPollInterval, true, func(ctx context.Context) (bool, error) {
-				return clusterCachedResourceInformer.Informer().HasSynced() &&
-					s.CacheApiExtensionsSharedInformerFactory.Apiextensions().V1().CustomResourceDefinitions().Informer().HasSynced(), nil
+				return clusterCachedResourceInformer.Informer().HasSynced(), nil
 			})
 		},
 		Runner: func(ctx context.Context) {

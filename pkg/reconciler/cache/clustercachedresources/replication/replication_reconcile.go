@@ -30,9 +30,6 @@ import (
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
 	"github.com/kcp-dev/logicalcluster/v3"
-
-	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
-	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 )
 
 const (
@@ -137,20 +134,20 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 			return c.globalDynamicClusterClient.
 				Cluster(cluster.Path()).
 				Resource(gvrWithIdentity).
-				Create(cacheclient.WithShardInContext(ctx, shard.Name(c.shardName)), local, metav1.CreateOptions{})
+				Create(ctx, local, metav1.CreateOptions{})
 		},
 		updateObjectInCache: func(ctx context.Context, cluster logicalcluster.Name, local *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 			return c.globalDynamicClusterClient.
 				Cluster(cluster.Path()).
 				Resource(gvrWithIdentity).
-				Update(cacheclient.WithShardInContext(ctx, shard.Name(c.shardName)), local, metav1.UpdateOptions{})
+				Update(ctx, local, metav1.UpdateOptions{})
 		},
 		deleteObjectInCache: func(ctx context.Context, cluster logicalcluster.Name, namespace, name string) error {
 			return c.globalDynamicClusterClient.
 				Cluster(cluster.Path()).
 				Resource(gvrWithIdentity).
 				Namespace(namespace).
-				Delete(cacheclient.WithShardInContext(ctx, shard.Name(c.shardName)), name, metav1.DeleteOptions{})
+				Delete(ctx, name, metav1.DeleteOptions{})
 		},
 	}
 	defer c.requeueSelf()
