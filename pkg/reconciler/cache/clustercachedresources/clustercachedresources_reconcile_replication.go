@@ -54,7 +54,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	logger.Info("reconciling cached resource", "ClusterCachedResource", clusterCachedResource.Name)
 
 	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
-		WithVersion(clusterCachedResource.Spec.Version)
+		WithVersion(clusterCachedResource.Status.StorageVersion)
 	clusterName := logicalcluster.From(clusterCachedResource)
 
 	selection := replicationcontroller.SelectionFor(clusterCachedResource)
