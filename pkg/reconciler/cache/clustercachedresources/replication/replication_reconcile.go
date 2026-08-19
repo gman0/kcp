@@ -35,6 +35,7 @@ import (
 const (
 	AnnotationKeyOriginalResourceVersion = "cache.kcp.io/original-resource-version"
 	AnnotationKeyOriginalResourceUID     = "cache.kcp.io/original-resource-UID"
+	AnnotationKeyOriginalAPIVersion      = "cache.kcp.io/original-api-version"
 )
 
 func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
@@ -233,7 +234,9 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 
 	if globalExists {
 		globalAnnotations := globalPartialObjMeta.GetAnnotations()
-		if globalAnnotations != nil && globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() {
+		if globalAnnotations != nil &&
+			globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() &&
+			globalAnnotations[AnnotationKeyOriginalAPIVersion] == localPartialObjMeta.GetAPIVersion() {
 			// Exit early: there were no changes on the resource.
 			logger.V(4).Info("Object is up to date")
 			return nil
@@ -255,6 +258,7 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 	}
 	ann[AnnotationKeyOriginalResourceUID] = string(localCopy.GetUID())
 	ann[AnnotationKeyOriginalResourceVersion] = localCopy.GetResourceVersion()
+	ann[AnnotationKeyOriginalAPIVersion] = localCopy.GetAPIVersion()
 	localCopy.SetAnnotations(ann)
 
 	if !globalExists {
