@@ -3342,7 +3342,7 @@ func schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceSpec(ref common.Referen
 					},
 					"version": {
 						SchemaProps: spec.SchemaProps{
-							Description: "version is the version of the resource to replicate and store.",
+							Description: "version is the version of the resource to replicate and store. The effective version is in .status.storageVersion.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -3407,6 +3407,28 @@ func schema_sdk_apis_cache_v1alpha1_ClusterCachedResourceStatus(ref common.Refer
 						SchemaProps: spec.SchemaProps{
 							Description: "ResourceCount is the number of resources that match the label selector",
 							Ref:         ref(cachev1alpha1.ResourceCount{}.OpenAPIModelName()),
+						},
+					},
+					"storageVersion": {
+						SchemaProps: spec.SchemaProps{
+							Description: "StorageVersion is the API version currently being replicated.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"storedVersions": {
+						SchemaProps: spec.SchemaProps{
+							Description: "StoredVersions lists all versions of cached resources that were ever persisted. Tracking these versions allows a migration path for stored versions in etcd. The field is mutable so a migration controller can finish a migration to another version (ensuring no old objects are left in storage), and then remove the rest of the versions from this list.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: "",
+										Type:    []string{"string"},
+										Format:  "",
+									},
+								},
+							},
 						},
 					},
 					"phase": {
