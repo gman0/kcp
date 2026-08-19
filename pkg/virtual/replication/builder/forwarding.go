@@ -35,6 +35,7 @@ func provideReadOnlyRestStorage(
 	mainConfig genericapiserver.CompletedConfig,
 	cacheDynamicClusterClient kcpdynamic.ClusterInterface,
 	apiResourceSchema *apisv1alpha1.APIResourceSchema,
+	version string,
 	clusterCachedResource *cachev1alpha1.ClusterCachedResource,
 	export *apisv1alpha2.APIExport,
 ) (apidefinition.APIDefinition, error) {
@@ -60,7 +61,7 @@ func provideReadOnlyRestStorage(
 		return nil, err
 	}
 
-	def, err := apiserver.CreateServingInfoFor(mainConfig, apiResourceSchema, clusterCachedResource.Spec.Version, restProvider)
+	def, err := apiserver.CreateServingInfoFor(mainConfig, apiResourceSchema, version, restProvider)
 	if err != nil {
 		cancelFn()
 		return nil, err
