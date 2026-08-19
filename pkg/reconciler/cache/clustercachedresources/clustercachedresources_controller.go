@@ -45,6 +45,8 @@ import (
 	cacheinformers "github.com/kcp-dev/sdk/client/informers/externalversions/cache/v1alpha1"
 	cachev1alpha1listers "github.com/kcp-dev/sdk/client/listers/cache/v1alpha1"
 
+	cacheclient "github.com/kcp-dev/kcp/pkg/cache/client"
+	"github.com/kcp-dev/kcp/pkg/cache/client/shard"
 	"github.com/kcp-dev/kcp/pkg/informer"
 	"github.com/kcp-dev/kcp/pkg/logging"
 	replicationcontroller "github.com/kcp-dev/kcp/pkg/reconciler/cache/clustercachedresources/replication"
@@ -206,7 +208,7 @@ func (c *Controller) Start(ctx context.Context, numThreads int) {
 	defer c.queue.ShutDown()
 
 	logger := logging.WithReconciler(klog.FromContext(ctx), ControllerName)
-	ctx = klog.NewContext(ctx, logger)
+	ctx = klog.NewContext(cacheclient.WithShardInContext(ctx, shard.Name(c.shardName)), logger)
 	logger.Info("Starting controller")
 	defer logger.Info("Shutting down controller")
 

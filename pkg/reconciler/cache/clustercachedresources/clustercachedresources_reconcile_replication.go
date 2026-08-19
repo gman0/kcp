@@ -24,7 +24,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	kcpapiextensionsclientset "github.com/kcp-dev/client-go/apiextensions/client"
 	kcpdynamic "github.com/kcp-dev/client-go/dynamic"
 	"github.com/kcp-dev/logicalcluster/v3"
 	cachev1alpha1 "github.com/kcp-dev/sdk/apis/cache/v1alpha1"
@@ -46,7 +45,6 @@ type replication struct {
 	dynRESTMapper                        *dynamicrestmapper.DynamicRESTMapper
 	localDiscoveringDynamicKcpInformers  *informer.DiscoveringDynamicSharedInformerFactory
 	globalDiscoveringDynamicKcpInformers *informer.DiscoveringDynamicSharedInformerFactory
-	cacheApiExtensionsClusterClient      kcpapiextensionsclientset.ClusterInterface
 	requeueSelf                          func(obj interface{})
 	controllerRegistry                   *controllerRegistry
 }
@@ -57,14 +55,14 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 
 	gvr := schema.GroupResource(clusterCachedResource.Spec.GroupResource).
 		WithVersion(clusterCachedResource.Spec.Version)
-	cluster := logicalcluster.From(clusterCachedResource)
+	clusterName := logicalcluster.From(clusterCachedResource)
 
 	selection := replicationcontroller.SelectionFor(clusterCachedResource)
 
-	clusterName := logicalcluster.From(clusterCachedResource)
 	controllerName := replicationControllerName(clusterCachedResource)
 	// TODO: Add locking here when multiple workers are supported.
 	controller := r.controllerRegistry.get(controllerName)
+
 	// We setup controller even if we are deleting. This is to ensure that we can purge the cache.
 	// If for some reason was dead, we will recreate it.
 	danglingResources := clusterCachedResource.Status.ResourceCounts != nil && clusterCachedResource.Status.ResourceCounts.Cache > 0
@@ -112,8 +110,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 			r.localDynamicClusterClient,
 			r.globalDynamicClusterClient,
 			r.kcpCacheClient,
-			r.cacheApiExtensionsClusterClient,
-			cluster,
+			clusterName,
 			gvr,
 			replicated,
 			requeueSelf,
