@@ -62,7 +62,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	selection := replicationcontroller.SelectionFor(clusterCachedResource)
 
 	clusterName := logicalcluster.From(clusterCachedResource)
-	controllerName := fmt.Sprintf("%s.%s.%s.%s.%s", clusterName, gvr.Version, gvr.Resource, gvr.Group, clusterCachedResource.Name)
+	controllerName := replicationControllerName(clusterCachedResource)
 	// TODO: Add locking here when multiple workers are supported.
 	controller := r.controllerRegistry.get(controllerName)
 	// We setup controller even if we are deleting. This is to ensure that we can purge the cache.
@@ -165,4 +165,10 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 	default:
 		return reconcileStatusContinue, nil
 	}
+}
+
+func replicationControllerName(ccr *cachev1alpha1.ClusterCachedResource) string {
+	// The (nested) replication controller name is formatted as:
+	//  `<Cluster>|<Group>.<Resource>:<IdentityHash>`
+	return fmt.Sprintf("%s|%s.%s:%s", logicalcluster.From(ccr), ccr.Spec.Group, ccr.Spec.Resource, ccr.Status.IdentityHash)
 }
