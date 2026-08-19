@@ -68,16 +68,15 @@ func updateAttr(clusterCachedResource *cachev1alpha1.ClusterCachedResource) admi
 	)
 }
 
-func createClusterCachedResource(name string, gvr schema.GroupVersionResource) *cachev1alpha1.ClusterCachedResource {
+func createClusterCachedResource(name string, gr schema.GroupResource) *cachev1alpha1.ClusterCachedResource {
 	return &cachev1alpha1.ClusterCachedResource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 		Spec: cachev1alpha1.ClusterCachedResourceSpec{
-			GroupVersionResource: cachev1alpha1.GroupVersionResource{
-				Group:    gvr.Group,
-				Version:  gvr.Version,
-				Resource: gvr.Resource,
+			GroupResource: cachev1alpha1.GroupResource{
+				Group:    gr.Group,
+				Resource: gr.Resource,
 			},
 		},
 	}
@@ -87,36 +86,32 @@ func TestAdmission(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
 		attr    admission.Attributes
-		index   map[logicalcluster.Name]map[schema.GroupVersionResource][]*cachev1alpha1.ClusterCachedResource
+		index   map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource
 		cluster logicalcluster.Name
-		gvr     schema.GroupVersionResource
+		gr      schema.GroupResource
 		wantErr error
 	}{
 		"Empty": {
-			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupVersionResource{
+			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
-				Version:  "v1",
 				Resource: "objects",
 			})),
-			index:   map[logicalcluster.Name]map[schema.GroupVersionResource][]*cachev1alpha1.ClusterCachedResource{},
+			index:   map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{},
 			cluster: logicalcluster.Name("cluster-1"),
 		},
 		"New": {
-			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupVersionResource{
+			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
-				Version:  "v1",
 				Resource: "objects",
 			})),
-			index: map[logicalcluster.Name]map[schema.GroupVersionResource][]*cachev1alpha1.ClusterCachedResource{
+			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-2": {
-					schema.GroupVersionResource{
+					schema.GroupResource{
 						Group:    "example.org",
-						Version:  "v1",
 						Resource: "objects",
 					}: []*cachev1alpha1.ClusterCachedResource{
-						createClusterCachedResource("cluster-2-example-org-v1-objects", schema.GroupVersionResource{
+						createClusterCachedResource("cluster-2-example-org-objects", schema.GroupResource{
 							Group:    "example.org",
-							Version:  "v1",
 							Resource: "objects",
 						}),
 					},
@@ -125,54 +120,52 @@ func TestAdmission(t *testing.T) {
 			cluster: logicalcluster.Name("cluster-1"),
 		},
 		"AlreadyExists": {
-			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupVersionResource{
+			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
-				Version:  "v1",
 				Resource: "objects",
 			})),
-			index: map[logicalcluster.Name]map[schema.GroupVersionResource][]*cachev1alpha1.ClusterCachedResource{
+			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-2": {
-					schema.GroupVersionResource{
+					schema.GroupResource{
 						Group:    "example.org",
-						Version:  "v1",
 						Resource: "objects",
 					}: []*cachev1alpha1.ClusterCachedResource{
-						createClusterCachedResource("cluster-2-example-org-v1-objects", schema.GroupVersionResource{
+						createClusterCachedResource("cluster-2-example-org-objects", schema.GroupResource{
 							Group:    "example.org",
-							Version:  "v1",
 							Resource: "objects",
 						}),
 					},
 				},
 			},
-			wantErr: admission.NewForbidden(createAttr(createClusterCachedResource("wohoo", schema.GroupVersionResource{
+			wantErr: admission.NewForbidden(createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
-				Version:  "v1",
 				Resource: "objects",
+			}, &cachev1alpha1.Identity{
+				SecretRef: &corev1.SecretReference{
+					Name:      "wohoo-identity",
+					Namespace: "default",
+				},
 			})),
 				field.Invalid(
 					field.NewPath("spec"),
-					"example.org.v1.objects",
-					"ClusterCachedResource with this GVR already exists in the \"cluster-2\" workspace"),
+					"objects.example.org",
+					"ClusterCachedResource for this group+resource already exists in the \"cluster-2\" workspace"),
 			),
 			cluster: logicalcluster.Name("cluster-2"),
 		},
 		"SameNameReapply": {
-			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupVersionResource{
+			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
-				Version:  "v1",
 				Resource: "objects",
 			})),
-			index: map[logicalcluster.Name]map[schema.GroupVersionResource][]*cachev1alpha1.ClusterCachedResource{
+			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-1": {
-					schema.GroupVersionResource{
+					schema.GroupResource{
 						Group:    "example.org",
-						Version:  "v1",
 						Resource: "objects",
 					}: []*cachev1alpha1.ClusterCachedResource{
-						createClusterCachedResource("wohoo", schema.GroupVersionResource{
+						createClusterCachedResource("wohoo", schema.GroupResource{
 							Group:    "example.org",
-							Version:  "v1",
 							Resource: "objects",
 						}),
 					},
@@ -182,21 +175,18 @@ func TestAdmission(t *testing.T) {
 			cluster: logicalcluster.Name("cluster-1"),
 		},
 		"IgnoreIfNotCreate": {
-			attr: updateAttr(createClusterCachedResource("wohoo", schema.GroupVersionResource{
+			attr: updateAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
-				Version:  "v1",
 				Resource: "objects",
 			})),
-			index: map[logicalcluster.Name]map[schema.GroupVersionResource][]*cachev1alpha1.ClusterCachedResource{
+			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-1": {
-					schema.GroupVersionResource{
+					schema.GroupResource{
 						Group:    "example.org",
-						Version:  "v1",
 						Resource: "objects",
 					}: []*cachev1alpha1.ClusterCachedResource{
-						createClusterCachedResource("cluster-1-example-org-v1-objects", schema.GroupVersionResource{
+						createClusterCachedResource("cluster-1-example-org-objects", schema.GroupResource{
 							Group:    "example.org",
-							Version:  "v1",
 							Resource: "objects",
 						}),
 					},
@@ -211,8 +201,8 @@ func TestAdmission(t *testing.T) {
 			t.Parallel()
 			ctx := genericapirequest.WithCluster(context.Background(), genericapirequest.Cluster{Name: tc.cluster})
 			plugin := ClusterCachedResourceAdmission{
-				listClusterCachedResourcesByGVR: func(cluster logicalcluster.Name, gvr schema.GroupVersionResource) ([]*cachev1alpha1.ClusterCachedResource, error) {
-					return tc.index[cluster][gvr], nil
+				listClusterCachedResourcesByGR: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]*cachev1alpha1.ClusterCachedResource, error) {
+					return tc.index[cluster][gr], nil
 				},
 				dynamicRESTMapper: dynamicrestmapper.NewDynamicRESTMapper(),
 			}
