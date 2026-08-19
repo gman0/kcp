@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -68,7 +69,7 @@ func updateAttr(clusterCachedResource *cachev1alpha1.ClusterCachedResource) admi
 	)
 }
 
-func createClusterCachedResource(name string, gr schema.GroupResource) *cachev1alpha1.ClusterCachedResource {
+func createClusterCachedResource(name string, gr schema.GroupResource, identitySpec *cachev1alpha1.Identity) *cachev1alpha1.ClusterCachedResource {
 	return &cachev1alpha1.ClusterCachedResource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -78,6 +79,7 @@ func createClusterCachedResource(name string, gr schema.GroupResource) *cachev1a
 				Group:    gr.Group,
 				Resource: gr.Resource,
 			},
+			Identity: identitySpec,
 		},
 	}
 }
@@ -95,6 +97,11 @@ func TestAdmission(t *testing.T) {
 			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
 				Resource: "objects",
+			}, &cachev1alpha1.Identity{
+				SecretRef: &corev1.SecretReference{
+					Name:      "wohoo-identity",
+					Namespace: "default",
+				},
 			})),
 			index:   map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{},
 			cluster: logicalcluster.Name("cluster-1"),
@@ -103,6 +110,11 @@ func TestAdmission(t *testing.T) {
 			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
 				Resource: "objects",
+			}, &cachev1alpha1.Identity{
+				SecretRef: &corev1.SecretReference{
+					Name:      "wohoo-identity",
+					Namespace: "default",
+				},
 			})),
 			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-2": {
@@ -113,6 +125,11 @@ func TestAdmission(t *testing.T) {
 						createClusterCachedResource("cluster-2-example-org-objects", schema.GroupResource{
 							Group:    "example.org",
 							Resource: "objects",
+						}, &cachev1alpha1.Identity{
+							SecretRef: &corev1.SecretReference{
+								Name:      "wohoo-identity",
+								Namespace: "default",
+							},
 						}),
 					},
 				},
@@ -123,6 +140,11 @@ func TestAdmission(t *testing.T) {
 			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
 				Resource: "objects",
+			}, &cachev1alpha1.Identity{
+				SecretRef: &corev1.SecretReference{
+					Name:      "wohoo-identity",
+					Namespace: "default",
+				},
 			})),
 			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-2": {
@@ -133,6 +155,11 @@ func TestAdmission(t *testing.T) {
 						createClusterCachedResource("cluster-2-example-org-objects", schema.GroupResource{
 							Group:    "example.org",
 							Resource: "objects",
+						}, &cachev1alpha1.Identity{
+							SecretRef: &corev1.SecretReference{
+								Name:      "wohoo-identity",
+								Namespace: "default",
+							},
 						}),
 					},
 				},
@@ -149,7 +176,7 @@ func TestAdmission(t *testing.T) {
 				field.Invalid(
 					field.NewPath("spec"),
 					"objects.example.org",
-					"ClusterCachedResource for this group+resource already exists in the \"cluster-2\" workspace"),
+					"ClusterCachedResource for this group+resource+identity already exists in workspace \"cluster-2\""),
 			),
 			cluster: logicalcluster.Name("cluster-2"),
 		},
@@ -157,6 +184,11 @@ func TestAdmission(t *testing.T) {
 			attr: createAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
 				Resource: "objects",
+			}, &cachev1alpha1.Identity{
+				SecretRef: &corev1.SecretReference{
+					Name:      "wohoo-identity",
+					Namespace: "default",
+				},
 			})),
 			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-1": {
@@ -167,6 +199,11 @@ func TestAdmission(t *testing.T) {
 						createClusterCachedResource("wohoo", schema.GroupResource{
 							Group:    "example.org",
 							Resource: "objects",
+						}, &cachev1alpha1.Identity{
+							SecretRef: &corev1.SecretReference{
+								Name:      "wohoo-identity",
+								Namespace: "default",
+							},
 						}),
 					},
 				},
@@ -178,6 +215,11 @@ func TestAdmission(t *testing.T) {
 			attr: updateAttr(createClusterCachedResource("wohoo", schema.GroupResource{
 				Group:    "example.org",
 				Resource: "objects",
+			}, &cachev1alpha1.Identity{
+				SecretRef: &corev1.SecretReference{
+					Name:      "wohoo-identity",
+					Namespace: "default",
+				},
 			})),
 			index: map[logicalcluster.Name]map[schema.GroupResource][]*cachev1alpha1.ClusterCachedResource{
 				"cluster-1": {
@@ -188,6 +230,11 @@ func TestAdmission(t *testing.T) {
 						createClusterCachedResource("cluster-1-example-org-objects", schema.GroupResource{
 							Group:    "example.org",
 							Resource: "objects",
+						}, &cachev1alpha1.Identity{
+							SecretRef: &corev1.SecretReference{
+								Name:      "wohoo-identity",
+								Namespace: "default",
+							},
 						}),
 					},
 				},
