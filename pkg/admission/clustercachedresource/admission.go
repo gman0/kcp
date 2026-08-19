@@ -156,6 +156,20 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 		}
 	}
 
+	// Ensure there is at most one CCR with the same group+resource+identity in this workspace.
+
+	if clusterCachedResource.Spec.Identity == nil {
+		// If this CCR doesn't have identity secret defined, it means it must
+		// have a randomly-generated identity, which by definition is different from
+		// any other CCRs in this workspace - even if they had the same GR.
+		return nil
+	}
+	secretRef := clusterCachedResource.Spec.Identity.SecretRef
+	if secretRef == nil {
+		// Same as the case above.
+		return nil
+	}
+
 	existing, err := adm.listClusterCachedResourcesByGR(clusterName, gr)
 	if err != nil {
 		return err
@@ -170,12 +184,17 @@ func (adm *ClusterCachedResourceAdmission) validateV1alpha1(ctx context.Context,
 		if e.Name == clusterCachedResource.Name {
 			continue
 		}
-		return admission.NewForbidden(a,
-			field.Invalid(
-				field.NewPath("spec"),
-				fmt.Sprintf("%s.%s", gr.Group, gr.Resource),
-				fmt.Sprintf("ClusterCachedResource with this group+resource already exists in the %q workspace", clusterName)),
-		)
+		if e.Spec.Identity != nil && e.Spec.Identity.SecretRef != nil {
+			otherSecretRef := e.Spec.Identity.SecretRef
+			if otherSecretRef.Name == secretRef.Name && otherSecretRef.Namespace == secretRef.Namespace {
+				return admission.NewForbidden(a,
+					field.Invalid(
+						field.NewPath("spec"),
+						gr.String(),
+						fmt.Sprintf("ClusterCachedResource for this group+resource+identity already exists in workspace %q", clusterName)),
+				)
+			}
+		}
 	}
 
 	return nil
