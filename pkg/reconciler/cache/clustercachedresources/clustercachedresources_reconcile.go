@@ -53,6 +53,20 @@ type reconciler interface {
 func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name, clusterCachedResource *cachev1alpha1.ClusterCachedResource) (bool, error) {
 	reconcilers := []reconciler{
 		&finalizer{},
+		&identityReconciler{
+			ensureSecretNamespaceExists: c.ensureSecretNamespaceExists,
+			getSecret:                   c.getSecret,
+			createIdentitySecret:        c.createIdentitySecret,
+			secretNamespace:             c.secretNamespace,
+		},
+		&versionResolver{
+			getServedGVKs: func(cluster logicalcluster.Name, gr schema.GroupResource) ([]schema.GroupVersionKind, error) {
+				return c.dynRESTMapper.ForCluster(cluster).KindsFor(gr.WithVersion(""))
+			},
+			controllerRegistry:                   c.controllerRegistry,
+			localDiscoveringDynamicKcpInformers:  c.localDiscoveringDynamicKcpInformers,
+			globalDiscoveringDynamicKcpInformers: c.globalDiscoveringDynamicKcpInformers,
+		},
 		&validSchema{
 			getResourceScope: func(gvr schema.GroupVersionResource) (meta.RESTScope, error) {
 				scopedMapper := c.dynRESTMapper.ForCluster(logicalcluster.From(clusterCachedResource))
@@ -82,12 +96,6 @@ func (c *Controller) reconcile(ctx context.Context, cluster logicalcluster.Name,
 				}
 				return m.Scope, nil
 			},
-		},
-		&identityReconciler{
-			ensureSecretNamespaceExists: c.ensureSecretNamespaceExists,
-			getSecret:                   c.getSecret,
-			createIdentitySecret:        c.createIdentitySecret,
-			secretNamespace:             c.secretNamespace,
 		},
 		&purge{
 			deleteSelectedCacheResources: func(ctx context.Context, clusterCachedResource *cachev1alpha1.ClusterCachedResource) error {

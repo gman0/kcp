@@ -147,6 +147,17 @@ const (
 )
 
 const (
+	// StorageVersionAvailable indicates that the version in spec.version is currently served
+	// by the source workspace. When False, the replication controller is not running for this
+	// version and will not start until spec.version is updated to a served version.
+	StorageVersionAvailable conditionsv1alpha1.ConditionType = "StorageVersionAvailable"
+
+	// RequestedVersionNotServedReason is set on StorageVersionAvailable=False when spec.version
+	// is not currently served by the source workspace.
+	RequestedVersionNotServedReason = "RequestedVersionNotServed"
+)
+
+const (
 	// ClusterCachedResourceInvalidReferenceReason is a reason for the ClusterCachedResourceValid condition that the referenced
 	// ClusterCachedResource reference is invalid.
 	ClusterCachedResourceInvalidReferenceReason = "ClusterCachedResourceInvalidReference"
