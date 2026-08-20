@@ -69,6 +69,7 @@ func getClusterNameFromObj(obj any) logicalcluster.Name {
 
 // NewController returns a new replication controller.
 func NewController(
+	controllerName string,
 	shardName string,
 	localDynamicClusterClient kcpdynamic.ClusterInterface,
 	globalDynamicClusterClient kcpdynamic.ClusterInterface,
@@ -80,6 +81,8 @@ func NewController(
 	selection Selection,
 ) (*Controller, error) {
 	c := &Controller{
+		controllerName: controllerName,
+
 		shardName: shardName,
 		gvr:       gvr,
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
@@ -224,6 +227,8 @@ func (c *Controller) Shutdown() {
 }
 
 type Controller struct {
+	controllerName string
+
 	shardName string
 	queue     workqueue.TypedRateLimitingInterface[string]
 
@@ -256,6 +261,7 @@ type Controller struct {
 type ReplicatedGVR struct {
 	Kind          string
 	Identity      string
+	Owner         string
 	Filter        func(u *unstructured.Unstructured) bool
 	Global, Local cache.SharedIndexInformer
 }

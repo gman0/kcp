@@ -96,6 +96,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		}
 		replicated := &replicationcontroller.ReplicatedGVR{
 			Identity: clusterCachedResource.Status.IdentityHash,
+			Owner:    string(clusterCachedResource.UID),
 			Kind:     replicatedKind.Kind,
 			Local:    local.Informer(),
 			Global:   global.Informer(),
@@ -106,6 +107,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		}
 
 		c, err := replicationcontroller.NewController(
+			controllerName,
 			r.shardName,
 			r.localDynamicClusterClient,
 			r.globalDynamicClusterClient,
@@ -184,5 +186,5 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 func replicationControllerName(ccr *cachev1alpha1.ClusterCachedResource) string {
 	// The (nested) replication controller name is formatted as:
 	//  `<Cluster>|<Group>.<Resource>:<IdentityHash>`
-	return fmt.Sprintf("%s|%s.%s:%s", logicalcluster.From(ccr), ccr.Spec.Group, ccr.Spec.Resource, ccr.Status.IdentityHash)
+	return fmt.Sprintf("%s|%s", logicalcluster.From(ccr), ccr.Name)
 }

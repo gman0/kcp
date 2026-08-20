@@ -35,7 +35,6 @@ import (
 const (
 	AnnotationKeyOriginalResourceVersion = "cache.kcp.io/original-resource-version"
 	AnnotationKeyOriginalResourceUID     = "cache.kcp.io/original-resource-UID"
-	AnnotationKeyOriginalAPIVersion      = "cache.kcp.io/original-api-version"
 
 	//  AnnotationKeyOriginalAPIVersion is how we decide when to migrate an object:
 	//
@@ -46,6 +45,11 @@ const (
 	//  - (4) We (i.e. this controller) are restarted with v2, informers fetch this new version already.
 	//  - (5) We notice that obj's cache.kcp.io/original-api-version != localCopy.GetAPIVersion() (i.e. v1 != v2)
 	//  - (6) We write this obj, with cache.kcp.io/original-api-version: example.org/v2.
+	AnnotationKeyOriginalAPIVersion = "cache.kcp.io/original-api-version"
+
+	// AnnotationKeyOwnerUID is the UID of the owning CCR.
+	// In case there are multiple competing CCRs for the same object, only one gets to replicate it.
+	AnnotationKeyOwnerUID = "cache.kcp.io/owner-UID"
 )
 
 func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
@@ -67,6 +71,9 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 	key := keyParts[1]
 
 	r := &replicationReconciler{
+		controllerName: c.controllerName,
+		owner:          c.replicated.Owner,
+
 		shardName: c.shardName,
 		selection: c.selection,
 		getLocalPartialObjectMetadata: func(cluster logicalcluster.Name, namespace, name string) (*unstructured.Unstructured, error) {
@@ -143,18 +150,21 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 			return obj, nil
 		},
 		createObjectInCache: func(ctx context.Context, cluster logicalcluster.Name, local *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+			fmt.Printf("### replication.reconcile.createObjectInCache gvri=%#v\n", gvrWithIdentity)
 			return c.globalDynamicClusterClient.
 				Cluster(cluster.Path()).
 				Resource(gvrWithIdentity).
 				Create(ctx, local, metav1.CreateOptions{})
 		},
 		updateObjectInCache: func(ctx context.Context, cluster logicalcluster.Name, local *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+			fmt.Printf("### replication.reconcile.updateObjectInCache gvri=%#v\n", gvrWithIdentity)
 			return c.globalDynamicClusterClient.
 				Cluster(cluster.Path()).
 				Resource(gvrWithIdentity).
 				Update(ctx, local, metav1.UpdateOptions{})
 		},
 		deleteObjectInCache: func(ctx context.Context, cluster logicalcluster.Name, namespace, name string) error {
+			fmt.Printf("### replication.reconcile.deleteObjectInCache gvri=%#v\n", gvrWithIdentity)
 			return c.globalDynamicClusterClient.
 				Cluster(cluster.Path()).
 				Resource(gvrWithIdentity).
@@ -167,6 +177,9 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 }
 
 type replicationReconciler struct {
+	controllerName string
+	owner          string
+
 	shardName string
 	deleted   bool
 	selection Selection
@@ -191,6 +204,8 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 		return nil
 	}
 	logger := klog.FromContext(ctx).WithValues("reconcilerKey", key)
+
+	fmt.Printf("### replicationReconciler.reconcile controller=%q key%q\n", r.controllerName, key)
 
 	clusterName, ns, name, err := kcpcache.SplitMetaClusterNamespaceKey(key)
 	if err != nil {
@@ -245,9 +260,19 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 
 	if globalExists {
 		globalAnnotations := globalPartialObjMeta.GetAnnotations()
-		if globalAnnotations != nil &&
-			globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() &&
+		if globalAnnotations == nil {
+			// Not ours, someone else created this.
+			fmt.Printf("### replicationReconciler.reconcile controller=%q key%q ; exists & no annotations\n", r.controllerName, key)
+			return nil
+		}
+		if globalAnnotations[AnnotationKeyOwnerUID] != r.owner {
+			// Not ours.
+			fmt.Printf("### replicationReconciler.reconcile controller=%q key%q ; exists & not ours\n", r.controllerName, key)
+			return nil
+		}
+		if globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() &&
 			globalAnnotations[AnnotationKeyOriginalAPIVersion] == localPartialObjMeta.GetAPIVersion() {
+			fmt.Printf("### replicationReconciler.reconcile controller=%q key%q ; exists & no change\n", r.controllerName, key)
 			// Exit early: there were no changes on the resource.
 			logger.V(4).Info("Object is up to date")
 			return nil
@@ -270,6 +295,7 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 	ann[AnnotationKeyOriginalResourceUID] = string(localCopy.GetUID())
 	ann[AnnotationKeyOriginalResourceVersion] = localCopy.GetResourceVersion()
 	ann[AnnotationKeyOriginalAPIVersion] = localCopy.GetAPIVersion()
+	ann[AnnotationKeyOwnerUID] = r.owner
 	localCopy.SetAnnotations(ann)
 
 	// We don't need managed fields in cache, and they may contain old API versions
@@ -280,6 +306,7 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 		logger.V(2).WithValues("kind", localPartialObjMeta.GetKind(), "namespace", localPartialObjMeta.GetNamespace(), "name", localPartialObjMeta.GetName()).Info("Creating object in global cache")
 
 		localCopy.SetResourceVersion("")
+		fmt.Printf("### replicationReconciler.reconcile controller=%q key%q ; doesn't exist & create\n", r.controllerName, key)
 		_, err := r.createObjectInCache(ctx, clusterName, localCopy)
 		if err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
@@ -290,6 +317,7 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 	logger.V(2).WithValues("kind", localPartialObjMeta.GetKind(), "namespace", localPartialObjMeta.GetNamespace(), "name", localPartialObjMeta.GetName()).Info("Updating object in global cache")
 	localCopy.SetResourceVersion(globalPartialObjMeta.GetResourceVersion())
 	localCopy.SetUID(globalPartialObjMeta.GetUID())
+	fmt.Printf("### replicationReconciler.reconcile controller=%q key%q ; exists & update\n", r.controllerName, key)
 	_, err = r.updateObjectInCache(ctx, clusterName, localCopy)
 	return err
 }
