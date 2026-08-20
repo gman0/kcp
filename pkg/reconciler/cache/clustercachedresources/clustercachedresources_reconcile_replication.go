@@ -96,6 +96,7 @@ func (r *replication) reconcile(ctx context.Context, clusterCachedResource *cach
 		}
 		replicated := &replicationcontroller.ReplicatedGVR{
 			Identity: clusterCachedResource.Status.IdentityHash,
+			Owner:    string(clusterCachedResource.UID),
 			Kind:     replicatedKind.Kind,
 			Local:    local.Informer(),
 			Global:   global.Informer(),

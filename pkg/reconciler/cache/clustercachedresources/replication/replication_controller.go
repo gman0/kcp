@@ -256,6 +256,7 @@ type Controller struct {
 type ReplicatedGVR struct {
 	Kind          string
 	Identity      string
+	Owner         string
 	Filter        func(u *unstructured.Unstructured) bool
 	Global, Local cache.SharedIndexInformer
 }

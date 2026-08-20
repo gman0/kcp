@@ -46,6 +46,10 @@ const (
 	//  - (5) We notice that obj's cache.kcp.io/original-api-version != localCopy.GetAPIVersion() (i.e. v1 != v2)
 	//  - (6) We write this obj, with cache.kcp.io/original-api-version: example.org/v2.
 	AnnotationKeyOriginalAPIVersion = "cache.kcp.io/original-api-version"
+
+	// AnnotationKeyOwnerUID is the UID of the owning CCR.
+	// In case there are multiple competing CCRs for the same object, only one gets to replicate it.
+	AnnotationKeyOwnerUID = "cache.kcp.io/owner-UID"
 )
 
 func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
@@ -245,8 +249,15 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 
 	if globalExists {
 		globalAnnotations := globalPartialObjMeta.GetAnnotations()
-		if globalAnnotations != nil &&
-			globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() &&
+		if globalAnnotations == nil {
+			// Not ours, someone else created this.
+			return nil
+		}
+		if globalAnnotations[AnnotationKeyOwnerUID] != r.owner {
+			// Not ours.
+			return nil
+		}
+		if globalAnnotations[AnnotationKeyOriginalResourceVersion] == localPartialObjMeta.GetResourceVersion() &&
 			globalAnnotations[AnnotationKeyOriginalAPIVersion] == localPartialObjMeta.GetAPIVersion() {
 			// Exit early: there were no changes on the resource.
 			logger.V(4).Info("Object is up to date")
@@ -270,6 +281,7 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 	ann[AnnotationKeyOriginalResourceUID] = string(localCopy.GetUID())
 	ann[AnnotationKeyOriginalResourceVersion] = localCopy.GetResourceVersion()
 	ann[AnnotationKeyOriginalAPIVersion] = localCopy.GetAPIVersion()
+	ann[AnnotationKeyOwnerUID] = r.owner
 	localCopy.SetAnnotations(ann)
 
 	// We don't need managed fields in cache, and they may contain old API versions
