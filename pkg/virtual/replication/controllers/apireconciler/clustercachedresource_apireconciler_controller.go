@@ -25,11 +25,13 @@ import (
 	"github.com/go-logr/logr"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	kcpcache "github.com/kcp-dev/apimachinery/v2/pkg/cache"
 	"github.com/kcp-dev/logicalcluster/v3"
@@ -98,6 +100,12 @@ func NewAPIReconciler(
 				name,
 			)
 		},
+		listAPIExports: func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIExport, error) {
+			return globalKcpInformers.Apis().V1alpha2().APIExports().Cluster(clusterName).Lister().List(labels.Everything())
+		},
+		listClusterCachedResourceEndpointSlices: func(clusterName logicalcluster.Name) ([]*cachev1alpha1.ClusterCachedResourceEndpointSlice, error) {
+			return globalKcpInformers.Cache().V1alpha1().ClusterCachedResourceEndpointSlices().Cluster(clusterName).Lister().List(labels.Everything())
+		},
 	}
 
 	logger := logging.WithReconciler(klog.Background(), ControllerName)
@@ -114,6 +122,36 @@ func NewAPIReconciler(
 		},
 	})
 
+	_, _ = globalKcpInformers.Apis().V1alpha2().APIExports().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { c.enqueueAPIExport(tombstone.Obj[*apisv1alpha2.APIExport](obj), logger) },
+		UpdateFunc: func(_, obj interface{}) { c.enqueueAPIExport(tombstone.Obj[*apisv1alpha2.APIExport](obj), logger) },
+		DeleteFunc: func(obj interface{}) { c.enqueueAPIExport(tombstone.Obj[*apisv1alpha2.APIExport](obj), logger) },
+	})
+
+	_, _ = globalKcpInformers.Apis().V1alpha1().APIResourceSchemas().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			c.enqueueAPIResourceSchema(tombstone.Obj[*apisv1alpha1.APIResourceSchema](obj), logger)
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			c.enqueueAPIResourceSchema(tombstone.Obj[*apisv1alpha1.APIResourceSchema](obj), logger)
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.enqueueAPIResourceSchema(tombstone.Obj[*apisv1alpha1.APIResourceSchema](obj), logger)
+		},
+	})
+
+	_, _ = globalKcpInformers.Cache().V1alpha1().ClusterCachedResources().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			c.enqueueClusterCachedResource(tombstone.Obj[*cachev1alpha1.ClusterCachedResource](obj), logger)
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			c.enqueueClusterCachedResource(tombstone.Obj[*cachev1alpha1.ClusterCachedResource](obj), logger)
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.enqueueClusterCachedResource(tombstone.Obj[*cachev1alpha1.ClusterCachedResource](obj), logger)
+		},
+	})
+
 	return c, nil
 }
 
@@ -127,10 +165,12 @@ type APIReconciler struct {
 	mutex   sync.RWMutex // protects the map, not the values!
 	apiSets map[dynamiccontext.APIDomainKey]apidefinition.APIDefinitionSet
 
-	getAPIExportByPath                    func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
-	getAPIResourceSchema                  func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
-	getClusterCachedResourceByPath        func(path logicalcluster.Path, name string) (*cachev1alpha1.ClusterCachedResource, error)
-	getClusterCachedResourceEndpointSlice func(cluster logicalcluster.Name, name string) (*cachev1alpha1.ClusterCachedResourceEndpointSlice, error)
+	getAPIExportByPath                      func(path logicalcluster.Path, name string) (*apisv1alpha2.APIExport, error)
+	getAPIResourceSchema                    func(cluster logicalcluster.Name, name string) (*apisv1alpha1.APIResourceSchema, error)
+	getClusterCachedResourceByPath          func(path logicalcluster.Path, name string) (*cachev1alpha1.ClusterCachedResource, error)
+	getClusterCachedResourceEndpointSlice   func(cluster logicalcluster.Name, name string) (*cachev1alpha1.ClusterCachedResourceEndpointSlice, error)
+	listAPIExports                          func(clusterName logicalcluster.Name) ([]*apisv1alpha2.APIExport, error)
+	listClusterCachedResourceEndpointSlices func(clusterName logicalcluster.Name) ([]*cachev1alpha1.ClusterCachedResourceEndpointSlice, error)
 }
 
 func (c *APIReconciler) enqueueClusterCachedResourceEndpointSlice(endpointSlice *cachev1alpha1.ClusterCachedResourceEndpointSlice, logger logr.Logger) {
@@ -144,6 +184,71 @@ func (c *APIReconciler) enqueueClusterCachedResourceEndpointSlice(endpointSlice 
 
 	logging.WithQueueKey(logger, key).V(4).Info("queueing ClusterCachedResourceEndpointSlice")
 	c.queue.Add(key)
+}
+
+func (c *APIReconciler) enqueueAPIExport(export *apisv1alpha2.APIExport, logger logr.Logger) {
+	exportKey, err := kcpcache.DeletionHandlingMetaClusterNamespaceKeyFunc(export)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	logger = logging.WithObject(logger, export)
+	for _, res := range export.Spec.Resources {
+		if res.Storage.Virtual == nil {
+			continue
+		}
+		ref := res.Storage.Virtual.Reference
+		if ptr.Deref(ref.APIGroup, "") == "cache.kcp.io" && ref.Kind == "ClusterCachedResourceEndpointSlice" {
+			key := kcpcache.ToClusterAwareKey(string(logicalcluster.From(export)), "", ref.Name)
+			logging.WithQueueKey(logger, key).V(4).Info("queueing ClusterCachedResourceEndpointSlice because of APIExport", "APIExport", exportKey)
+			c.queue.Add(key)
+		}
+	}
+}
+
+func (c *APIReconciler) enqueueAPIResourceSchema(schema *apisv1alpha1.APIResourceSchema, logger logr.Logger) {
+	logger = logging.WithObject(logger, schema)
+
+	schemaKey, err := kcpcache.MetaClusterNamespaceKeyFunc(schema)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	exports, err := c.listAPIExports(logicalcluster.From(schema))
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	for _, export := range exports {
+		c.enqueueAPIExport(export, logger.WithValues("reason", "APIResourceSchema change", "APIResourceSchema", schemaKey))
+	}
+}
+func (c *APIReconciler) enqueueClusterCachedResource(ccr *cachev1alpha1.ClusterCachedResource, logger logr.Logger) {
+	logger = logging.WithObject(logger, ccr)
+	clusterName := logicalcluster.From(ccr)
+
+	ccrKey, err := kcpcache.MetaClusterNamespaceKeyFunc(ccr)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	endpointSlices, err := c.listClusterCachedResourceEndpointSlices(clusterName)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	for _, endpointSlice := range endpointSlices {
+		ccrRef := endpointSlice.Spec.ClusterCachedResource
+		pathMatches := ccrRef.Path == "" || ccrRef.Path == string(clusterName) // We don't consider cluster path. We could though \o/.
+		if ccrRef.Name == ccr.Name && pathMatches {
+			c.enqueueClusterCachedResourceEndpointSlice(endpointSlice, logger.WithValues("reason", "ClusterCachedResource change", "ClusterCachedResource", ccrKey))
+		}
+	}
 }
 
 func (c *APIReconciler) startWorker(ctx context.Context) {

@@ -18,10 +18,15 @@ package apireconciler
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"slices"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	k8sversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
@@ -84,6 +89,9 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 	export, err := c.getAPIExportByPath(exportPath, endpointSlice.Spec.APIExport.Name)
 	if err != nil {
 		logger.Error(err, "failed to get APIExport for ClusterCachedResourceEndpointSlice")
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 
@@ -104,32 +112,76 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 	}
 
 	gr := schema.GroupResource(clusterCachedResource.Spec.GroupResource)
-	apiSet := make(apidefinition.APIDefinitionSet)
 
+	c.mutex.RLock()
+	oldApiSet := c.apiSets[apiDomainKey]
+	c.mutex.RUnlock()
+	// These are the actual API definitions that will be applied.
+	newApiSet := make(apidefinition.APIDefinitionSet)
+
+	// These are just for logging so that we can report what's actually changing.
+	apisToKeep := sets.New[schema.GroupVersionResource]()
+	apisToAdd := sets.New[schema.GroupVersionResource]()
+	apisToRemove := sets.New[schema.GroupVersionResource]()
+
+	// Resolve GVRs for the API set to be served.
 	for _, version := range sch.Spec.Versions {
+		gvr := gr.WithVersion(version.Name)
+
 		if !version.Served {
+			apisToRemove.Insert(gvr)
 			continue
 		}
+		/*if apiDef, gvrAlreadyServing := oldApiSet[gvr]; gvrAlreadyServing {
+			apisToKeep.Insert(gvr)
+			newApiSet[gvr] = apiDef
+			continue
+		}*/
 
-		gvr := gr.WithVersion(version.Name)
 		logger.Info("creating API definition", "gvr", gvr)
-
 		apiDefinition, err := c.createAPIDefinition(sch, version.Name, clusterCachedResource, export)
 		if err != nil {
 			// TODO(ncdc): would be nice to expose some sort of user-visible error
 			logger.Error(err, "error creating api definition", "gvr", gvr)
 			return err
 		}
-		apiSet[gvr] = apiResourceSchemaApiDefinition{
+		apisToAdd.Insert(gvr)
+		newApiSet[gvr] = apiResourceSchemaApiDefinition{
 			APIDefinition: apiDefinition,
 			UID:           sch.UID,
 			IdentityHash:  clusterCachedResource.Status.IdentityHash,
 		}
 	}
+	// Just note down anything else we haven't noticed.
+	// Since they are not part of the schema, they must be removed.
+	for gvr := range oldApiSet {
+		if !apisToKeep.Has(gvr) && !apisToAdd.Has(gvr) {
+			apisToRemove.Insert(gvr)
+		}
+	}
+
+	sortedGVRs := func(gvrs sets.Set[schema.GroupVersionResource]) []string {
+		sortedByVersions := slices.SortedFunc(maps.Keys(gvrs), func(a, b schema.GroupVersionResource) int {
+			// GR is guaranteed to be the same for all, so we compare only version.
+			return k8sversion.CompareKubeAwareVersionStrings(a.Version, b.Version)
+		})
+		list := make([]string, 0, len(sortedByVersions))
+		for _, gvr := range sortedByVersions {
+			list = append(list, fmt.Sprintf("%s.%s.%s", gvr.Resource, gvr.Version, gvr.Group))
+		}
+		return list
+	}
+	if len(apisToAdd) > 0 || len(apisToRemove) > 0 {
+		logger.V(2).Info("updating APIs",
+			"added", sortedGVRs(apisToAdd),
+			"preserved", sortedGVRs(apisToKeep),
+			"removed", sortedGVRs(apisToRemove),
+		)
+	}
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.apiSets[apiDomainKey] = apiSet
+	c.apiSets[apiDomainKey] = newApiSet
 	return nil
 }
 

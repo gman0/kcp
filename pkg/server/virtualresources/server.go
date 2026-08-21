@@ -135,6 +135,8 @@ func (s *Server) newApisHandler() http.HandlerFunc {
 }
 
 func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("### VR server: handleResource path=%q\n", r.URL.Path)
+
 	pathParts := splitPath(r.URL.Path)
 	// Only match /apis/<group>/<version>/<resource>/...
 	if len(pathParts) <= 3 || pathParts[0] != "apis" {
@@ -342,11 +344,13 @@ func (s *Server) getVirtualResourceURL(ctx context.Context, apiExportCluster log
 		Version:  sliceMapping.Resource.Version,
 		Resource: sliceMapping.Resource.Resource,
 	}, virtual.Reference.Name)
+	fmt.Printf("### VR server: getUnstructuredEndpointSlice: err=%v slice=%#v\n", err, slice)
 	if err != nil {
 		return "", err
 	}
 
 	endpoints, err := endpointslice.ListEndpointsFromUnstructured(*slice)
+	fmt.Printf("### VR server: ListEndpointsFromUnstructured: err=%v endpoints=%#v\n", err, endpoints)
 	if err != nil {
 		return "", err
 	}
@@ -356,7 +360,10 @@ func (s *Server) getVirtualResourceURL(ctx context.Context, apiExportCluster log
 		shardLabels = s.Extra.ThisShardLabels()
 	}
 
-	return endpointslice.PickURL(s.Extra.ShardVirtualWorkspaceURLGetter(), shardLabels, endpoints)
+	endpoint, err := endpointslice.PickURL(s.Extra.ShardVirtualWorkspaceURLGetter(), shardLabels, endpoints)
+	fmt.Printf("### VR server: PickURL: err=%v endpoint=%#v\n", err, endpoint)
+
+	return endpoint, err
 }
 
 func (s *Server) getAPIBindingForRequest(

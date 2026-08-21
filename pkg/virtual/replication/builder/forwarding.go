@@ -18,6 +18,7 @@ package builder
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -45,6 +46,8 @@ func provideReadOnlyRestStorage(
 	identities := map[schema.GroupResource]string{
 		gr: clusterCachedResource.Status.IdentityHash,
 	}
+
+	fmt.Printf("### provideReadOnlyRestStorage: identities=%#v\n", identities)
 
 	clientFunc := forwardingregistry.DynamicClusterClientFunc(func(_ context.Context) (kcpdynamic.ClusterInterface, error) {
 		return cacheDynamicClusterClient, nil

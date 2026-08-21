@@ -48,7 +48,8 @@ const (
 	AnnotationKeyOriginalAPIVersion = "cache.kcp.io/original-api-version"
 
 	// AnnotationKeyOwnerUID is the UID of the owning CCR.
-	// In case there are multiple competing CCRs for the same object, only one gets to replicate it.
+	// In case there are multiple competing CCRs for the
+	// same object, only the first one gets to replicate it.
 	AnnotationKeyOwnerUID = "cache.kcp.io/owner-UID"
 )
 
@@ -73,6 +74,7 @@ func (c *Controller) reconcile(ctx context.Context, gvrKey string) error {
 	r := &replicationReconciler{
 		shardName: c.shardName,
 		selection: c.selection,
+		owner:     c.replicated.Owner,
 		getLocalPartialObjectMetadata: func(cluster logicalcluster.Name, namespace, name string) (*unstructured.Unstructured, error) {
 			gvr := gvrFromKey
 			key := kcpcache.ToClusterAwareKey(cluster.String(), namespace, name)
@@ -174,6 +176,7 @@ type replicationReconciler struct {
 	shardName string
 	deleted   bool
 	selection Selection
+	owner     string
 
 	getLocalPartialObjectMetadata func(cluster logicalcluster.Name, namespace, name string) (*unstructured.Unstructured, error)
 	getLocalCopy                  func(ctx context.Context, cluster logicalcluster.Name, namespace, name string) (*unstructured.Unstructured, error)
@@ -250,7 +253,7 @@ func (r *replicationReconciler) reconcile(ctx context.Context, key string) error
 	if globalExists {
 		globalAnnotations := globalPartialObjMeta.GetAnnotations()
 		if globalAnnotations == nil {
-			// Not ours, someone else created this.
+			// Not ours, someone else is replicating this object.
 			return nil
 		}
 		if globalAnnotations[AnnotationKeyOwnerUID] != r.owner {

@@ -18,6 +18,7 @@ package builder
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,6 +52,7 @@ func fixupAnnotations(obj *unstructured.Unstructured, cluster logicalcluster.Nam
 	delete(annotations, replication.AnnotationKeyOriginalResourceUID)
 	delete(annotations, replication.AnnotationKeyOriginalResourceVersion)
 	delete(annotations, replication.AnnotationKeyOriginalAPIVersion)
+	delete(annotations, replication.AnnotationKeyOwnerUID)
 
 	obj.SetAnnotations(annotations)
 }
@@ -84,6 +86,7 @@ func withClusterCachedResource(
 			sourceCtx = cacheclient.WithShardInContext(sourceCtx, shardName)
 
 			obj, err := delegateGet(sourceCtx, name, options)
+			fmt.Printf("### withClusterCachedResource: GetterFunc: err=%v\n", err)
 			if err != nil {
 				return nil, err
 			}
@@ -105,6 +108,7 @@ func withClusterCachedResource(
 			sourceCtx = cacheclient.WithShardInContext(sourceCtx, shardName)
 
 			result, err := delegateList(sourceCtx, options)
+			fmt.Printf("### withClusterCachedResource: ListerFunc: err=%v\n", err)
 			if err != nil {
 				return nil, err
 			}

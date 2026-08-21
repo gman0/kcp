@@ -324,6 +324,8 @@ func clientGetter(dynamicClusterClientFunc DynamicClusterClientFunc, namespaceSc
 			gvr.Resource += ":" + apiExportIdentityHash
 		}
 
+		fmt.Printf("### clientGetter: clusterName=%q gvr=%#v\n", clusterName, gvr)
+
 		dynamicClusterClient, err := dynamicClusterClientFunc(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error generating dynamic client: %w", err)
@@ -357,6 +359,8 @@ func listerWatcherGetter(dynamicClusterClientFunc DynamicClusterClientFunc, name
 			gvr.Resource += ":" + apiExportIdentityHash
 		}
 		namespace, namespaceSet := genericapirequest.NamespaceFrom(ctx)
+
+		fmt.Printf("### listerWatcherGetter: cluster=%#v gvr=%#v\n", cluster, gvr)
 
 		dynamicClusterClient, err := dynamicClusterClientFunc(ctx)
 		if err != nil {
