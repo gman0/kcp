@@ -124,14 +124,22 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 	apisToAdd := sets.New[schema.GroupVersionResource]()
 	apisToRemove := sets.New[schema.GroupVersionResource]()
 
-	// Resolve GVRs for the API set to be served.
+	versionsServedBySchema := sets.New[string]()
 	for _, version := range sch.Spec.Versions {
-		gvr := gr.WithVersion(version.Name)
-
-		if !version.Served {
-			apisToRemove.Insert(gvr)
-			continue
+		if version.Served {
+			versionsServedBySchema.Insert(version.Name)
 		}
+	}
+	versionsServedByCCR := sets.New[string]()
+	for _, version := range clusterCachedResource.Status.StoredVersions {
+		versionsServedByCCR.Insert(version)
+	}
+	versionsToServe := versionsServedBySchema.Intersection(versionsServedByCCR)
+
+	// Resolve GVRs for the API set to be served.
+	for version := range versionsToServe {
+		gvr := gr.WithVersion(version)
+
 		/*if apiDef, gvrAlreadyServing := oldApiSet[gvr]; gvrAlreadyServing {
 			apisToKeep.Insert(gvr)
 			newApiSet[gvr] = apiDef
@@ -139,7 +147,7 @@ func (c *APIReconciler) reconcile(ctx context.Context, endpointSlice *cachev1alp
 		}*/
 
 		logger.Info("creating API definition", "gvr", gvr)
-		apiDefinition, err := c.createAPIDefinition(sch, version.Name, clusterCachedResource, export)
+		apiDefinition, err := c.createAPIDefinition(sch, version, clusterCachedResource, export)
 		if err != nil {
 			// TODO(ncdc): would be nice to expose some sort of user-visible error
 			logger.Error(err, "error creating api definition", "gvr", gvr)
