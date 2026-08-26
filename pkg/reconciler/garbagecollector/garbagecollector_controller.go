@@ -146,9 +146,15 @@ func (tracker *gvrTracker) GVRAdded(gvr schema.GroupVersionResource) {
 		// guard to prevent "empty" updates when the GVR is already known
 		return
 	}
+	if gvr.Group == "wildwest.dev" {
+		fmt.Printf("### pkg/reconciler/garbagecollector/garbagecollector_controller.go GVRAdded %s – entering ResyncMonitors (will hold monitorLock.Lock, then call ForResource which tries informersLock.RLock)\n", gvr)
+	}
 	tracker.knownGVRs[gvr] = struct{}{}
 	if err := tracker.gc.ResyncMonitors(tracker.logger, tracker.knownGVRs); err != nil {
 		tracker.logger.Error(err, "error during resync")
+	}
+	if gvr.Group == "wildwest.dev" {
+		fmt.Printf("### pkg/reconciler/garbagecollector/garbagecollector_controller.go GVRAdded %s – ResyncMonitors returned\n", gvr)
 	}
 }
 
@@ -157,8 +163,14 @@ func (tracker *gvrTracker) GVRRemoved(gvr schema.GroupVersionResource) {
 		// guard to prevent "empty" updates when the GVR is already gone
 		return
 	}
+	if gvr.Group == "wildwest.dev" {
+		fmt.Printf("### pkg/reconciler/garbagecollector/garbagecollector_controller.go GVRRemoved %s – entering ResyncMonitors (existing monitor will be stopped)\n", gvr)
+	}
 	delete(tracker.knownGVRs, gvr)
 	if err := tracker.gc.ResyncMonitors(tracker.logger, tracker.knownGVRs); err != nil {
 		tracker.logger.Error(err, "error during resync")
+	}
+	if gvr.Group == "wildwest.dev" {
+		fmt.Printf("### pkg/reconciler/garbagecollector/garbagecollector_controller.go GVRRemoved %s – ResyncMonitors returned\n", gvr)
 	}
 }

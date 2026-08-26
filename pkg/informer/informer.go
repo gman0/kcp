@@ -350,9 +350,15 @@ func (d *scopedDiscoveringDynamicSharedInformerFactory) ForResource(gvr schema.G
 // by calling Start on the GenericDiscoveringDynamicSharedInformerFactory before the GenericInformer can be used.
 func (d *GenericDiscoveringDynamicSharedInformerFactory[Informer, Lister, GenericInformer]) ForResource(gvr schema.GroupVersionResource) (GenericInformer, error) {
 	// See if we already have it
+	if gvr.Group == "wildwest.dev" {
+		fmt.Printf("### pkg/informer/informer.go ForResource(%s): trying informersLock.RLock() – will block while updateInformers holds Lock()\n", gvr)
+	}
 	d.informersLock.RLock()
 	inf := d.informers[gvr]
 	d.informersLock.RUnlock()
+	if gvr.Group == "wildwest.dev" {
+		fmt.Printf("### pkg/informer/informer.go ForResource(%s): informersLock.RLock() unblocked\n", gvr)
+	}
 
 	if (genericInformerBase[Informer, Lister])(inf) != nil {
 		return inf, nil
@@ -657,8 +663,47 @@ func (d *GenericDiscoveringDynamicSharedInformerFactory[Informer, Lister, Generi
 	}
 
 	// We have to add/remove, so we need the write lock
+	hasWildwest := false
+	for _, gvr := range informersToAdd {
+		if gvr.Group == "wildwest.dev" {
+			hasWildwest = true
+			break
+		}
+	}
+	if !hasWildwest {
+		for _, gvr := range informersToRemove {
+			if gvr.Group == "wildwest.dev" {
+				hasWildwest = true
+				break
+			}
+		}
+	}
+	if hasWildwest {
+		var wildwestGVRs []string
+		if src, ok := d.gvrSource.(*crdGVRSource); ok {
+			for _, gvr := range append(informersToAdd, informersToRemove...) {
+				if gvr.Group != "wildwest.dev" {
+					continue
+				}
+				crds, _ := indexers.ByIndex[*apiextensionsv1.CustomResourceDefinition](
+					src.crdIndexer,
+					byGroupVersionResourceIndex,
+					byGroupVersionResourceKeyFunc(gvr.Group, gvr.Version, gvr.Resource),
+				)
+				for _, crd := range crds {
+					wildwestGVRs = append(wildwestGVRs, fmt.Sprintf("%s@%s", gvr, logicalcluster.From(crd)))
+				}
+			}
+		}
+		fmt.Printf("### pkg/informer/informer.go updateInformers: acquiring informersLock.Lock() – wildwest.dev changes %v; GVRAdded listener goroutine will block on RLock until this function returns\n", wildwestGVRs)
+	}
 	d.informersLock.Lock()
-	defer d.informersLock.Unlock()
+	defer func() {
+		if hasWildwest {
+			fmt.Printf("### pkg/informer/informer.go updateInformers: releasing informersLock.Lock()\n")
+		}
+		d.informersLock.Unlock()
+	}()
 
 	// Recalculate in case another goroutine did this work in between when we had the read lock and when we acquired
 	// the write lock
@@ -672,6 +717,20 @@ func (d *GenericDiscoveringDynamicSharedInformerFactory[Informer, Lister, Generi
 	for i := range informersToAdd {
 		gvr := informersToAdd[i]
 
+		if gvr.Group == "wildwest.dev" {
+			var clusters []string
+			if src, ok := d.gvrSource.(*crdGVRSource); ok {
+				crds, _ := indexers.ByIndex[*apiextensionsv1.CustomResourceDefinition](
+					src.crdIndexer,
+					byGroupVersionResourceIndex,
+					byGroupVersionResourceKeyFunc(gvr.Group, gvr.Version, gvr.Resource),
+				)
+				for _, crd := range crds {
+					clusters = append(clusters, logicalcluster.From(crd).String())
+				}
+			}
+			fmt.Printf("### pkg/informer/informer.go updateInformers: starting new informer for %s clusters=%v – initial List will hit conversion webhook if CRD uses Webhook strategy\n", gvr, clusters)
+		}
 		// We have the write lock, so call the LH variant
 		inf := d.informerForResourceLockHeld(gvr)
 
@@ -726,11 +785,17 @@ func (d *GenericDiscoveringDynamicSharedInformerFactory[Informer, Lister, Generi
 	d.gvrLifecycleListenersLock.Unlock()
 
 	for i := range informersToAdd {
+		if informersToAdd[i].Group == "wildwest.dev" {
+			fmt.Printf("### pkg/informer/informer.go updateInformers: enqueuing GVRAdded(%s) while still holding informersLock.Lock()\n", informersToAdd[i])
+		}
 		for _, l := range listeners {
 			l.enqueue(gvrLifecycleEvent{gvr: informersToAdd[i], added: true})
 		}
 	}
 	for i := range informersToRemove {
+		if informersToRemove[i].Group == "wildwest.dev" {
+			fmt.Printf("### pkg/informer/informer.go updateInformers: enqueuing GVRRemoved(%s) while still holding informersLock.Lock()\n", informersToRemove[i])
+		}
 		for _, l := range listeners {
 			l.enqueue(gvrLifecycleEvent{gvr: informersToRemove[i], added: false})
 		}
@@ -1081,6 +1146,16 @@ func (s *crdGVRSource) Subscribe() <-chan struct{} {
 	_, _ = s.crdInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if crdIsEstablished(obj) {
+				if crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition); ok && crd.Spec.Group == "wildwest.dev" {
+					var served []string
+					for _, v := range crd.Spec.Versions {
+						if v.Served {
+							served = append(served, v.Name)
+						}
+					}
+					fmt.Printf("### pkg/informer/informer.go crdGVRSource.Subscribe AddFunc: cluster=%s crd=%s servedVersions=%v – triggering updateInformers\n",
+						logicalcluster.From(crd), crd.Name, served)
+				}
 				notifyChange()
 			}
 		},
@@ -1088,6 +1163,16 @@ func (s *crdGVRSource) Subscribe() <-chan struct{} {
 			oldEstablished := crdIsEstablished(oldObj)
 			newEstablished := crdIsEstablished(newObj)
 			if newEstablished || oldEstablished != newEstablished {
+				if crd, ok := newObj.(*apiextensionsv1.CustomResourceDefinition); ok && crd.Spec.Group == "wildwest.dev" {
+					var served []string
+					for _, v := range crd.Spec.Versions {
+						if v.Served {
+							served = append(served, v.Name)
+						}
+					}
+					fmt.Printf("### pkg/informer/informer.go crdGVRSource.Subscribe UpdateFunc: cluster=%s crd=%s resource=%q group=%q servedVersions=%v established=%v – triggering updateInformers\n",
+						logicalcluster.From(crd), crd.Name, crd.Spec.Group, crd.Status.AcceptedNames.Plural, served, newEstablished)
+				}
 				notifyChange()
 			}
 		},

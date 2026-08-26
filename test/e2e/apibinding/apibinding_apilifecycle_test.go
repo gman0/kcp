@@ -17,6 +17,7 @@ limitations under the License.
 package apibinding
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -143,6 +144,17 @@ func TestAPILifecycleWithVersionMigration(t *testing.T) {
 		Namespace("default").
 		Create(t.Context(), v1Cowboy, metav1.CreateOptions{})
 	require.NoError(t, err)
+	defer func() {
+		err = dynamicClusterClient.
+			Cluster(consumerPath).
+			Resource(cowboysV1GVR).
+			Namespace("default").
+			Delete(context.TODO(), v1Cowboy.GetName(), metav1.DeleteOptions{})
+		if err != nil {
+			// FIXME(gman0): missing conversion webhook prevents LC deletion.
+			t.Errorf("failed to delete %s %q, the workspace won't be cleaned up! err=%v", cowboysV1GVR.String(), v1Cowboy.GetName(), err)
+		}
+	}()
 
 	// ── Phase 3: launch conversion webhook ────────────────────────────────
 
@@ -367,6 +379,17 @@ func TestAPILifecycleWithVersionMigration(t *testing.T) {
 		Namespace("default").
 		Create(t.Context(), v2Cowboy, metav1.CreateOptions{})
 	require.NoError(t, err)
+	defer func() {
+		err = dynamicClusterClient.
+			Cluster(consumerPath).
+			Resource(cowboysV2GVR).
+			Namespace("default").
+			Delete(context.TODO(), v2Cowboy.GetName(), metav1.DeleteOptions{})
+		if err != nil {
+			// FIXME(gman0): missing conversion webhook prevents LC deletion.
+			t.Errorf("failed to delete %s %q, the workspace won't be cleaned up! err=%v", cowboysV2GVR.String(), v2Cowboy.GetName(), err)
+		}
+	}()
 
 	t.Logf("Reading back new-sheriff via v1alpha2 API")
 	readBack, err := dynamicClusterClient.
